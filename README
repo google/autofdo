@@ -1,0 +1,27 @@
+The repository contains a tool to convert perf.data profile to AutoFDO
+profile that can be used by GCC.
+
+Usage:
+make
+./create_gcov --binary=BINARY --profile=PERF_PROFILE --gcov=OUTPUT
+
+Inputs:
+
+--profile: PERF_PROFILE collected using linux perf (with last branch record).
+In order to collect this profile, you will need to have an Intel CPU that
+have last branch record (LBR) support. You also need to have your linux
+kernel configured with LBR support. To profile:
+# perf record -c PERIOD -e EVENT -b -o perf.data -- ./command
+EVENT is refering to BR_INST_RETIRED:TAKEN if available. For some
+architectures, BR_INST_EXEC:TAKEN also works.
+
+--binary: BINARY with debug info. You need to make sure the binary name is
+the same as the binary you run during profiling. Additionally, you will need
+to have debug info (i.e. line table) availabe in the binary. This means that
+you need to compile the binary with "-gmlt"
+
+Output:
+
+An AutoFDO profile in gcov format. To use the profile with AutoFDO, you need
+to use the google gcc branch (gcc.gnu.org/svn/gcc/branches/google/gcc-4_8),
+and pass the following flag to GCC: -fauto-profile=PROFILE_FILE

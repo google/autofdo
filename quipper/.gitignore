@@ -1,0 +1,10 @@
+*.o
+*.exe
+*.test
+*.d
+*.out
+core
+*.dump
+*.swp
+*.pb.h
+*.pb.cc
