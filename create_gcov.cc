@@ -12,22 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Main function to create AutoFDO Profile.
-//
-// To test if this tool is working properly with perflab:
-//   1. build create_gcov: blaze build devtools/crosstoo/autofdo:create_gcov
-//   2. perflab checkout k8
-//   3. perflab -k --fdo=gen-afdo build k8
-//   4. perflab qfetch `perflab -k --arch=ikaria_westmere \
-//                      --fdo=gen-afdo qsub k8 | awk '{print $3}'`
-//   5. perflab -k --arch=ikaria_westmere --create_gcov=your_create_gcov_path \
-//              --fdo_profile_root=. --fdo_profile_name=name create-autoprof k8
-//   6. perflab -k --fdo_profile_root=. --fdo_profile_name=name --fdo=use-afdo \
-//              build k8
-//   7. perflab qfetch `perflab -k --label=opt --arch=ikaria_westmere qsub k8 \
-//                      | awk '{print $3}'`
-//   8. perflab --arch=ikaria_westmere --label=opt table k8
-
 #include "gflags/gflags.h"
 #include "profile_creator.h"
 
