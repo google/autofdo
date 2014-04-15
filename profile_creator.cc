@@ -104,6 +104,8 @@ bool ProfileCreator::CreateProfileFromSample(const string &output_profile_name,
   if (output_format == "gcov")
     writer = new AutoFDOProfileWriter(symbol_map, grouper->module_map(),
                                       FLAGS_gcov_version);
+  else if (output_format == "llvm")
+    writer = new LLVMProfileWriter(symbol_map, grouper->module_map());
   else
     LOG(ERROR) << "Unsupported output profile format: " << output_format;
 

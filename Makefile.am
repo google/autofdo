@@ -6,9 +6,17 @@ AM_CXXFLAGS = -std=gnu++11
 
 bin_PROGRAMS=create_gcov
 create_gcov_SOURCES = addr2line.cc create_gcov.cc gcov.cc instruction_map.cc \
-                    module_grouper.cc profile_creator.cc profile_writer.cc \
+                    llvm_profile_writer.cc module_grouper.cc \
+                    profile_creator.cc profile_writer.cc \
                     sample_reader.cc source_info.cc symbol_map.cc profile.cc
 create_gcov_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+
+bin_PROGRAMS += create_llvm_prof
+create_llvm_prof_SOURCES = addr2line.cc create_llvm_prof.cc gcov.cc \
+                instruction_map.cc llvm_profile_writer.cc module_grouper.cc \
+                profile_creator.cc profile_writer.cc sample_reader.cc \
+                source_info.cc symbol_map.cc profile.cc
+create_llvm_prof_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 
 noinst_LIBRARIES = libquipper.a
 libquipper_a_SOURCES = quipper/address_mapper.cc quipper/perf_reader.cc \

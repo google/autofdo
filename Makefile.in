@@ -33,7 +33,7 @@ POST_INSTALL = :
 NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
-bin_PROGRAMS = create_gcov$(EXEEXT)
+bin_PROGRAMS = create_gcov$(EXEEXT) create_llvm_prof$(EXEEXT)
 subdir = .
 DIST_COMMON = README $(am__configure_deps) $(srcdir)/Makefile.am \
 	$(srcdir)/Makefile.in $(top_srcdir)/configure \
@@ -90,11 +90,21 @@ am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
 am_create_gcov_OBJECTS = addr2line.$(OBJEXT) create_gcov.$(OBJEXT) \
 	gcov.$(OBJEXT) instruction_map.$(OBJEXT) \
+	llvm_profile_writer.$(OBJEXT) module_grouper.$(OBJEXT) \
+	profile_creator.$(OBJEXT) profile_writer.$(OBJEXT) \
+	sample_reader.$(OBJEXT) source_info.$(OBJEXT) \
+	symbol_map.$(OBJEXT) profile.$(OBJEXT)
+create_gcov_OBJECTS = $(am_create_gcov_OBJECTS)
+create_gcov_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+	libgflags.a
+am_create_llvm_prof_OBJECTS = addr2line.$(OBJEXT) \
+	create_llvm_prof.$(OBJEXT) gcov.$(OBJEXT) \
+	instruction_map.$(OBJEXT) llvm_profile_writer.$(OBJEXT) \
 	module_grouper.$(OBJEXT) profile_creator.$(OBJEXT) \
 	profile_writer.$(OBJEXT) sample_reader.$(OBJEXT) \
 	source_info.$(OBJEXT) symbol_map.$(OBJEXT) profile.$(OBJEXT)
-create_gcov_OBJECTS = $(am_create_gcov_OBJECTS)
-create_gcov_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+create_llvm_prof_OBJECTS = $(am_create_llvm_prof_OBJECTS)
+create_llvm_prof_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
 	libgflags.a
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)/glog/src
 depcomp = $(SHELL) $(top_srcdir)/depcomp
@@ -111,10 +121,10 @@ CCLD = $(CC)
 LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 SOURCES = $(libgflags_a_SOURCES) $(libglog_a_SOURCES) \
 	$(libquipper_a_SOURCES) $(libsymbolize_a_SOURCES) \
-	$(create_gcov_SOURCES)
+	$(create_gcov_SOURCES) $(create_llvm_prof_SOURCES)
 DIST_SOURCES = $(libgflags_a_SOURCES) $(libglog_a_SOURCES) \
 	$(libquipper_a_SOURCES) $(libsymbolize_a_SOURCES) \
-	$(create_gcov_SOURCES)
+	$(create_gcov_SOURCES) $(create_llvm_prof_SOURCES)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -248,10 +258,17 @@ ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/glog/src
 AM_CXXFLAGS = -std=gnu++11
 create_gcov_SOURCES = addr2line.cc create_gcov.cc gcov.cc instruction_map.cc \
-                    module_grouper.cc profile_creator.cc profile_writer.cc \
+                    llvm_profile_writer.cc module_grouper.cc \
+                    profile_creator.cc profile_writer.cc \
                     sample_reader.cc source_info.cc symbol_map.cc profile.cc
 
 create_gcov_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+create_llvm_prof_SOURCES = addr2line.cc create_llvm_prof.cc gcov.cc \
+                instruction_map.cc llvm_profile_writer.cc module_grouper.cc \
+                profile_creator.cc profile_writer.cc sample_reader.cc \
+                source_info.cc symbol_map.cc profile.cc
+
+create_llvm_prof_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 noinst_LIBRARIES = libquipper.a libglog.a libgflags.a libsymbolize.a
 libquipper_a_SOURCES = quipper/address_mapper.cc quipper/perf_reader.cc \
                        quipper/perf_parser.cc quipper/utils.cc
@@ -403,6 +420,9 @@ clean-binPROGRAMS:
 create_gcov$(EXEEXT): $(create_gcov_OBJECTS) $(create_gcov_DEPENDENCIES) $(EXTRA_create_gcov_DEPENDENCIES) 
 	@rm -f create_gcov$(EXEEXT)
 	$(CXXLINK) $(create_gcov_OBJECTS) $(create_gcov_LDADD) $(LIBS)
+create_llvm_prof$(EXEEXT): $(create_llvm_prof_OBJECTS) $(create_llvm_prof_DEPENDENCIES) $(EXTRA_create_llvm_prof_DEPENDENCIES) 
+	@rm -f create_llvm_prof$(EXEEXT)
+	$(CXXLINK) $(create_llvm_prof_OBJECTS) $(create_llvm_prof_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -415,6 +435,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/address_mapper.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/bytereader.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_llvm_prof.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dwarf2reader.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dwarf3ranges.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/elf_reader.Po@am__quote@
@@ -431,6 +452,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libglog_a-symbolize.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libglog_a-utilities.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libglog_a-vlog_is_on.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/llvm_profile_writer.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/module_grouper.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/perf_parser.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/perf_reader.Po@am__quote@
