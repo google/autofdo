@@ -185,6 +185,71 @@ class StringTableUpdater: public SymbolTraverser {
   StringIndexMap *map_;
   DISALLOW_COPY_AND_ASSIGN(StringTableUpdater);
 };
+
+// Writer class for LLVM profiles. This writes a text file with a
+// simple frequency-based profile.
+class LLVMProfileWriter : public ProfileWriter {
+ public:
+  explicit LLVMProfileWriter(const SymbolMap &symbol_map,
+                             const ModuleMap &module_map)
+      : ProfileWriter(symbol_map, module_map) {}
+
+  virtual bool WriteToFile(const string &output_filename);
+
+ private:
+  // Open the output file and write its header.
+  FILE *WriteHeader(const string &output_filename);
+
+  // Write the body of the profile in text format.
+  //
+  //    function1:total_samples:total_head_samples
+  //    offset1[.discriminator]: number_of_samples [fn1:num fn2:num ... ]
+  //    offset2[.discriminator]: number_of_samples [fn3:num fn4:num ... ]
+  //    ...
+  //    offsetN[.discriminator]: number_of_samples [fn5:num fn6:num ... ]
+  //
+  // Function names must be mangled in order for the profile loader to
+  // match them in the current translation unit. The two numbers in the
+  // function header specify how many total samples were accumulated in
+  // the function (first number), and the total number of samples accumulated
+  // at the prologue of the function (second number). This head sample
+  // count provides an indicator of how frequent is the function invoked.
+  //
+  // Each sampled line may contain several items. Some are optional
+  // (marked below):
+  //
+  // a- Source line offset. This number represents the line number
+  //    in the function where the sample was collected. The line number
+  //    is always relative to the line where symbol of the function
+  //    is defined. So, if the function has its header at line 280,
+  //    the offset 13 is at line 293 in the file.
+  //
+  // b- [OPTIONAL] Discriminator. This is used if the sampled program
+  //    was compiled with DWARF discriminator support
+  //    (http://wiki.dwarfstd.org/index.php?title=Path_Discriminators)
+  //
+  // c- Number of samples. This is the number of samples collected by
+  //    the profiler at this source location.
+  //
+  // d- [OPTIONAL] Potential call targets and samples. If present, this
+  //    line contains a call instruction. This models both direct and
+  //    indirect calls. Each called target is listed together with the
+  //    number of samples. For example,
+  //
+  //    130: 7  foo:3  bar:2  baz:7
+  //
+  //    The above means that at relative line offset 130 there is a
+  //    call instruction that calls one of foo(), bar() and baz(). With
+  //    baz() being the relatively more frequent call target.
+  void WriteProfile();
+
+  // Close the profile file and flush out any trailing data.
+  void WriteFinish();
+
+  FILE *outf_;
+
+  DISALLOW_COPY_AND_ASSIGN(LLVMProfileWriter);
+};
 }  // namespace autofdo
 
 #endif  // AUTOFDO_PROFILE_WRITER_H_
