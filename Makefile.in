@@ -33,7 +33,10 @@ POST_INSTALL = :
 NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
-bin_PROGRAMS = create_gcov$(EXEEXT) create_llvm_prof$(EXEEXT)
+bin_PROGRAMS = create_gcov$(EXEEXT) dump_gcov$(EXEEXT) \
+	sample_merger$(EXEEXT) profile_merger$(EXEEXT) \
+	profile_diff$(EXEEXT) profile_update$(EXEEXT) \
+	create_llvm_prof$(EXEEXT)
 subdir = .
 DIST_COMMON = README $(am__configure_deps) $(srcdir)/Makefile.am \
 	$(srcdir)/Makefile.in $(top_srcdir)/configure \
@@ -88,23 +91,42 @@ am_libsymbolize_a_OBJECTS = addr2line_inlinestack.$(OBJEXT) \
 libsymbolize_a_OBJECTS = $(am_libsymbolize_a_OBJECTS)
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
-am_create_gcov_OBJECTS = addr2line.$(OBJEXT) create_gcov.$(OBJEXT) \
-	gcov.$(OBJEXT) instruction_map.$(OBJEXT) \
-	llvm_profile_writer.$(OBJEXT) module_grouper.$(OBJEXT) \
-	profile_creator.$(OBJEXT) profile_writer.$(OBJEXT) \
-	sample_reader.$(OBJEXT) source_info.$(OBJEXT) \
-	symbol_map.$(OBJEXT) profile.$(OBJEXT)
-create_gcov_OBJECTS = $(am_create_gcov_OBJECTS)
-create_gcov_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
-	libgflags.a
-am_create_llvm_prof_OBJECTS = addr2line.$(OBJEXT) \
-	create_llvm_prof.$(OBJEXT) gcov.$(OBJEXT) \
+am__objects_1 = addr2line.$(OBJEXT) gcov.$(OBJEXT) \
 	instruction_map.$(OBJEXT) llvm_profile_writer.$(OBJEXT) \
 	module_grouper.$(OBJEXT) profile_creator.$(OBJEXT) \
 	profile_writer.$(OBJEXT) sample_reader.$(OBJEXT) \
 	source_info.$(OBJEXT) symbol_map.$(OBJEXT) profile.$(OBJEXT)
+am_create_gcov_OBJECTS = $(am__objects_1) create_gcov.$(OBJEXT)
+create_gcov_OBJECTS = $(am_create_gcov_OBJECTS)
+create_gcov_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+	libgflags.a
+am_create_llvm_prof_OBJECTS = $(am__objects_1) \
+	create_llvm_prof.$(OBJEXT)
 create_llvm_prof_OBJECTS = $(am_create_llvm_prof_OBJECTS)
 create_llvm_prof_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+	libgflags.a
+am_dump_gcov_OBJECTS = profile_reader.$(OBJEXT) symbol_map.$(OBJEXT) \
+	module_grouper.$(OBJEXT) gcov.$(OBJEXT) dump_gcov.$(OBJEXT)
+dump_gcov_OBJECTS = $(am_dump_gcov_OBJECTS)
+dump_gcov_DEPENDENCIES = libglog.a libgflags.a libsymbolize.a
+am_profile_diff_OBJECTS = $(am__objects_1) profile_reader.$(OBJEXT) \
+	profile_diff.$(OBJEXT)
+profile_diff_OBJECTS = $(am_profile_diff_OBJECTS)
+profile_diff_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+	libgflags.a
+am_profile_merger_OBJECTS = $(am__objects_1) profile_reader.$(OBJEXT) \
+	profile_merger.$(OBJEXT)
+profile_merger_OBJECTS = $(am_profile_merger_OBJECTS)
+profile_merger_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+	libgflags.a
+am_profile_update_OBJECTS = $(am__objects_1) profile_reader.$(OBJEXT) \
+	profile_update.$(OBJEXT)
+profile_update_OBJECTS = $(am_profile_update_OBJECTS)
+profile_update_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+	libgflags.a
+am_sample_merger_OBJECTS = $(am__objects_1) sample_merger.$(OBJEXT)
+sample_merger_OBJECTS = $(am_sample_merger_OBJECTS)
+sample_merger_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
 	libgflags.a
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)/glog/src
 depcomp = $(SHELL) $(top_srcdir)/depcomp
@@ -121,10 +143,16 @@ CCLD = $(CC)
 LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 SOURCES = $(libgflags_a_SOURCES) $(libglog_a_SOURCES) \
 	$(libquipper_a_SOURCES) $(libsymbolize_a_SOURCES) \
-	$(create_gcov_SOURCES) $(create_llvm_prof_SOURCES)
+	$(create_gcov_SOURCES) $(create_llvm_prof_SOURCES) \
+	$(dump_gcov_SOURCES) $(profile_diff_SOURCES) \
+	$(profile_merger_SOURCES) $(profile_update_SOURCES) \
+	$(sample_merger_SOURCES)
 DIST_SOURCES = $(libgflags_a_SOURCES) $(libglog_a_SOURCES) \
 	$(libquipper_a_SOURCES) $(libsymbolize_a_SOURCES) \
-	$(create_gcov_SOURCES) $(create_llvm_prof_SOURCES)
+	$(create_gcov_SOURCES) $(create_llvm_prof_SOURCES) \
+	$(dump_gcov_SOURCES) $(profile_diff_SOURCES) \
+	$(profile_merger_SOURCES) $(profile_update_SOURCES) \
+	$(sample_merger_SOURCES)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -257,17 +285,33 @@ top_srcdir = @top_srcdir@
 ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/glog/src
 AM_CXXFLAGS = -std=gnu++11
-create_gcov_SOURCES = addr2line.cc create_gcov.cc gcov.cc instruction_map.cc \
-                    llvm_profile_writer.cc module_grouper.cc \
-                    profile_creator.cc profile_writer.cc \
-                    sample_reader.cc source_info.cc symbol_map.cc profile.cc
+COMMON_PROFILE_CREATOR_FILES = addr2line.cc gcov.cc instruction_map.cc \
+                               llvm_profile_writer.cc module_grouper.cc \
+                               profile_creator.cc profile_writer.cc \
+                               sample_reader.cc source_info.cc symbol_map.cc \
+                               profile.cc
 
+create_gcov_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) create_gcov.cc
 create_gcov_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
-create_llvm_prof_SOURCES = addr2line.cc create_llvm_prof.cc gcov.cc \
-                instruction_map.cc llvm_profile_writer.cc module_grouper.cc \
-                profile_creator.cc profile_writer.cc sample_reader.cc \
-                source_info.cc symbol_map.cc profile.cc
+dump_gcov_SOURCES = profile_reader.cc symbol_map.cc module_grouper.cc gcov.cc \
+                    dump_gcov.cc
 
+dump_gcov_LDADD = libglog.a libgflags.a libsymbolize.a
+sample_merger_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) sample_merger.cc
+sample_merger_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+profile_merger_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
+                         profile_merger.cc
+
+profile_merger_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+profile_diff_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
+                       profile_diff.cc
+
+profile_diff_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+profile_update_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
+                         profile_update.cc
+
+profile_update_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) create_llvm_prof.cc
 create_llvm_prof_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 noinst_LIBRARIES = libquipper.a libglog.a libgflags.a libsymbolize.a
 libquipper_a_SOURCES = quipper/address_mapper.cc quipper/perf_reader.cc \
@@ -423,6 +467,21 @@ create_gcov$(EXEEXT): $(create_gcov_OBJECTS) $(create_gcov_DEPENDENCIES) $(EXTRA
 create_llvm_prof$(EXEEXT): $(create_llvm_prof_OBJECTS) $(create_llvm_prof_DEPENDENCIES) $(EXTRA_create_llvm_prof_DEPENDENCIES) 
 	@rm -f create_llvm_prof$(EXEEXT)
 	$(CXXLINK) $(create_llvm_prof_OBJECTS) $(create_llvm_prof_LDADD) $(LIBS)
+dump_gcov$(EXEEXT): $(dump_gcov_OBJECTS) $(dump_gcov_DEPENDENCIES) $(EXTRA_dump_gcov_DEPENDENCIES) 
+	@rm -f dump_gcov$(EXEEXT)
+	$(CXXLINK) $(dump_gcov_OBJECTS) $(dump_gcov_LDADD) $(LIBS)
+profile_diff$(EXEEXT): $(profile_diff_OBJECTS) $(profile_diff_DEPENDENCIES) $(EXTRA_profile_diff_DEPENDENCIES) 
+	@rm -f profile_diff$(EXEEXT)
+	$(CXXLINK) $(profile_diff_OBJECTS) $(profile_diff_LDADD) $(LIBS)
+profile_merger$(EXEEXT): $(profile_merger_OBJECTS) $(profile_merger_DEPENDENCIES) $(EXTRA_profile_merger_DEPENDENCIES) 
+	@rm -f profile_merger$(EXEEXT)
+	$(CXXLINK) $(profile_merger_OBJECTS) $(profile_merger_LDADD) $(LIBS)
+profile_update$(EXEEXT): $(profile_update_OBJECTS) $(profile_update_DEPENDENCIES) $(EXTRA_profile_update_DEPENDENCIES) 
+	@rm -f profile_update$(EXEEXT)
+	$(CXXLINK) $(profile_update_OBJECTS) $(profile_update_LDADD) $(LIBS)
+sample_merger$(EXEEXT): $(sample_merger_OBJECTS) $(sample_merger_DEPENDENCIES) $(EXTRA_sample_merger_DEPENDENCIES) 
+	@rm -f sample_merger$(EXEEXT)
+	$(CXXLINK) $(sample_merger_OBJECTS) $(sample_merger_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -436,6 +495,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/bytereader.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_llvm_prof.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dump_gcov.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dwarf2reader.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dwarf3ranges.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/elf_reader.Po@am__quote@
@@ -458,7 +518,12 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/perf_reader.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_creator.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_reader.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_writer.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_reader.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/source_info.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/symbol_map.Po@am__quote@
