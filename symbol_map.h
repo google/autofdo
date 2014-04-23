@@ -86,7 +86,7 @@ struct CallsiteLess {
       return c1.first < c2.first;
     if ((c1.second == NULL || c2.second == NULL))
       return c1.second < c2.second;
-    return strcmp(c1.second, c2.second);
+    return strcmp(c1.second, c2.second) < 0;
   }
 };
 class Symbol;

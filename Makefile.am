@@ -4,18 +4,43 @@ ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/glog/src
 AM_CXXFLAGS = -std=gnu++11
 
-bin_PROGRAMS=create_gcov
-create_gcov_SOURCES = addr2line.cc create_gcov.cc gcov.cc instruction_map.cc \
-                    llvm_profile_writer.cc module_grouper.cc \
-                    profile_creator.cc profile_writer.cc \
-                    sample_reader.cc source_info.cc symbol_map.cc profile.cc
+COMMON_PROFILE_CREATOR_FILES = addr2line.cc gcov.cc instruction_map.cc \
+                               llvm_profile_writer.cc module_grouper.cc \
+                               profile_creator.cc profile_writer.cc \
+                               sample_reader.cc source_info.cc symbol_map.cc \
+                               profile.cc
+
+
+bin_PROGRAMS = create_gcov
+create_gcov_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) create_gcov.cc
 create_gcov_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 
+bin_PROGRAMS += dump_gcov
+dump_gcov_SOURCES = profile_reader.cc symbol_map.cc module_grouper.cc gcov.cc \
+                    dump_gcov.cc
+dump_gcov_LDADD = libglog.a libgflags.a libsymbolize.a
+
+bin_PROGRAMS += sample_merger
+sample_merger_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) sample_merger.cc
+sample_merger_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+
+bin_PROGRAMS += profile_merger
+profile_merger_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
+                         profile_merger.cc
+profile_merger_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+
+bin_PROGRAMS += profile_diff
+profile_diff_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
+                       profile_diff.cc
+profile_diff_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+
+bin_PROGRAMS += profile_update
+profile_update_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
+                         profile_update.cc
+profile_update_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+
 bin_PROGRAMS += create_llvm_prof
-create_llvm_prof_SOURCES = addr2line.cc create_llvm_prof.cc gcov.cc \
-                instruction_map.cc llvm_profile_writer.cc module_grouper.cc \
-                profile_creator.cc profile_writer.cc sample_reader.cc \
-                source_info.cc symbol_map.cc profile.cc
+create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) create_llvm_prof.cc
 create_llvm_prof_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 
 noinst_LIBRARIES = libquipper.a
