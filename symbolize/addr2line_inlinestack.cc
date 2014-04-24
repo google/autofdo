@@ -60,6 +60,53 @@ bool InlineStackHandler::StartCompilationUnit(uint64 offset,
   return true;
 }
 
+void InlineStackHandler::CleanupUnusedSubprograms() {
+  SubprogramsByOffsetMap* subprograms_by_offset =
+      subprograms_by_offset_maps_.back();
+  vector<const SubprogramInfo *> worklist;
+  for (const auto &offset_subprogram : *subprograms_by_offset) {
+    if (offset_subprogram.second->used()) {
+      worklist.push_back(offset_subprogram.second);
+    }
+  }
+
+  while (worklist.size()) {
+    const SubprogramInfo *info = worklist.back();
+    worklist.pop_back();
+    uint64 specification = info->specification();
+    uint64 abstract_origin = info->abstract_origin();
+    if (specification) {
+      SubprogramInfo *info =
+          subprograms_by_offset->find(specification)->second;
+      if (!info->used()) {
+        info->set_used();
+        worklist.push_back(info);
+      }
+    }
+    if (abstract_origin) {
+      SubprogramInfo *info =
+          subprograms_by_offset->find(abstract_origin)->second;
+      if (!info->used()) {
+        info->set_used();
+        worklist.push_back(info);
+      }
+    }
+  }
+
+  // Moves the actually used subprograms into a new map so that we can remove
+  // the entire original map to free memory.
+  SubprogramsByOffsetMap* new_map = new SubprogramsByOffsetMap();
+  for (const auto &offset_subprogram : *subprograms_by_offset) {
+    if (offset_subprogram.second->used()) {
+      new_map->insert(offset_subprogram);
+    } else {
+      delete offset_subprogram.second;
+    }
+  }
+  delete subprograms_by_offset;
+  subprograms_by_offset_maps_.back() = new_map;
+}
+
 bool InlineStackHandler::StartDIE(uint64 offset,
                                   enum DwarfTag tag,
                                   const AttributeList& attrs) {
@@ -93,8 +140,18 @@ void InlineStackHandler::EndDIE(uint64 offset) {
   die_stack_.pop_back();
   if (die == DW_TAG_subprogram ||
       die == DW_TAG_inlined_subroutine) {
-    subprogram_insert_order_.push_back(subprogram_stack_.back());
+    // If the top level subprogram is used, we mark all subprograms in
+    // the subprogram_stack_ as used.
+    if (subprogram_stack_.front()->used()) {
+      subprogram_stack_.back()->set_used();
+    }
+    if (!sampled_functions_ || subprogram_stack_.front()->used()) {
+      subprogram_insert_order_.push_back(subprogram_stack_.back());
+    }
     subprogram_stack_.pop_back();
+  }
+  if (die == DW_TAG_compile_unit && sampled_functions_ != NULL) {
+    CleanupUnusedSubprograms();
   }
 }
 
@@ -171,6 +228,13 @@ void InlineStackHandler::ProcessAttributeUnsigned(
         break;
       case DW_AT_low_pc:
         subprogram_stack_.back()->SetSingletonRangeLow(data);
+        // If a symbol's start address is in sampled_functions, we will
+        // mark the top level subprogram of this symbol as used.
+        if (sampled_functions_ != NULL &&
+            subprogram_stack_.size() == 1 &&
+            sampled_functions_->find(data) != sampled_functions_->end()) {
+          subprogram_stack_.front()->set_used();
+        }
         break;
       case DW_AT_high_pc:
         subprogram_stack_.back()->SetSingletonRangeHigh(
@@ -181,6 +245,12 @@ void InlineStackHandler::ProcessAttributeUnsigned(
         AddressRangeList::RangeList ranges;
         address_ranges_->ReadRangeList(data, compilation_unit_base_, &ranges);
         subprogram_stack_.back()->SwapAddressRanges(&ranges);
+        if (sampled_functions_ != NULL &&
+            subprogram_stack_.size() == 1 &&
+            sampled_functions_->find(AddressRangeList::RangesMin(&ranges))
+                != sampled_functions_->end()) {
+          subprogram_stack_.front()->set_used();
+        }
         break;
       }
       case DW_AT_decl_line: {

@@ -44,9 +44,10 @@ class SubprogramInfo {
   SubprogramInfo(int cu_index, uint64 offset, const SubprogramInfo *parent,
                  bool inlined)
       : cu_index_(cu_index), offset_(offset), parent_(parent), name_(),
-        inlined_(inlined), comp_directory_(NULL),
+        address_ranges_(0), inlined_(inlined), comp_directory_(NULL),
         callsite_directory_(NULL), callsite_filename_(NULL), callsite_line_(0),
-        callsite_discr_(0), abstract_origin_(0), specification_(0) { }
+        callsite_discr_(0), abstract_origin_(0), specification_(0),
+        used_(false) { }
 
   const int cu_index() const { return cu_index_; }
 
@@ -89,6 +90,13 @@ class SubprogramInfo {
     return callsite_filename_;
   }
 
+  // Returns a string representing the filename of this callsite.
+  //
+  // Args:
+  //   basenames_only: just the filename
+  //   with_comp_dir: prepend the compilation dir, if we have it.
+  string CallsiteFilename(bool basenames_only, bool with_comp_dir) const;
+
   void set_callsite_line(uint32 line) { callsite_line_ = line; }
   uint32 callsite_line() const { return callsite_line_; }
 
@@ -103,6 +111,9 @@ class SubprogramInfo {
 
   void set_specification(uint64 offset) { specification_ = offset; }
   uint64 specification() const { return specification_; }
+
+  void set_used() { used_ = true; }
+  bool used() const { return used_; }
 
  private:
   int cu_index_;
@@ -120,6 +131,7 @@ class SubprogramInfo {
   uint32 callsite_discr_;
   uint64 abstract_origin_;
   uint64 specification_;
+  bool used_;
   DISALLOW_COPY_AND_ASSIGN(SubprogramInfo);
 };
 
@@ -139,7 +151,18 @@ class InlineStackHandler: public Dwarf2Handler {
       : directory_names_(NULL), file_names_(NULL), line_handler_(NULL),
         sections_(sections), reader_(reader), address_ranges_(address_ranges),
         cu_index_(-1), subprograms_by_offset_maps_(),
-        compilation_unit_comp_dir_()
+        compilation_unit_comp_dir_(), sampled_functions_(NULL)
+  { }
+
+  InlineStackHandler(
+      AddressRangeList *address_ranges,
+      const SectionMap& sections,
+      ByteReader *reader,
+      const map<uint64, uint64> *sampled_functions)
+      : directory_names_(NULL), file_names_(NULL), line_handler_(NULL),
+        sections_(sections), reader_(reader), address_ranges_(address_ranges),
+        cu_index_(-1), subprograms_by_offset_maps_(),
+        compilation_unit_comp_dir_(), sampled_functions_(sampled_functions)
   { }
 
   virtual bool StartCompilationUnit(uint64 offset, uint8 address_size,
@@ -183,6 +206,9 @@ class InlineStackHandler: public Dwarf2Handler {
   // Puts the start addresses of all inlined subprograms into the given set.
   void GetSubprogramAddresses(set<uint64> *addrs);
 
+  // Cleans up memory consumed by subprograms that are not used.
+  void CleanupUnusedSubprograms();
+
   void PopulateSubprogramsByAddress();
 
   ~InlineStackHandler();
@@ -209,7 +235,13 @@ class InlineStackHandler: public Dwarf2Handler {
   NonOverlappingRangeMap<SubprogramInfo*> subprograms_by_address_;
   uint64 compilation_unit_offset_;
   uint64 compilation_unit_base_;
+  // The comp dir name may come from a .dwo file's string table, which
+  // will be destroyed before we're done, so we need to copy it for
+  // each compilation unit.  We need to keep a vector of all the
+  // directories that we've seen, because SubprogramInfo keeps
+  // StringPiece objects pointing to these copies.
   vector<string*> compilation_unit_comp_dir_;
+  const map<uint64, uint64> *sampled_functions_;
   DISALLOW_COPY_AND_ASSIGN(InlineStackHandler);
 };
 

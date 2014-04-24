@@ -281,6 +281,11 @@ class SymbolMap {
   //   * re-groups the module from the updated module info.
   void UpdateSymbolMap(const string &binary, const Addr2line *addr2line);
 
+  // Returns a map from start addresses of functions that have been sampled to
+  // the size of the function.
+  ::map<uint64, uint64> GetSampledSymbolStartAddressSizeMap(
+      const set<uint64> &sampled_addrs) const;
+
   void Dump() const;
   void DumpFuncLevelProfileCompare(const SymbolMap &map) const;
 

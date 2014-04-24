@@ -56,6 +56,7 @@ class Profile {
   // Internal data structure that aggregates profile for each symbol.
   struct ProfileMaps {
     ProfileMaps(uint64 start, uint64 end) : start_addr(start), end_addr(end) {}
+    uint64 GetAggregatedCount() const;
     uint64 start_addr;
     uint64 end_addr;
     AddressCountMap address_count_map;

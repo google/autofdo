@@ -78,12 +78,25 @@ void Profile::AggregatePerFunctionProfile() {
   }
 }
 
+uint64 Profile::ProfileMaps::GetAggregatedCount() const {
+  uint64 ret = 0;
+
+  if (range_count_map.size() > 0) {
+    for (const auto &range_count : range_count_map) {
+      ret += range_count.second;
+    }
+  } else {
+    for (const auto &addr_count : address_count_map) {
+      ret += addr_count.second;
+    }
+  }
+  return ret;
+}
+
 void Profile::ProcessPerFunctionProfile(string func_name,
                                         const ProfileMaps &maps) {
-  if (sample_reader_->GetAggregateSampleCount(
-      maps.start_addr - symbol_map_->base_addr(),
-      maps.end_addr - symbol_map_->base_addr())
-      <= sample_reader_->GetMaxCount() / FLAGS_sample_threshold) {
+  if (maps.GetAggregatedCount() <=
+      sample_reader_->GetMaxCount() / FLAGS_sample_threshold) {
     return;
   }
 

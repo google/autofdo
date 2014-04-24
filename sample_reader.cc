@@ -51,25 +51,18 @@ string GetFileNameFromBuildID(quipper::PerfParser *parser,
 }  // namespace
 
 namespace autofdo {
-uint64 SampleReader::GetAggregateSampleCount(uint64 addr_low,
-                                             uint64 addr_high) const {
-  uint64 ret = 0;
-
+set<uint64> SampleReader::GetSampledAddresses() const {
+  set<uint64> addrs;
   if (range_count_map_.size() > 0) {
     for (const auto &range_count : range_count_map_) {
-      if (range_count.first.first >= addr_low
-          && range_count.first.first < addr_high) {
-        ret += range_count.second;
-      }
+      addrs.insert(range_count.first.first);
     }
   } else {
     for (const auto &addr_count : address_count_map_) {
-      if (addr_count.first >= addr_low && addr_count.first < addr_high) {
-        ret += addr_count.second;
-      }
+      addrs.insert(addr_count.first);
     }
   }
-  return ret;
+  return addrs;
 }
 
 uint64 SampleReader::GetSampleCountOrZero(uint64 addr) const {

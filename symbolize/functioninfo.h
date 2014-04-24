@@ -112,6 +112,10 @@ class CULineInfoHandler: public LineInfoHandler {
   CULineInfoHandler(FileVector* files,
                     DirectoryVector* dirs,
                     AddressToLineMap* linemap);
+  CULineInfoHandler(FileVector* files,
+                    DirectoryVector* dirs,
+                    AddressToLineMap* linemap,
+                    const map<uint64, uint64> *sampled_functions);
   virtual ~CULineInfoHandler() { }
 
   // Called when we define a directory.  We just place NAME into dirs_
@@ -139,9 +143,14 @@ class CULineInfoHandler: public LineInfoHandler {
   static string MergedFilename(const DirectoryFilePair& filename);
 
  private:
+  void Init();
+  // Returns true if address should be added to linemap_.
+  bool ShouldAddAddress(uint64 address) const;
+
   AddressToLineMap* linemap_;
   FileVector* files_;
   DirectoryVector* dirs_;
+  const map<uint64, uint64> *sampled_functions_;
   DISALLOW_EVIL_CONSTRUCTORS(CULineInfoHandler);
 };
 

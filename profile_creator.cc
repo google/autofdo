@@ -86,14 +86,18 @@ bool ProfileCreator::ReadSample(const string &input_profile_name,
 
 bool ProfileCreator::CreateProfileFromSample(const string &output_profile_name,
                                              const string &output_format) {
-  Addr2line *addr2line =Addr2line::Create(binary_);
+  SymbolMap symbol_map(binary_);
+  set<uint64> sampled_addrs = sample_reader_->GetSampledAddresses();;
+  map<uint64, uint64> sampled_functions =
+      symbol_map.GetSampledSymbolStartAddressSizeMap(sampled_addrs);
+  Addr2line *addr2line =Addr2line::CreateWithSampledFunctions(
+      binary_, &sampled_functions);
 
   if (addr2line == NULL) {
     LOG(ERROR) << "Error reading binary " << binary_;
     return false;
   }
 
-  SymbolMap symbol_map(binary_);
   Profile profile(sample_reader_, binary_, addr2line, &symbol_map);
   profile.ComputeProfile();
 

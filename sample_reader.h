@@ -18,6 +18,7 @@
 #define AUTOFDO_SAMPLE_READER_H_
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 #include <utility>
@@ -58,10 +59,8 @@ class SampleReader {
     return branch_count_map_;
   }
 
-  // For a given address range [addr_low, addr_high], returns the sum of
-  // aggregated counts for all instructions within the range. This is
-  // typically used to check if a function is hot enough to be disassembled.
-  uint64 GetAggregateSampleCount(uint64 addr_low, uint64 addr_high) const;
+  set<uint64> GetSampledAddresses() const;
+
   // Returns the sample count for a given instruction.
   uint64 GetSampleCountOrZero(uint64 addr) const;
   // Returns the total sampled count.
