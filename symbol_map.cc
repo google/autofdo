@@ -74,7 +74,7 @@ ProfileInfo& ProfileInfo::operator+=(const ProfileInfo &s) {
 }
 
 struct TargetCountCompare {
-  bool operator()(const TargetCountPair &t1, const TargetCountPair &t2) {
+  bool operator()(const TargetCountPair &t1, const TargetCountPair &t2) const {
     if (t1.second != t2.second) {
       return t1.second > t2.second;
     } else {
@@ -560,5 +560,28 @@ void SymbolMap::ComputeWorkingSets() {
     accumulated_inst += num_inst;
     accumulated_count += num_inst * count;
   }
+}
+
+::map<uint64, uint64> SymbolMap::GetSampledSymbolStartAddressSizeMap(
+    const set<uint64> &sampled_addrs) const {
+  // We depend on the fact that sampled_addrs is an ordered set.
+  ::map<uint64, uint64> ret;
+  uint64 next_start_addr = 0;
+  for (const auto &addr : sampled_addrs) {
+    uint64 adjusted_addr = addr + base_addr_;
+    if (adjusted_addr < next_start_addr) {
+      continue;
+    }
+
+    AddressSymbolMap::const_iterator iter =
+        address_symbol_map_.upper_bound(adjusted_addr);
+    if (iter == address_symbol_map_.begin()) {
+      continue;
+    }
+    iter--;
+    ret.insert(make_pair(iter->first, iter->second.second));
+    next_start_addr = iter->first + iter->second.second;
+  }
+  return ret;
 }
 }  // namespace autofdo

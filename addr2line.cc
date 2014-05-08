@@ -57,7 +57,12 @@ void GetSection(const autofdo::SectionMap &sections,
 namespace autofdo {
 
 Addr2line *Addr2line::Create(const string &binary_name) {
-  Addr2line *addr2line = new Google3Addr2line(binary_name);
+  return CreateWithSampledFunctions(binary_name, NULL);
+}
+
+Addr2line *Addr2line::CreateWithSampledFunctions(
+    const string &binary_name, const map<uint64, uint64> *sampled_functions) {
+  Addr2line *addr2line = new Google3Addr2line(binary_name, sampled_functions);
   if (!addr2line->Prepare()) {
     delete addr2line;
     return NULL;
@@ -66,9 +71,11 @@ Addr2line *Addr2line::Create(const string &binary_name) {
   }
 }
 
-Google3Addr2line::Google3Addr2line(const string &binary_name)
+Google3Addr2line::Google3Addr2line(const string &binary_name,
+                                   const map<uint64, uint64> *sampled_functions)
     : Addr2line(binary_name), line_map_(new AddressToLineMap()),
-      inline_stack_handler_(NULL), elf_(new ElfReader(binary_name)) {}
+      inline_stack_handler_(NULL), elf_(new ElfReader(binary_name)),
+      sampled_functions_(sampled_functions) {}
 
 Google3Addr2line::~Google3Addr2line() {
   delete line_map_;
@@ -115,7 +122,7 @@ bool Google3Addr2line::Prepare() {
                                                 debug_ranges_size,
                                                 &reader);
   inline_stack_handler_ = new InlineStackHandler(
-      &debug_ranges, sections, &reader);
+      &debug_ranges, sections, &reader, sampled_functions_);
 
   // Extract the line information
   // If .debug_info section is available, we will locate .debug_line using
@@ -126,7 +133,7 @@ bool Google3Addr2line::Prepare() {
     while (debug_info_pos < debug_info_size) {
       DirectoryVector dirs;
       FileVector files;
-      CULineInfoHandler handler(&files, &dirs, line_map_);
+      CULineInfoHandler handler(&files, &dirs, line_map_, sampled_functions_);
       inline_stack_handler_->set_directory_names(&dirs);
       inline_stack_handler_->set_file_names(&files);
       inline_stack_handler_->set_line_handler(&handler);

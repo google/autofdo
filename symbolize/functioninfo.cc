@@ -35,13 +35,42 @@ namespace autofdo {
 CULineInfoHandler::CULineInfoHandler(FileVector* files,
                                      DirectoryVector* dirs,
                                      AddressToLineMap* linemap)
-    : linemap_(linemap), files_(files), dirs_(dirs) {
+    : linemap_(linemap), files_(files), dirs_(dirs),
+      sampled_functions_(NULL) {
+  Init();
+}
+
+CULineInfoHandler::CULineInfoHandler(
+    FileVector* files,
+    DirectoryVector* dirs,
+    AddressToLineMap* linemap,
+    const map<uint64, uint64> *sampled_functions)
+    : linemap_(linemap), files_(files), dirs_(dirs),
+      sampled_functions_(sampled_functions) {
+  Init();
+}
+void CULineInfoHandler::Init() {
   // The dirs and files are 1 indexed, so just make sure we put
   // nothing in the 0 vector.
-  CHECK_EQ(dirs->size(), 0);
-  CHECK_EQ(files->size(), 0);
-  dirs->push_back("");
-  files->push_back(make_pair(0, ""));
+  CHECK_EQ(dirs_->size(), 0);
+  CHECK_EQ(files_->size(), 0);
+  dirs_->push_back("");
+  files_->push_back(make_pair(0, ""));
+}
+
+bool CULineInfoHandler::ShouldAddAddress(uint64 address) const {
+  // Looks for the first entry above the given address, then decrement the
+  // iterator, then check that it's within the range [start, start + len).
+  if (sampled_functions_ == NULL) {
+    return true;
+  }
+  map<uint64, uint64>::const_iterator iter = sampled_functions_->upper_bound(
+      address);
+  if (iter == sampled_functions_->begin()) {
+    return false;
+  }
+  --iter;
+  return address < iter->first + iter->second;
 }
 
 void CULineInfoHandler::DefineDir(const char *name, uint32 dir_num) {
@@ -66,6 +95,9 @@ void CULineInfoHandler::DefineFile(const char *name,
 void CULineInfoHandler::AddLine(uint64 address, uint32 file_num,
                                 uint32 line_num, uint32 column_num,
                                 uint32 discriminator) {
+  if (!ShouldAddAddress(address)) {
+    return;
+  }
   if (file_num < files_->size()) {
     const pair<int, const char *>& file = (*files_)[file_num];
     if (file.first < dirs_->size()) {
