@@ -144,15 +144,12 @@ class TextSampleReaderWriter : public FileSampleReader {
 class PerfDataSampleReader : public FileSampleReader {
  public:
   explicit PerfDataSampleReader(const string &profile_file,
-                                const string &re,
-                                const string &build_id) :
-     FileSampleReader(profile_file), focus_binary_re_(re),
-     build_id_(build_id) { }
+                                const string &re) :
+     FileSampleReader(profile_file), focus_binary_re_(re) { }
   virtual bool Append(const string &profile_file);
 
  private:
   const string focus_binary_re_;
-  const string build_id_;
 
   DISALLOW_COPY_AND_ASSIGN(PerfDataSampleReader);
 };
