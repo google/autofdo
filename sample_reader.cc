@@ -28,26 +28,6 @@ namespace {
 bool MatchBinary(const string &name, const string &full_name) {
     return full_name == basename(name.c_str());
 }
-
-// Returns the binary file name for a given build_id.
-// TODO(dehao): move this function to quipper::PerfParser.
-string GetFileNameFromBuildID(quipper::PerfParser *parser,
-                              const string &build_id) {
-  map<string, string> name_buildid_map;
-  parser->GetFilenamesToBuildIDs(&name_buildid_map);
-
-  string focus_binary;
-  for (const auto &name_buildid : name_buildid_map) {
-    if (name_buildid.second == build_id) {
-      focus_binary = name_buildid.first;
-      break;
-    }
-  }
-  if (focus_binary == "") {
-    LOG(ERROR) << "Cannot find binary with buildid " << build_id;
-  }
-  return focus_binary;
-}
 }  // namespace
 
 namespace autofdo {
@@ -225,13 +205,7 @@ bool PerfDataSampleReader::Append(const string &profile_file) {
     return false;
   }
 
-  string focus_binary;
-  if (build_id_ != "") {
-    focus_binary = GetFileNameFromBuildID(&parser, build_id_);
-  } else {
-    focus_binary = focus_binary_re_;
-    LOG(ERROR) << "No buildid found in binary";
-  }
+  string focus_binary = focus_binary_re_;
 
   // If we can find build_id from binary, and the exact build_id was found
   // in the profile, then we use focus_binary to match samples. Otherwise,

@@ -55,7 +55,6 @@ bool ProfileCreator::CreateProfile(const string &input_profile_name,
 bool ProfileCreator::ReadSample(const string &input_profile_name,
                                 const string &profiler) {
   if (profiler == "perf") {
-    string build_id;
     // Sets the regular expression to filter samples for a given binary.
     char *dup_name = strdup(binary_.c_str());
     char *strip_ptr = strstr(dup_name, ".unstripped");
@@ -66,10 +65,9 @@ bool ProfileCreator::ReadSample(const string &input_profile_name,
     CHECK(file_base_name) << "Cannot find basename for: " << binary_;
 
     ElfReader reader(binary_);
-    build_id = reader.GetBuildId();
 
     sample_reader_ = new PerfDataSampleReader(
-        input_profile_name, file_base_name, build_id);
+        input_profile_name, file_base_name);
     free(dup_name);
   } else if (profiler == "text") {
     sample_reader_ = new TextSampleReaderWriter(input_profile_name);
