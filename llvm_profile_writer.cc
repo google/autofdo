@@ -57,8 +57,20 @@ class LLVMSourceProfileWriter : public SymbolTraverser {
       }
       positions.push_back(pos_count.first);
     }
-    sort(positions.begin(), positions.end());
 
+    // Similarly, do not waste time emitting profiles for
+    // functions that have no counts in them.
+    if (positions.empty())
+      return;
+
+    // Clang does not generate a name for the implicit ctor of anonymous
+    // structs, so there won't be a name to attach the samples to. If
+    // the name of this function is empty, ignore it.
+    if (strlen(node->info.func_name) == 0)
+      return;
+
+    // We have samples inside the function body. Write them out.
+    sort(positions.begin(), positions.end());
     fprintf(outf_, "%s:%llu:%llu\n", node->info.func_name, node->total_count,
             node->head_count);
 
