@@ -239,6 +239,15 @@ class SymbolIterator {
   DISALLOW_EVIL_CONSTRUCTORS(SymbolIterator);
 };
 
+// Copied from strings/strutil.h.  Per chatham,
+// this library should not depend on strings.
+
+static inline bool MyHasSuffixString(const string& str, const string& suffix) {
+  int len = str.length();
+  int suflen = suffix.length();
+  return (suflen <= len) && (str.compare(len-suflen, suflen, suffix) == 0);
+}
+
 
 // ElfReader loads an ELF binary and can provide information about its
 // contents. It is most useful for matching addresses to function
@@ -257,6 +266,7 @@ class ElfReaderImpl {
     CHECK_GE(fd_, 0);
     string error;
     CHECK(IsArchElfFile(fd, &error)) << " Could not parse file: " << error;
+    is_dwp_ = MyHasSuffixString(path, ".dwp");
     ParseHeaders(fd, path);
   }
 
@@ -364,9 +374,13 @@ class ElfReaderImpl {
   const char *GetSectionContentsByName(const string &section_name,
                                        size_t *size) {
     for (int k = 0; k < GetNumSections(); ++k) {
-      const char *name = GetSectionName(section_headers_[k].sh_name);
-      if (name != NULL && section_name == name) {
-        const ElfSectionReader<ElfArch> *section = GetSection(k);
+      // When searching for sections in a .dwp file, the sections
+      // we're looking for will always be at the end of the section
+      // table, so reverse the direction of iteration.
+      int shndx = is_dwp_ ? GetNumSections() - k - 1 : k;
+      const char *name = GetSectionName(section_headers_[shndx].sh_name);
+      if (name != NULL && ElfReader::SectionNamesMatch(section_name, name)) {
+        const ElfSectionReader<ElfArch> *section = GetSection(shndx);
         if (section == NULL) {
           return NULL;
         } else {
@@ -383,9 +397,13 @@ class ElfReaderImpl {
   const char *GetSectionInfoByName(const string &section_name,
                                    ElfReader::SectionInfo *info) {
     for (int k = 0; k < GetNumSections(); ++k) {
-      const char *name = GetSectionName(section_headers_[k].sh_name);
-      if (name != NULL && section_name == name) {
-        const ElfSectionReader<ElfArch> *section = GetSection(k);
+      // When searching for sections in a .dwp file, the sections
+      // we're looking for will always be at the end of the section
+      // table, so reverse the direction of iteration.
+      int shndx = is_dwp_ ? GetNumSections() - k - 1 : k;
+      const char *name = GetSectionName(section_headers_[shndx].sh_name);
+      if (name != NULL && ElfReader::SectionNamesMatch(section_name, name)) {
+        const ElfSectionReader<ElfArch> *section = GetSection(shndx);
         if (section == NULL) {
           return NULL;
         } else {
@@ -427,8 +445,10 @@ class ElfReaderImpl {
   // info are prefixed by ".debug".  The names are not specified, but they
   // look like ".debug_line", ".debug_info", etc.
   bool HasDebugSections() {
-    for (int k = 0; k < GetNumSections(); ++k) {
-      const char* name = GetSectionName(section_headers_[k].sh_name);
+    // Debug sections are likely to be near the end, so reverse the
+    // direction of iteration.
+    for (int k = GetNumSections() - 1; k >= 0; --k) {
+      const char *name = GetSectionName(section_headers_[k].sh_name);
       if (strncmp(name, ".debug", strlen(".debug")) == 0)
         return true;
     }
@@ -499,9 +519,17 @@ class ElfReaderImpl {
   // be freed when this object is destroyed.
   const ElfSectionReader<ElfArch> *GetSection(int num) {
     CHECK_LT(num, GetNumSections());
+    const char *name;
+    // Hard-coding the name for the section-name string table prevents
+    // infinite recursion.
+    if (num == GetStringTableIndex())
+      name = ".shstrtab";
+    else
+      name = GetSectionNameByIndex(num);
     ElfSectionReader<ElfArch> *& reader = sections_[num];
     if (reader == NULL)
-      reader = new ElfSectionReader<ElfArch>(path_, fd_, section_headers_[num]);
+      reader = new ElfSectionReader<ElfArch>(path_, fd_,
+                                             section_headers_[num]);
     return reader;
   }
 
@@ -617,17 +645,11 @@ class ElfReaderImpl {
   // destroyed.
   vector<ElfSectionReader<ElfArch>*> sections_;
 
+  // True if this is a .dwp file.
+  bool is_dwp_;
+
   DISALLOW_EVIL_CONSTRUCTORS(ElfReaderImpl);
 };
-
-// Copied from strings/strutil.h.  Per chatham,
-// this library should not depend on strings.
-
-static inline bool MyHasSuffixString(const string& str, const string& suffix) {
-  int len = str.length();
-  int suflen = suffix.length();
-  return (suflen <= len) && (str.compare(len-suflen, suflen, suffix) == 0);
-}
 
 ElfReader::ElfReader(const string &path)
     : path_(path), fd_(-1), impl32_(NULL), impl64_(NULL) {
@@ -774,6 +796,15 @@ const char *ElfReader::GetSectionInfoByName(const string &section_name,
     LOG(ERROR) << "not an elf binary: " << path_;
     return NULL;
   }
+}
+
+bool ElfReader::SectionNamesMatch(const string &name, const string &sh_name) {
+  if ((name.find(".debug_", 0) == 0) && (sh_name.find(".zdebug_", 0) == 0)) {
+    const string name_suffix(name, strlen(".debug_"));
+    const string sh_name_suffix(sh_name, strlen(".zdebug_"));
+    return name_suffix == sh_name_suffix;
+  }
+  return name == sh_name;
 }
 
 string ElfReader::GetBuildId() {
