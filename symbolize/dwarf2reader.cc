@@ -103,6 +103,9 @@ void CompilationUnit::ReadAbbrevs() {
   SectionMap::const_iterator iter = sections_.find(".debug_abbrev");
   CHECK(iter != sections_.end());
 
+  if (abbrevs_) {
+    delete abbrevs_;
+  }
   abbrevs_ = new vector<Abbrev>;
   abbrevs_->resize(1);
 
@@ -314,6 +317,36 @@ void CompilationUnit::ReadHeader() {
     malformed_ = true;
     return;
   }
+}
+
+uint64 CompilationUnit::Start(uint64 offset) {
+  // Reset all members except for construction parameters and *dwp*.
+  if (abbrevs_) {
+    delete abbrevs_;
+  }
+  abbrevs_ = NULL;
+
+  offset_from_section_start_ = offset;
+
+  string_buffer_ = NULL;
+  string_buffer_length_ = 0;
+
+  str_offsets_buffer_ = NULL;
+  str_offsets_buffer_length_ = 0;
+
+  addr_buffer_ = NULL;
+  addr_buffer_length_ = 0;
+
+  after_header_ = NULL;
+  malformed_ = false;
+
+  dwo_id_ = 0;
+  dwo_name_ = NULL;
+
+  ranges_base_ = 0;
+  addr_base_ = 0;
+
+  return Start();
 }
 
 uint64 CompilationUnit::Start() {
@@ -728,8 +761,11 @@ void CompilationUnit::ReadDebugSectionsFromDwo(ElfReader* elf_reader,
 DwpReader::DwpReader(const ByteReader& byte_reader, ElfReader* elf_reader)
     : elf_reader_(elf_reader), byte_reader_(byte_reader),
       cu_index_(NULL), cu_index_size_(0), string_buffer_(NULL),
-      string_buffer_size_(0), version_(0), nslots_(0),
-      phash_(NULL), pindex_(NULL), shndx_pool_(NULL) {}
+      string_buffer_size_(0), version_(0), ncolumns_(0), nunits_(0),
+      nslots_(0), phash_(NULL), pindex_(NULL), shndx_pool_(NULL),
+      offset_table_(NULL), size_table_(NULL), abbrev_data_(NULL),
+      abbrev_size_(0), info_data_(NULL), info_size_(0),
+      str_offsets_data_(NULL), str_offsets_size_(0) {}
 
 DwpReader::~DwpReader() {
   if (elf_reader_) delete elf_reader_;
@@ -756,6 +792,23 @@ void DwpReader::Initialize() {
       LOG(WARNING) << ".debug_cu_index is corrupt";
       version_ = 0;
     }
+  } else if (version_ == 2) {
+    ncolumns_ = byte_reader_.ReadFourBytes(cu_index_ + sizeof(uint32));
+    nunits_ = byte_reader_.ReadFourBytes(cu_index_ + 2 * sizeof(uint32));
+    nslots_ = byte_reader_.ReadFourBytes(cu_index_ + 3 * sizeof(uint32));
+    phash_ = cu_index_ + 4 * sizeof(uint32);
+    pindex_ = phash_ + nslots_ * sizeof(uint64);
+    offset_table_ = pindex_ + nslots_ * sizeof(uint32);
+    size_table_ = offset_table_ + ncolumns_ * (nunits_ + 1) * sizeof(uint32);
+    abbrev_data_ = elf_reader_->GetSectionByName(".debug_abbrev.dwo",
+                                                 &abbrev_size_);
+    info_data_ = elf_reader_->GetSectionByName(".debug_info.dwo", &info_size_);
+    str_offsets_data_ = elf_reader_->GetSectionByName(".debug_str_offsets.dwo",
+                                                      &str_offsets_size_);
+    if (size_table_ >= cu_index_ + cu_index_size_) {
+      LOG(WARNING) << ".debug_cu_index is corrupt";
+      version_ = 0;
+    }
   } else {
     LOG(WARNING) << "Unexpected version number in .dwp file.";
   }
@@ -779,6 +832,7 @@ void DwpReader::ReadDebugSectionsForCU(uint64 dwo_id,
     for (;;) {
       if (shndx_list >= cu_index_ + cu_index_size_) {
         LOG(WARNING) << ".debug_cu_index is corrupt";
+        version_ = 0;
         return;
       }
       unsigned int shndx = byte_reader_.ReadFourBytes(shndx_list);
@@ -807,15 +861,59 @@ void DwpReader::ReadDebugSectionsForCU(uint64 dwo_id,
     }
     sections->insert(make_pair(".debug_str",
                                make_pair(string_buffer_, string_buffer_size_)));
+  } else if (version_ == 2) {
+    uint32 index = LookupCUv2(dwo_id);
+    if (index == 0) {
+      LOG(WARNING) << "dwo_id 0x" << hex << dwo_id <<
+                      " not found in .dwp file.";
+      return;
+    }
+
+    // The index points to a row in each of the section offsets table
+    // and the section size table, where we can read the offsets and sizes
+    // of the contributions to each debug section from the CU whose dwo_id
+    // we are looking for. Row 0 of the section offsets table has the
+    // section ids for each column of the table. The size table begins
+    // with row 1.
+    const char* id_row = offset_table_;
+    const char* offset_row = offset_table_ + index * ncolumns_ * sizeof(uint32);
+    const char* size_row =
+        size_table_ + (index - 1) * ncolumns_ * sizeof(uint32);
+    if (size_row + ncolumns_ * sizeof(uint32) > cu_index_ + cu_index_size_) {
+      LOG(WARNING) << ".debug_cu_index is corrupt";
+      version_ = 0;
+      return;
+    }
+    for (int col = 0; col < ncolumns_; ++col) {
+      uint32 section_id =
+          byte_reader_.ReadFourBytes(id_row + col * sizeof(uint32));
+      uint32 offset =
+          byte_reader_.ReadFourBytes(offset_row + col * sizeof(uint32));
+      uint32 size =
+          byte_reader_.ReadFourBytes(size_row + col * sizeof(uint32));
+      if (section_id == DW_SECT_ABBREV) {
+        sections->insert(make_pair(".debug_abbrev",
+                                   make_pair(abbrev_data_ + offset, size)));
+      } else if (section_id == DW_SECT_INFO) {
+        sections->insert(make_pair(".debug_info",
+                                   make_pair(info_data_ + offset, size)));
+      } else if (section_id == DW_SECT_STR_OFFSETS) {
+        sections->insert(make_pair(".debug_str_offsets",
+                                   make_pair(str_offsets_data_ + offset,
+                                             size)));
+      }
+    }
+    sections->insert(make_pair(".debug_str",
+                               make_pair(string_buffer_, string_buffer_size_)));
   }
 }
 
 int DwpReader::LookupCU(uint64 dwo_id) {
-  unsigned int slot = static_cast<unsigned int>(dwo_id) & (nslots_ - 1);
+  uint32 slot = static_cast<uint32>(dwo_id) & (nslots_ - 1);
   uint64 probe = byte_reader_.ReadEightBytes(phash_ + slot * sizeof(uint64));
   if (probe != 0 && probe != dwo_id) {
-    unsigned int secondary_hash =
-        (static_cast<unsigned int>(dwo_id >> 32) & (nslots_ - 1)) | 1;
+    uint32 secondary_hash =
+        (static_cast<uint32>(dwo_id >> 32) & (nslots_ - 1)) | 1;
     do {
       slot = (slot + secondary_hash) & (nslots_ - 1);
       probe = byte_reader_.ReadEightBytes(phash_ + slot * sizeof(uint64));
@@ -824,6 +922,22 @@ int DwpReader::LookupCU(uint64 dwo_id) {
   if (probe == 0)
     return -1;
   return slot;
+}
+
+uint32 DwpReader::LookupCUv2(uint64 dwo_id) {
+  uint32 slot = static_cast<uint32>(dwo_id) & (nslots_ - 1);
+  uint64 probe = byte_reader_.ReadEightBytes(phash_ + slot * sizeof(uint64));
+  uint32 index = byte_reader_.ReadFourBytes(pindex_ + slot * sizeof(uint32));
+  if (index != 0 && probe != dwo_id) {
+    uint32 secondary_hash =
+        (static_cast<uint32>(dwo_id >> 32) & (nslots_ - 1)) | 1;
+    do {
+      slot = (slot + secondary_hash) & (nslots_ - 1);
+      probe = byte_reader_.ReadEightBytes(phash_ + slot * sizeof(uint64));
+      index = byte_reader_.ReadFourBytes(pindex_ + slot * sizeof(uint32));
+    } while (index != 0 && probe != dwo_id);
+  }
+  return index;
 }
 
 LineInfo::LineInfo(const char* buffer, uint64 buffer_length,

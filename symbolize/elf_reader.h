@@ -128,6 +128,12 @@ class ElfReader {
   // false for binaries passed through "strip -S".
   static bool IsNonDebugStrippedELFBinary(const string &path);
 
+  // Match a requested section name with the section name as it
+  // appears in the elf-file, adjusting for compressed debug section
+  // names.  For example, returns true if name == ".debug_abbrev" and
+  // sh_name == ".zdebug_abbrev"
+  static bool SectionNamesMatch(const string &name, const string &sh_name);
+
  private:
   // Lazily initialize impl32_ and return it.
   ElfReaderImpl<Elf32> *GetImpl32();

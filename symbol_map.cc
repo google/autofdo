@@ -33,8 +33,11 @@ namespace {
 inline bool HasSuffixString(const string &str,
                             const string &suffix) {
   uint32 len = suffix.size();
-  uint32 offset = str.size() - suffix.size();
-  return str.substr(offset, len) == suffix;
+  uint32 str_len = str.size();
+  if (str_len <= len) {
+    return false;
+  }
+  return str.substr(str_len - len, len) == suffix;
 }
 
 string GetOriginalName(const char *name) {

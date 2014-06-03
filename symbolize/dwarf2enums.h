@@ -582,5 +582,17 @@ enum DwarfOpcode {
   DW_OP_GNU_const_index              =0xfc
 };
 
+// Section identifiers for DWP files
+enum DwarfSectionId {
+  DW_SECT_INFO = 1,
+  DW_SECT_TYPES = 2,
+  DW_SECT_ABBREV = 3,
+  DW_SECT_LINE = 4,
+  DW_SECT_LOC = 5,
+  DW_SECT_STR_OFFSETS = 6,
+  DW_SECT_MACINFO = 7,
+  DW_SECT_MACRO = 8
+};
+
 }  // namespace autofdo
 #endif  // AUTOFDO_SYMBOLIZE_DWARF2ENUMS_H__
