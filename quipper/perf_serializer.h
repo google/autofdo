@@ -2,18 +2,62 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PERF_SERIALIZER_H_
-#define PERF_SERIALIZER_H_
+#ifndef CHROMIUMOS_WIDE_PROFILING_PERF_SERIALIZER_H_
+#define CHROMIUMOS_WIDE_PROFILING_PERF_SERIALIZER_H_
 
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 
 #include "perf_parser.h"
 #include "quipper_proto.h"
 
 namespace quipper {
+
+class PerfSerializer;
+
+// Functor to serialize a vector of perf structs to a Proto repeated field,
+// using a method serializes one such item.
+// Overriding RefT allows serializing a vector of pointers to struct with
+// a serialize member fuction that takes const T* (instead of T*const&).
+template <typename Proto, typename T, typename RefT = const T&>
+struct VectorSerializer {
+  bool operator()(const std::vector<T>& from,
+                  RepeatedPtrField<Proto>* to) const {
+    to->Reserve(from.size());
+    for (size_t i = 0; i != from.size(); ++i) {
+      Proto* to_element = to->Add();
+      if (to_element == NULL) {
+        return false;
+      }
+      if (!(p->*serialize)(from[i], to_element)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  const PerfSerializer* p;
+  bool (PerfSerializer::*serialize)(RefT, Proto*) const;
+};
+
+// Functor to deserialize a Proto repeated field to a vector of perf structs,
+// using a method that deserializes one Proto.
+template <typename Proto, typename T>
+struct VectorDeserializer {
+  bool operator()(const RepeatedPtrField<Proto>& from,
+                  std::vector<T>* to) const {
+    to->resize(from.size());
+    for (int i = 0; i != from.size(); ++i) {
+      if (!(p->*deserialize)(from.Get(i), &(*to)[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  const PerfSerializer* p;
+  bool (PerfSerializer::*deserialize)(const Proto&, T*) const;
+};
 
 class PerfSerializer : public PerfParser {
  public:
@@ -34,6 +78,10 @@ class PerfSerializer : public PerfParser {
   // Reads in contents of protobuf to store locally.  Does not write to any
   // output files.
   bool Deserialize(const quipper::PerfDataProto& perf_data_proto);
+
+  void set_serialize_sorted_events(bool sorted) {
+    serialize_sorted_events_ = sorted;
+  }
 
  private:
   bool SerializePerfFileAttr(
@@ -59,6 +107,9 @@ class PerfSerializer : public PerfParser {
 
   bool SerializeEvent(const ParsedEvent& event,
                       quipper::PerfDataProto_PerfEvent* event_proto) const;
+  bool SerializeEventPointer(
+      const ParsedEvent* event,
+      quipper::PerfDataProto_PerfEvent* event_proto) const;
   bool DeserializeEvent(
       const quipper::PerfDataProto_PerfEvent& event_proto,
       ParsedEvent* event) const;
@@ -125,21 +176,16 @@ class PerfSerializer : public PerfParser {
       RepeatedPtrField<PerfDataProto_PerfBuildID>* to)
       const;
   bool DeserializeBuildIDs(
-      const
-      RepeatedPtrField<PerfDataProto_PerfBuildID>& from,
+      const RepeatedPtrField<PerfDataProto_PerfBuildID>& from,
       std::vector<build_id_event*>* to) const;
 
-  bool SerializeBuildIDEvent(build_id_event* const& from,
+  bool SerializeMetadata(PerfDataProto* to) const;
+  bool DeserializeMetadata(const PerfDataProto& from);
+
+  bool SerializeBuildIDEvent(const build_id_event* from,
                              PerfDataProto_PerfBuildID* to) const;
   bool DeserializeBuildIDEvent(const PerfDataProto_PerfBuildID& from,
                                build_id_event** to) const;
-
-  bool SerializeSingleStringMetadata(
-      const PerfStringMetadata& metadata,
-      PerfDataProto_PerfStringMetadata* proto_metadata) const;
-  bool DeserializeSingleStringMetadata(
-      const PerfDataProto_PerfStringMetadata& proto_metadata,
-      PerfStringMetadata* metadata) const;
 
   bool SerializeSingleUint32Metadata(
       const PerfUint32Metadata& metadata,
@@ -169,96 +215,64 @@ class PerfSerializer : public PerfParser {
       const PerfDataProto_PerfNodeTopologyMetadata& proto_metadata,
       PerfNodeTopologyMetadata* metadata) const;
 
-  // Populates |parsed_events_| with pointers event_t and perf_sample structs in
-  // each corresponding |events_| struct.
-  void SetRawEvents(size_t num_events);
 
-#define SERIALIZEVECTORFUNCTION(name, vec_type, proto_type, function) \
-bool name(const std::vector<vec_type>& from, \
-          RepeatedPtrField<proto_type>* to) const { \
-  to->Reserve(from.size()); \
-  for (size_t i = 0; i < from.size(); i++) { \
-    proto_type* to_element = to->Add(); \
-    if (to_element == NULL) \
-      return false; \
-    if (!function(from.at(i), to->Mutable(i))) \
-      return false; \
-  } \
-  return true; \
-}
+  const VectorSerializer<PerfDataProto_PerfFileAttr, PerfFileAttr>
+      SerializePerfFileAttrs = {this, &PerfSerializer::SerializePerfFileAttr};
+  const VectorDeserializer<PerfDataProto_PerfFileAttr, PerfFileAttr>
+      DeserializePerfFileAttrs = {
+        this, &PerfSerializer::DeserializePerfFileAttr};
 
-#define DESERIALIZEVECTORFUNCTION(name, vec_type, proto_type, function) \
-bool name(const RepeatedPtrField<proto_type>& from, \
-          std::vector<vec_type>* to) const { \
-  to->resize(from.size()); \
-  for (int i = 0; i < from.size(); i++) { \
-    if (!function(from.Get(i), &to->at(i))) \
-      return false; \
-  } \
-  return true; \
-}
+  const VectorSerializer<PerfDataProto_PerfEventType, perf_trace_event_type>
+      SerializePerfEventTypes = {this, &PerfSerializer::SerializePerfEventType};
+  const VectorDeserializer<PerfDataProto_PerfEventType, perf_trace_event_type>
+      DeserializePerfEventTypes = {
+        this, &PerfSerializer::DeserializePerfEventType};
 
-  SERIALIZEVECTORFUNCTION(SerializePerfFileAttrs, PerfFileAttr,
-                          quipper::PerfDataProto_PerfFileAttr,
-                          SerializePerfFileAttr)
-  DESERIALIZEVECTORFUNCTION(DeserializePerfFileAttrs, PerfFileAttr,
-                            quipper::PerfDataProto_PerfFileAttr,
-                            DeserializePerfFileAttr)
+  const VectorSerializer<PerfDataProto_PerfEvent, ParsedEvent>
+      SerializeEvents = {this, &PerfSerializer::SerializeEvent};
+  const VectorSerializer<PerfDataProto_PerfEvent,
+                         ParsedEvent*, const ParsedEvent*>
+      SerializeEventPointers = {this, &PerfSerializer::SerializeEventPointer};
+  const VectorDeserializer<PerfDataProto_PerfEvent, ParsedEvent>
+      DeserializeEvents = {this, &PerfSerializer::DeserializeEvent};
 
-  SERIALIZEVECTORFUNCTION(SerializePerfEventTypes, perf_trace_event_type,
-                          quipper::PerfDataProto_PerfEventType,
-                          SerializePerfEventType)
-  DESERIALIZEVECTORFUNCTION(DeserializePerfEventTypes, perf_trace_event_type,
-                            quipper::PerfDataProto_PerfEventType,
-                            DeserializePerfEventType)
+  const VectorSerializer<PerfDataProto_PerfBuildID,
+                         build_id_event*, const build_id_event*>
+      SerializeBuildIDEvents = {this, &PerfSerializer::SerializeBuildIDEvent};
+  const VectorDeserializer<PerfDataProto_PerfBuildID, build_id_event*>
+      DeserializeBuildIDEvents = {
+        this, &PerfSerializer::DeserializeBuildIDEvent};
 
-  SERIALIZEVECTORFUNCTION(SerializeEvents, ParsedEvent,
-                          quipper::PerfDataProto_PerfEvent,
-                          SerializeEvent)
-  DESERIALIZEVECTORFUNCTION(DeserializeEvents, ParsedEvent,
-                            quipper::PerfDataProto_PerfEvent,
-                            DeserializeEvent)
+  const VectorSerializer<PerfDataProto_PerfUint32Metadata, PerfUint32Metadata>
+      SerializeUint32Metadata = {
+        this, &PerfSerializer::SerializeSingleUint32Metadata};
+  const VectorDeserializer<PerfDataProto_PerfUint32Metadata, PerfUint32Metadata>
+      DeserializeUint32Metadata = {
+        this, &PerfSerializer::DeserializeSingleUint32Metadata};
 
-  SERIALIZEVECTORFUNCTION(SerializeBuildIDEvents, build_id_event*,
-                          quipper::PerfDataProto_PerfBuildID,
-                          SerializeBuildIDEvent)
-  DESERIALIZEVECTORFUNCTION(DeserializeBuildIDEvents, build_id_event*,
-                            quipper::PerfDataProto_PerfBuildID,
-                            DeserializeBuildIDEvent)
+  const VectorSerializer<PerfDataProto_PerfUint64Metadata, PerfUint64Metadata>
+      SerializeUint64Metadata = {
+        this, &PerfSerializer::SerializeSingleUint64Metadata};
+  const VectorDeserializer<PerfDataProto_PerfUint64Metadata, PerfUint64Metadata>
+      DeserializeUint64Metadata = {
+        this, &PerfSerializer::DeserializeSingleUint64Metadata};
 
-  SERIALIZEVECTORFUNCTION(SerializeStringMetadata, PerfStringMetadata,
-                          quipper::PerfDataProto_PerfStringMetadata,
-                          SerializeSingleStringMetadata)
-  DESERIALIZEVECTORFUNCTION(DeserializeStringMetadata, PerfStringMetadata,
-                            quipper::PerfDataProto_PerfStringMetadata,
-                            DeserializeSingleStringMetadata)
+  const VectorSerializer<PerfDataProto_PerfNodeTopologyMetadata,
+                         PerfNodeTopologyMetadata>
+      SerializeNUMATopologyMetadata = {
+        this, &PerfSerializer::SerializeNodeTopologyMetadata};
+  const VectorDeserializer<PerfDataProto_PerfNodeTopologyMetadata,
+                           PerfNodeTopologyMetadata>
+      DeserializeNUMATopologyMetadata = {
+        this, &PerfSerializer::DeserializeNodeTopologyMetadata};
 
-  SERIALIZEVECTORFUNCTION(SerializeUint32Metadata, PerfUint32Metadata,
-                          quipper::PerfDataProto_PerfUint32Metadata,
-                          SerializeSingleUint32Metadata)
-  DESERIALIZEVECTORFUNCTION(DeserializeUint32Metadata, PerfUint32Metadata,
-                            quipper::PerfDataProto_PerfUint32Metadata,
-                            DeserializeSingleUint32Metadata)
-
-  SERIALIZEVECTORFUNCTION(SerializeUint64Metadata, PerfUint64Metadata,
-                          quipper::PerfDataProto_PerfUint64Metadata,
-                          SerializeSingleUint64Metadata)
-  DESERIALIZEVECTORFUNCTION(DeserializeUint64Metadata, PerfUint64Metadata,
-                            quipper::PerfDataProto_PerfUint64Metadata,
-                            DeserializeSingleUint64Metadata)
-
-  SERIALIZEVECTORFUNCTION(SerializeNUMATopologyMetadata,
-                          PerfNodeTopologyMetadata,
-                          quipper::PerfDataProto_PerfNodeTopologyMetadata,
-                          SerializeNodeTopologyMetadata)
-  DESERIALIZEVECTORFUNCTION(DeserializeNUMATopologyMetadata,
-                            PerfNodeTopologyMetadata,
-                            quipper::PerfDataProto_PerfNodeTopologyMetadata,
-                            DeserializeNodeTopologyMetadata)
+  // Set this flag to serialize perf events in chronological order, rather than
+  // the order in which they appear in the raw data.
+  bool serialize_sorted_events_;
 
   DISALLOW_COPY_AND_ASSIGN(PerfSerializer);
 };
 
 }  // namespace quipper
 
-#endif  // PERF_SERIALIZER_H_
+#endif  // CHROMIUMOS_WIDE_PROFILING_PERF_SERIALIZER_H_

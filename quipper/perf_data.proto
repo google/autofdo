@@ -11,7 +11,7 @@ package quipper;
 //
 // See $kernel/tools/perf/design.txt for more details.
 
-// Next tag: 13
+// Next tag: 14
 message PerfDataProto {
 
   // Perf event attribute. Stores the event description.
@@ -321,8 +321,8 @@ message PerfDataProto {
 
   // Next tag: 5
   message ThrottleEvent {
-    // Time of throttle event.
-    optional uint64 time = 1;
+    // Time of throttle event, in nanoseconds since system startup.
+    optional uint64 time_ns = 1;
 
     // Event ID.
     optional uint64 id = 2;
@@ -342,7 +342,7 @@ message PerfDataProto {
     // Thread ID.
     optional uint32 tid = 2;
 
-    // Value.
+    // Value of the event counter when it was queried.
     optional uint64 value = 3;
 
     // Time enabled.
@@ -399,15 +399,6 @@ message PerfDataProto {
 
     // Whether address remapping was enabled.
     optional bool did_remap = 7;
-  }
-
-  // Next tag: 3
-  message PerfStringMetadata {
-    // Type of metadata, such as hostname, osrelease, version, etc.
-    optional uint32 type = 1;
-
-    // String data.
-    repeated string data = 2;
   }
 
   // Next tag: 3
@@ -497,8 +488,6 @@ message PerfDataProto {
   // See adds_features in perf_reader.cc
   repeated uint64 metadata_mask = 5;
 
-  repeated PerfStringMetadata string_metadata = 6;
-
   repeated PerfBuildID build_ids = 7;
 
   repeated PerfUint32Metadata uint32_metadata = 8;
@@ -508,4 +497,45 @@ message PerfDataProto {
   optional PerfCPUTopologyMetadata cpu_topology = 11;
 
   repeated PerfNodeTopologyMetadata numa_topology = 12;
+
+  // Next tag: 9
+  message StringMetadata {
+    // Next tag: 3
+    message StringAndMd5sumPrefix {
+      // The string value.
+      optional string value = 1;
+
+      // The string value's md5sum prefix.
+      optional uint64 value_md5_prefix = 2;
+    }
+
+    // Name of the machine, e.g. "localhost".
+    optional StringAndMd5sumPrefix hostname = 1;
+
+    // Kernel version, e.g. "3.4.0".
+    optional StringAndMd5sumPrefix kernel_version = 2;
+
+    // Perf version, e.g. "3.4.2642.g0aa604".
+    optional StringAndMd5sumPrefix perf_version = 3;
+
+    // CPU architecture family, e.g. "x86_64".
+    optional StringAndMd5sumPrefix architecture = 4;
+
+    // CPU description, e.g. "Intel(R) Celeron(R) CPU 867 @ 1.30GHz".
+    optional StringAndMd5sumPrefix cpu_description = 5;
+
+    // CPU ID string, with the format: "$VENDOR,$FAMILY,$MODEL,$STEP"
+    optional StringAndMd5sumPrefix cpu_id = 6;
+
+    // Command line used to run perf to collect this profile.
+    // This is split into string tokens to reflect the way it is stored in the
+    // raw perf data.  e.g. "perf record -a -- sleep 2" become stored as:
+    //   { "perf", "record", "-a", "--", "sleep", "2" }
+    repeated StringAndMd5sumPrefix perf_command_line_token = 7;
+
+    // The command line stored as a single string.
+    optional StringAndMd5sumPrefix perf_command_line_whole = 8;
+  }
+
+  optional StringMetadata string_metadata = 13;
 }

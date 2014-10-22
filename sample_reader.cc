@@ -68,19 +68,18 @@ uint64 SampleReader::GetTotalSampleCount() const {
   return ret;
 }
 
-bool SampleReader::ReadAndSetMaxCount() {
+bool SampleReader::ReadAndSetTotalCount() {
   if (!Read()) {
     return false;
   }
   if (range_count_map_.size() > 0) {
     for (const auto &range_count : range_count_map_) {
-      max_count_ = max(max_count_, range_count.second);
+      total_count_ += range_count.second * (range_count.first.second -
+                                            range_count.first.first);
     }
   } else {
     for (const auto &addr_count : address_count_map_) {
-      if (addr_count.second > max_count_) {
-        max_count_ = addr_count.second;
-      }
+      total_count_ += addr_count.second;
     }
   }
   return true;
@@ -211,8 +210,8 @@ bool PerfDataSampleReader::Append(const string &profile_file) {
   // in the profile, then we use focus_binary to match samples. Otherwise,
   // focus_binary_re_ is used to match the binary name with the samples.
   for (const auto &event : parser.parsed_events()) {
-    if (!*event.raw_event ||
-        (*event.raw_event)->header.type != PERF_RECORD_SAMPLE) {
+    if (!event.raw_event ||
+        event.raw_event->header.type != PERF_RECORD_SAMPLE) {
       continue;
     }
     if (MatchBinary(event.dso_and_offset.dso_name(), focus_binary)) {

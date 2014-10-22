@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_LOGGING_H_
-#define BASE_LOGGING_H_
+#ifndef CHROMIUMOS_WIDE_PROFILING_MYBASE_BASE_LOGGING_H_
+#define CHROMIUMOS_WIDE_PROFILING_MYBASE_BASE_LOGGING_H_
 
 #include <stdint.h>
 
-#include <iostream>
+#include <iostream>  // NOLINT(readability/streams)
 #include <sstream>
 
 #include "base/macros.h"
@@ -46,17 +46,18 @@ class LOG {
 };
 
 // Some macros from libbase that we use.
-#define CHECK(x) if(!(x)) LOG(FATAL) << #x
-#define CHECK_GT(x, y) if(!(x > y)) LOG(FATAL) << #x << " > " << #y << "failed"
-#define CHECK_GE(x, y) if(!(x >= y)) LOG(FATAL) << #x << " >= " << #y \
-                                                << "failed"
-#define CHECK_LE(x, y) if(!(x <= y)) LOG(FATAL) << #x << " <= " << #y \
-                                                << "failed"
-#define CHECK_NE(x, y) if(!(x != y)) LOG(FATAL) << #x << " != " << #y \
-                                                << "failed"
-#define CHECK_EQ(x, y) if(!(x == y)) LOG(FATAL) << #x << " == " << #y \
-                                                << "failed"
+#define CHECK(x) if (!(x)) LOG(FATAL) << #x
+#define CHECK_GT(x, y) if (!(x > y)) LOG(FATAL) << #x << " > " << #y << "failed"
+#define CHECK_GE(x, y) if (!(x >= y)) LOG(FATAL) << #x << " >= " << #y \
+                                                 << "failed"
+#define CHECK_LE(x, y) if (!(x <= y)) LOG(FATAL) << #x << " <= " << #y \
+                                                 << "failed"
+#define CHECK_NE(x, y) if (!(x != y)) LOG(FATAL) << #x << " != " << #y \
+                                                 << "failed"
+#define CHECK_EQ(x, y) if (!(x == y)) LOG(FATAL) << #x << " == " << #y \
+                                                 << "failed"
 #define DLOG(x) LOG(x)
 #define VLOG(x) LOG(x)
+#define DCHECK(x) CHECK(x)
 
-#endif  // BASE_LOGGING_H_
+#endif  // CHROMIUMOS_WIDE_PROFILING_MYBASE_BASE_LOGGING_H_

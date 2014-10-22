@@ -27,6 +27,9 @@
 DEFINE_int32(dump_cutoff_percent, 2,
              "functions that has total count lower than this percentage of "
              "the max function count will not show in the dump");
+DEFINE_double(sample_threshold_frac, 0.000005,
+              "Sample threshold ratio. The threshold of total function count"
+              " is determined by max_sample_count * sample_threshold_frac.");
 
 namespace {
 // Returns whether str ends with suffix.
@@ -142,12 +145,20 @@ void SymbolMap::Merge() {
     string name = GetOriginalName(name_symbol.first.c_str());
     pair<NameSymbolMap::iterator, bool> ret =
         map_.insert(NameSymbolMap::value_type(name, NULL));
-    if (ret.second) {
+    if (ret.second ||
+        (name_symbol.first != name &&
+         name_symbol.second == ret.first->second)) {
       ret.first->second = new Symbol();
       ret.first->second->info.func_name = ret.first->first.c_str();
     }
     if (ret.first->second != name_symbol.second) {
       ret.first->second->Merge(name_symbol.second);
+      for (auto &n_s : map_) {
+        if (n_s.second == name_symbol.second &&
+            n_s.first != name_symbol.first) {
+          n_s.second = ret.first->second;
+        }
+      }
       name_symbol.second->total_count = 0;
       name_symbol.second->head_count = 0;
     }
@@ -168,12 +179,35 @@ void SymbolMap::AddSymbol(const string &name) {
   }
 }
 
-uint64 SymbolMap::TotalCount() const {
-  uint64 total_count = 0;
+const int64 kMinSamples = 10;
+
+void SymbolMap::CalculateThresholdFromTotalCount(int64 total_count) {
+  count_threshold_ = total_count * FLAGS_sample_threshold_frac;
+  if (count_threshold_ < kMinSamples) {
+    count_threshold_ = kMinSamples;
+  }
+}
+
+void SymbolMap::CalculateThreshold() {
+  // If count_threshold_ is pre-calculated, use pre-caculated value.
+  CHECK_EQ(count_threshold_, 0);
+  int64 total_count = 0;
+  set<string> visited;
   for (const auto &name_symbol : map_) {
+    if (visited.find(name_symbol.first) != visited.end()) {
+      // Don't double-count aliases.
+      continue;
+    }
+    visited.insert(name_symbol.first);
+    for (const auto& alias : name_alias_map_[name_symbol.first]) {
+      visited.insert(alias);
+    }
     total_count += name_symbol.second->total_count;
   }
-  return total_count;
+  count_threshold_ = total_count * FLAGS_sample_threshold_frac;
+  if (count_threshold_ < kMinSamples) {
+    count_threshold_ = kMinSamples;
+  }
 }
 
 const bool SymbolMap::GetSymbolInfoByAddr(
@@ -343,6 +377,9 @@ void SymbolMap::AddIndirectCallTarget(const string &symbol_name,
                                       const SourceStack &src,
                                       const string &target,
                                       uint64 count) {
+  if (src.size() == 0 || src[0].Malformed()) {
+    return;
+  }
   Symbol *symbol = TraverseInlineStack(symbol_name, src, 0);
   symbol->pos_counts[src[0].Offset()].target_map[
       GetOriginalName(target.c_str())] = count;
@@ -476,8 +513,10 @@ void SymbolMap::DumpFuncLevelProfileCompare(const SymbolMap &map) const {
       if (iter != map.map().end()) {
         compare_count = iter->second->total_count;
       }
-      printf("%llu%% %llu%% %s\n", symbol->total_count * 100 / max_1,
-             compare_count * 100 / max_2, name.c_str());
+      printf("%3.4f%% %3.4f%% %s\n",
+             100 * static_cast<double>(symbol->total_count) / max_1,
+             100 * static_cast<double>(compare_count) / max_2,
+             name.c_str());
     }
   }
 
@@ -506,8 +545,10 @@ void SymbolMap::DumpFuncLevelProfileCompare(const SymbolMap &map) const {
           continue;
         }
       }
-      printf("%llu%% %llu%% %s\n", compare_count * 100 / max_1,
-             symbol->total_count * 100 / max_2, name.c_str());
+      printf("%3.4f%% %3.4f%% %s\n",
+             100 * static_cast<double>(compare_count) / max_1,
+             100 * static_cast<double>(symbol->total_count) / max_2,
+             name.c_str());
     }
   }
 }
@@ -586,5 +627,77 @@ void SymbolMap::ComputeWorkingSets() {
     next_start_addr = iter->first + iter->second.second;
   }
   return ret;
+}
+
+void SymbolMap::AddAlias(const string& sym, const string& alias) {
+  name_alias_map_[sym].insert(alias);
+}
+
+// Consts for profile validation
+static const int kMinNumSymbols = 10;
+static const int kMinTotalCount = 1000000;
+static const float kMinNonZeroSrcFrac = 0.8;
+
+bool SymbolMap::Validate() const {
+  if (size() < kMinNumSymbols) {
+    LOG(ERROR) << "# of symbols (" << size() << ") too small.";
+    return false;
+  }
+  uint64 total_count = 0;
+  uint64 num_srcs = 0;
+  uint64 num_srcs_non_zero = 0;
+  bool has_inline_stack = false;
+  bool has_call = false;
+  bool has_discriminator = false;
+  vector<const Symbol *> symbols;
+  for (const auto &name_symbol : map_) {
+    total_count += name_symbol.second->total_count;
+    symbols.push_back(name_symbol.second);
+    if (name_symbol.second->callsites.size() > 0) {
+      has_inline_stack = true;
+    }
+  }
+  while (!symbols.empty()) {
+    const Symbol *symbol = symbols.back();
+    symbols.pop_back();
+    for (const auto &pos_count : symbol->pos_counts) {
+      if (pos_count.second.target_map.size() > 0) {
+        has_call = true;
+      }
+      num_srcs++;
+      if (pos_count.first != 0) {
+        num_srcs_non_zero++;
+      }
+      if ((pos_count.first & 0xffff) != 0) {
+        has_discriminator = true;
+      }
+    }
+    for (const auto &pos_callsite : symbol->callsites) {
+      symbols.push_back(pos_callsite.second);
+    }
+  }
+  if (total_count < kMinTotalCount) {
+    LOG(ERROR) << "Total count (" << total_count << ") too small.";
+    return false;
+  }
+  if (!has_call) {
+    LOG(ERROR) << "Do not have a single call.";
+    return false;
+  }
+  if (!has_inline_stack) {
+    LOG(ERROR) << "Do not have a single inline stack.";
+    return false;
+  }
+  if (!has_discriminator) {
+    LOG(ERROR) << "Do not have a single discriminator.";
+    return false;
+  }
+  if (num_srcs_non_zero < num_srcs * kMinNonZeroSrcFrac) {
+    LOG(ERROR) << "Do not have enough non-zero src locations."
+               << " NonZero: " << num_srcs_non_zero
+               << " Total: " << num_srcs;
+    return false;
+  }
+  return true;
 }
 }  // namespace autofdo

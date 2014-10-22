@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PERF_RECORDER_H_
-#define PERF_RECORDER_H_
+#ifndef CHROMIUMOS_WIDE_PROFILING_PERF_RECORDER_H_
+#define CHROMIUMOS_WIDE_PROFILING_PERF_RECORDER_H_
 
 #include <string>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 
 #include "perf_reader.h"
 #include "quipper_proto.h"
@@ -28,4 +28,4 @@ class PerfRecorder {
 
 }  // namespace quipper
 
-#endif  // PERF_RECORDER_H_
+#endif  // CHROMIUMOS_WIDE_PROFILING_PERF_RECORDER_H_

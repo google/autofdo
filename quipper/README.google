@@ -1,0 +1,13 @@
+URL: http://git.chromium.org/gitweb/?p=chromiumos/platform/chromiumos-wide-profiling.git;a=tree;h=01042758f33d956cce1d6465dc3aee9fb5bd007e;hb=6ef625dc9f1b2d2fbddbf43db12d9e0b1044044e
+Version: 6ef625dc9f1b2d2fbddbf43db12d9e0b1044044e
+License: BSD
+License File: LICENSE
+
+Description:
+Program to launch perf, parse perf.data and output it in a protobuf.
+
+Local Modifications:
+- Added BUILD/README.google files.
+- Added "third_party/quipper" to include path for generated protobuf files.
+- Used ::proto2 namespace instead of ::google::protobuf.
+- Added gunit instead of gtest for utils_test.

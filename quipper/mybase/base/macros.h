@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_MACROS_H_
-#define BASE_MACROS_H_
+#ifndef CHROMIUMOS_WIDE_PROFILING_MYBASE_BASE_MACROS_H_
+#define CHROMIUMOS_WIDE_PROFILING_MYBASE_BASE_MACROS_H_
 
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
     TypeName(const TypeName&); \
     void operator=(const TypeName&)
 
-#endif  // BASE_MACROS_H_
+#endif  // CHROMIUMOS_WIDE_PROFILING_MYBASE_BASE_MACROS_H_

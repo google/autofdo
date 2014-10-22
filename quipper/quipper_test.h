@@ -5,6 +5,7 @@
 #ifndef QUIPPER_TEST_H_
 #define QUIPPER_TEST_H_
 
-#include <gtest/gtest.h>
+#include "testing/base/public/googletest.h"
+#include "testing/base/public/gunit.h"
 
 #endif  // QUIPPER_TEST_H_

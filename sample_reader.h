@@ -42,10 +42,10 @@ typedef map<Branch, uint64> BranchCountMap;
 // Reads in the profile data, and represent it in address_count_map_.
 class SampleReader {
  public:
-  explicit SampleReader() : max_count_(0) {}
+  SampleReader() : total_count_(0) {}
   virtual ~SampleReader() {}
 
-  bool ReadAndSetMaxCount();
+  bool ReadAndSetTotalCount();
 
   const AddressCountMap &address_count_map() const {
     return address_count_map_;
@@ -66,8 +66,8 @@ class SampleReader {
   // Returns the total sampled count.
   uint64 GetTotalSampleCount() const;
   // Returns the max count.
-  uint64 GetMaxCount() const {
-    return max_count_;
+  uint64 GetTotalCount() const {
+    return total_count_;
   }
   // Clear all maps to release memory.
   void Clear() {
@@ -80,7 +80,7 @@ class SampleReader {
   // Virtual read function to read from different types of profiles.
   virtual bool Read() = 0;
 
-  uint64 max_count_;
+  uint64 total_count_;
   AddressCountMap address_count_map_;
   RangeCountMap range_count_map_;
   BranchCountMap branch_count_map_;

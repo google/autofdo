@@ -4,7 +4,7 @@
 
 include common.mk
 
-BASE_VER ?= 180609
+BASE_VER ?= 293518
 PC_DEPS = openssl protobuf libchrome-$(BASE_VER)
 PC_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PC_DEPS))
 PC_LIBS := $(shell $(PKG_CONFIG) --libs $(PC_DEPS))
@@ -24,7 +24,7 @@ COMMON_OBJECTS = address_mapper.o conversion_utils.o perf_parser.o \
 		 perf_reader.o perf_recorder.o perf_serializer.o utils.o \
 		 $(GENERATED_OBJECTS)
 
-COMMON_TEST_OBJECTS = test_utils.o test_utils_defs.o
+COMMON_TEST_OBJECTS = test_utils.o
 
 # Rule for compiling protobuf.
 perf_data.pb.h perf_data.pb.cc: perf_data.proto

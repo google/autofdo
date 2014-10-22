@@ -21,7 +21,7 @@ namespace {
 
 struct EventAndTime {
   ParsedEvent* event;
-  uint64 time;
+  uint64_t time;
 };
 
 // Returns true if |e1| has an earlier timestamp than |e2|.  The args are const
@@ -33,15 +33,7 @@ bool CompareParsedEventTimes(const EventAndTime* e1, const EventAndTime* e2) {
 
 // Name and ID of the kernel swapper process.
 const char kSwapperCommandName[] = "swapper";
-const uint32 kSwapperPid = 0;
-
-enum CallchainContext {
-  // These entries in a callchain are special cases.
-  kCallchainInitialContextIndex = 0,    // Kernel vs user.
-  kCallchainBaseAddressIndex = 1,       // Same as the base sample address.
-  // Start reading the callchain from this entry.
-  kFirstRelevantCallchainIndex,
-};
+const uint32_t kSwapperPid = 0;
 
 bool IsNullBranchStackEntry(const struct branch_entry& entry) {
   return (!entry.from && !entry.to);
@@ -68,7 +60,7 @@ bool PerfParser::ParseRawEvents() {
   parsed_events_.resize(events_.size());
   for (size_t i = 0; i < events_.size(); ++i) {
     ParsedEvent& parsed_event = parsed_events_[i];
-    parsed_event.raw_event = &events_[i];
+    parsed_event.raw_event = events_[i].get();
   }
   SortParsedEvents();
   ProcessEvents();
@@ -83,7 +75,7 @@ bool PerfParser::ParseRawEvents() {
   size_t read_index;
   for (read_index = 0; read_index < parsed_events_.size(); ++read_index) {
     const ParsedEvent& event = parsed_events_[read_index];
-    if ((*event.raw_event)->header.type == PERF_RECORD_MMAP &&
+    if (event.raw_event->header.type == PERF_RECORD_MMAP &&
         event.num_samples_in_mmap_region == 0) {
       continue;
     }
@@ -111,7 +103,7 @@ void PerfParser::SortParsedEvents() {
     event_and_time->event = &parsed_events_[i];
 
     struct perf_sample sample_info;
-    CHECK(ReadPerfSampleInfo(**parsed_events_[i].raw_event, &sample_info));
+    CHECK(ReadPerfSampleInfo(*parsed_events_[i].raw_event, &sample_info));
     event_and_time->time = sample_info.time;
 
     events_and_times[i] = event_and_time;
@@ -143,7 +135,7 @@ bool PerfParser::ProcessEvents() {
 
   for (unsigned int i = 0; i < parsed_events_sorted_by_time_.size(); ++i) {
     ParsedEvent& parsed_event = *parsed_events_sorted_by_time_[i];
-    event_t& event = *(*parsed_event.raw_event);
+    event_t& event = *parsed_event.raw_event;
     switch (event.header.type) {
       case PERF_RECORD_SAMPLE:
         VLOG(1) << "IP: " << std::hex << event.ip.ip;
@@ -228,7 +220,7 @@ bool PerfParser::MapSampleEvent(ParsedEvent* parsed_event) {
 
   // Find the associated command.
   perf_sample sample_info;
-  if (!ReadPerfSampleInfo(*(*parsed_event->raw_event), &sample_info))
+  if (!ReadPerfSampleInfo(*parsed_event->raw_event, &sample_info))
     return false;
   PidTid pidtid = std::make_pair(sample_info.pid, sample_info.tid);
   std::map<PidTid, const string*>::const_iterator comm_iter =
@@ -239,14 +231,13 @@ bool PerfParser::MapSampleEvent(ParsedEvent* parsed_event) {
     parsed_event->set_command(*comm_iter->second);
   }
 
-  struct ip_event& event = (*parsed_event->raw_event)->ip;
-  uint64 unmapped_event_ip = event.ip;
+  struct ip_event& event = parsed_event->raw_event->ip;
+  uint64_t unmapped_event_ip = event.ip;
 
   // Map the event IP itself.
   if (!MapIPAndPidAndGetNameAndOffset(event.ip,
                                       event.pid,
-                                      event.header.misc,
-                                      reinterpret_cast<uint64*>(&event.ip),
+                                      &event.ip,
                                       &parsed_event->dso_and_offset)) {
     mapping_failed = true;
   }
@@ -265,7 +256,7 @@ bool PerfParser::MapSampleEvent(ParsedEvent* parsed_event) {
   // Write the remapped data back to the raw event regardless of whether it was
   // entirely successfully remapped.  A single failed remap should not
   // invalidate all the other remapped entries.
-  if (!WritePerfSampleInfo(sample_info, *parsed_event->raw_event)) {
+  if (!WritePerfSampleInfo(sample_info, parsed_event->raw_event)) {
     LOG(ERROR) << "Failed to write back remapped sample info.";
     return false;
   }
@@ -274,7 +265,7 @@ bool PerfParser::MapSampleEvent(ParsedEvent* parsed_event) {
 }
 
 bool PerfParser::MapCallchain(const struct ip_event& event,
-                              uint64 original_event_addr,
+                              uint64_t original_event_addr,
                               struct ip_callchain* callchain,
                               ParsedEvent* parsed_event) {
   if (!callchain) {
@@ -288,65 +279,26 @@ bool PerfParser::MapCallchain(const struct ip_event& event,
   if (callchain->nr == 0)
     return true;
 
-  // The first callchain entry should indicate that this is a kernel vs user
-  // sample.
-  uint64 callchain_context = callchain->ips[kCallchainInitialContextIndex];
-  switch (callchain_context) {
-  case PERF_CONTEXT_KERNEL:
-    CHECK_EQ(event.header.misc, PERF_RECORD_MISC_KERNEL);
-    break;
-  case PERF_CONTEXT_USER:
-    CHECK_EQ(event.header.misc, PERF_RECORD_MISC_USER);
-    break;
-  default:
-    // If the first entry is not a context marker, consider the rest of the
-    // callchain data invalid and return.
-    LOG(ERROR) << "Invalid callchain context: "
-               << std::hex << callchain_context;
-    return false;
-  }
-
-  // Return if we only have the context and nothing else.
-  if (callchain->nr == kCallchainBaseAddressIndex)
-    return true;
-
-  // The second callchain entry is the same as the sample address.
-  if (callchain->ips[kCallchainBaseAddressIndex] !=
-      original_event_addr) {
-    LOG(ERROR) << "Second callchain entry: "
-               << callchain->ips[kCallchainBaseAddressIndex]
-               << " doesn't match sample address: "
-               << original_event_addr;
-    return false;
-  }
-  // The sample address has already been mapped so no need to map this one.
-  callchain->ips[kCallchainBaseAddressIndex] = event.ip;
-
   // Keeps track of whether the current entry is kernel or user.
-  uint16 current_misc = event.header.misc;
   parsed_event->callchain.resize(callchain->nr);
   int num_entries_mapped = 0;
-  for (unsigned int j = kFirstRelevantCallchainIndex; j < callchain->nr; ++j) {
-    uint64 entry = callchain->ips[j];
-    // When a callchain context entry is found, do not attempt to symbolize
-    // it.  Instead use it to update |current_misc|.
-    switch (entry) {
-    case PERF_CONTEXT_KERNEL:
-      current_misc = PERF_RECORD_MISC_KERNEL;
+  for (unsigned int j = 0; j < callchain->nr; ++j) {
+    uint64_t entry = callchain->ips[j];
+    // When a callchain context entry is found, do not attempt to symbolize it.
+    if (entry >= PERF_CONTEXT_MAX) {
       continue;
-    case PERF_CONTEXT_USER:
-      current_misc = PERF_RECORD_MISC_USER;
+    }
+    // The sample address has already been mapped so no need to map it.
+    if (entry == original_event_addr) {
+      callchain->ips[j] = event.ip;
       continue;
-    default:
-      if (!MapIPAndPidAndGetNameAndOffset(
-              entry,
-              event.pid,
-              current_misc,
-              reinterpret_cast<uint64*>(&callchain->ips[j]),
-              &parsed_event->callchain[num_entries_mapped++])) {
-        mapping_failed = true;
-      }
-      break;
+    }
+    if (!MapIPAndPidAndGetNameAndOffset(
+            entry,
+            event.pid,
+            &callchain->ips[j],
+            &parsed_event->callchain[num_entries_mapped++])) {
+      mapping_failed = true;
     }
   }
   // Not all the entries were mapped.  Trim |parsed_event->callchain| to
@@ -393,16 +345,13 @@ bool PerfParser::MapBranchStack(const struct ip_event& event,
     ParsedEvent::BranchEntry& parsed_entry = parsed_event->branch_stack[i];
     if (!MapIPAndPidAndGetNameAndOffset(entry.from,
                                         event.pid,
-                                        event.header.misc,
-                                        reinterpret_cast<uint64*>(
-                                            &entry.from),
+                                        &entry.from,
                                         &parsed_entry.from)) {
       return false;
     }
     if (!MapIPAndPidAndGetNameAndOffset(entry.to,
                                         event.pid,
-                                        event.header.misc,
-                                        reinterpret_cast<uint64*>(&entry.to),
+                                        &entry.to,
                                         &parsed_entry.to)) {
       return false;
     }
@@ -420,10 +369,9 @@ bool PerfParser::MapBranchStack(const struct ip_event& event,
 }
 
 bool PerfParser::MapIPAndPidAndGetNameAndOffset(
-    uint64 ip,
-    uint32 pid,
-    uint16 misc,
-    uint64* new_ip,
+    uint64_t ip,
+    uint32_t pid,
+    uint64_t* new_ip,
     ParsedEvent::DSOAndOffset* dso_and_offset) {
   // Attempt to find the synthetic address of the IP sample in this order:
   // 1. Address space of the kernel.
@@ -431,7 +379,7 @@ bool PerfParser::MapIPAndPidAndGetNameAndOffset(
   // 3. Address space of the parent process.
 
   AddressMapper* mapper = NULL;
-  uint64 mapped_addr = 0;
+  uint64_t mapped_addr = 0;
 
   // Sometimes the first event we see is a SAMPLE event and we don't have the
   // time to create an address mapper for a process. Example, for pid 0.
@@ -444,24 +392,24 @@ bool PerfParser::MapIPAndPidAndGetNameAndOffset(
 
   if (mapped) {
     if (dso_and_offset) {
-      uint64 id = kuint64max;
+      uint64_t id = kuint64max;
       CHECK(mapper->GetMappedIDAndOffset(ip, &id, &dso_and_offset->offset_));
       // Make sure the ID points to a valid event.
       CHECK_LE(id, parsed_events_sorted_by_time_.size());
       ParsedEvent* parsed_event = parsed_events_sorted_by_time_[id];
-      CHECK_EQ((*parsed_event->raw_event)->header.type, PERF_RECORD_MMAP);
+      CHECK_EQ(parsed_event->raw_event->header.type, PERF_RECORD_MMAP);
 
       // Find the mmap DSO filename in the set of known DSO names.
       // TODO(sque): take build IDs into account.
       DSOInfo dso_info;
-      dso_info.name = (*parsed_event->raw_event)->mmap.filename;
+      dso_info.name = parsed_event->raw_event->mmap.filename;
       std::set<DSOInfo>::const_iterator dso_iter = dso_set_.find(dso_info);
       CHECK(dso_iter != dso_set_.end());
       dso_and_offset->dso_info_ = &(*dso_iter);
       if (id) {
         // For non-kernel events, we need to preserve the pgoff.
         // TODO(cwp-team): Add unit test for this case.
-        dso_and_offset->offset_ += (*parsed_event->raw_event)->mmap.pgoff;
+        dso_and_offset->offset_ += parsed_event->raw_event->mmap.pgoff;
       }
 
       ++parsed_event->num_samples_in_mmap_region;
@@ -472,22 +420,22 @@ bool PerfParser::MapIPAndPidAndGetNameAndOffset(
   return mapped;
 }
 
-bool PerfParser::MapMmapEvent(struct mmap_event* event, uint64 id) {
+bool PerfParser::MapMmapEvent(struct mmap_event* event, uint64_t id) {
   // We need to hide only the real kernel addresses.  However, to make things
   // more secure, and make the mapping idempotent, we should remap all
   // addresses, both kernel and non-kernel.
 
   AddressMapper* mapper = NULL;
 
-  uint32 pid = event->pid;
+  uint32_t pid = event->pid;
   if (process_mappers_.find(pid) == process_mappers_.end()) {
     CreateProcessMapper(pid);
   }
   mapper = process_mappers_[pid];
 
-  uint64 len = event->len;
-  uint64 start = event->start;
-  uint64 pgoff = event->pgoff;
+  uint64_t len = event->len;
+  uint64_t start = event->start;
+  uint64_t pgoff = event->pgoff;
 
   // |id| == 0 corresponds to the kernel mmap. We have several cases here:
   //
@@ -527,12 +475,12 @@ bool PerfParser::MapMmapEvent(struct mmap_event* event, uint64 id) {
     pgoff = 0;
   }
 
-  if (!mapper->MapWithID(start, len, id, true)) {
+  if (!mapper->MapWithID(start, len, id, pgoff, true)) {
     mapper->DumpToLog();
     return false;
   }
 
-  uint64 mapped_addr;
+  uint64_t mapped_addr;
   CHECK(mapper->GetMappedAddress(start, &mapped_addr));
   if (options_.do_remap) {
     event->start = mapped_addr;
@@ -542,7 +490,7 @@ bool PerfParser::MapMmapEvent(struct mmap_event* event, uint64 id) {
   return true;
 }
 
-void PerfParser::CreateProcessMapper(uint32 pid, uint32 ppid) {
+void PerfParser::CreateProcessMapper(uint32_t pid, uint32_t ppid) {
   AddressMapper* mapper;
   if (process_mappers_.find(ppid) != process_mappers_.end())
     mapper = new AddressMapper(*process_mappers_[ppid]);
@@ -553,7 +501,7 @@ void PerfParser::CreateProcessMapper(uint32 pid, uint32 ppid) {
 }
 
 bool PerfParser::MapCommEvent(const struct comm_event& event) {
-  uint32 pid = event.pid;
+  uint32_t pid = event.pid;
   if (process_mappers_.find(pid) == process_mappers_.end()) {
     CreateProcessMapper(pid);
   }
@@ -568,7 +516,7 @@ bool PerfParser::MapForkEvent(const struct fork_event& event) {
     pidtid_to_comm_map_[child] = pidtid_to_comm_map_[parent];
   }
 
-  uint32 pid = event.pid;
+  uint32_t pid = event.pid;
   if (process_mappers_.find(pid) != process_mappers_.end()) {
     DLOG(INFO) << "Found an existing process mapper with pid: " << pid;
     return true;
@@ -584,7 +532,7 @@ bool PerfParser::MapForkEvent(const struct fork_event& event) {
 }
 
 void PerfParser::ResetAddressMappers() {
-  std::map<uint32, AddressMapper*>::iterator iter;
+  std::map<uint32_t, AddressMapper*>::iterator iter;
   for (iter = process_mappers_.begin(); iter != process_mappers_.end(); ++iter)
     delete iter->second;
   process_mappers_.clear();

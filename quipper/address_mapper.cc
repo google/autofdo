@@ -5,6 +5,7 @@
 #include "address_mapper.h"
 
 #include "base/logging.h"
+#include "base/basictypes.h"
 
 namespace quipper {
 
@@ -12,20 +13,22 @@ AddressMapper::AddressMapper(const AddressMapper& source) {
   mappings_ = source.mappings_;
 }
 
-bool AddressMapper::Map(const uint64 real_addr,
-                        const uint64 size,
+bool AddressMapper::Map(const uint64_t real_addr,
+                        const uint64_t size,
                         const bool remove_existing_mappings) {
-  return MapWithID(real_addr, size, kuint64max, remove_existing_mappings);
+  return MapWithID(real_addr, size, kuint64max, 0, remove_existing_mappings);
 }
 
-bool AddressMapper::MapWithID(const uint64 real_addr,
-                              const uint64 size,
-                              const uint64 id,
+bool AddressMapper::MapWithID(const uint64_t real_addr,
+                              const uint64_t size,
+                              const uint64_t id,
+                              const uint64_t offset_base,
                               bool remove_existing_mappings) {
   MappedRange range;
   range.real_addr = real_addr;
   range.size = size;
   range.id = id;
+  range.offset_base = offset_base;
 
   if (size == 0) {
     LOG(ERROR) << "Must allocate a nonzero-length address range.";
@@ -72,18 +75,26 @@ bool AddressMapper::MapWithID(const uint64 real_addr,
   if (old_range_found) {
     CHECK(Unmap(old_range));
 
-    uint64 gap_before = range.real_addr - old_range.real_addr;
-    uint64 gap_after = (old_range.real_addr + old_range.size) -
-                       (range.real_addr + range.size);
+    uint64_t gap_before = range.real_addr - old_range.real_addr;
+    uint64_t gap_after = (old_range.real_addr + old_range.size) -
+                         (range.real_addr + range.size);
 
-    if (gap_before)
-      CHECK(MapWithID(old_range.real_addr, gap_before, old_range.id, false));
+    if (gap_before) {
+      CHECK(MapWithID(old_range.real_addr,
+                      gap_before,
+                      old_range.id,
+                      old_range.offset_base,
+                      false));
+    }
 
-    CHECK(MapWithID(range.real_addr, range.size, id, false));
+    CHECK(MapWithID(range.real_addr, range.size, id, offset_base, false));
 
     if (gap_after) {
-      CHECK(MapWithID(
-          range.real_addr + range.size, gap_after, old_range.id, false));
+      CHECK(MapWithID(range.real_addr + range.size,
+                      gap_after,
+                      old_range.id,
+                      old_range.offset_base + gap_before + range.size,
+                      false));
     }
 
     return true;
@@ -140,8 +151,8 @@ void AddressMapper::DumpToLog() const {
   }
 }
 
-bool AddressMapper::GetMappedAddress(const uint64 real_addr,
-                                     uint64* mapped_addr) const {
+bool AddressMapper::GetMappedAddress(const uint64_t real_addr,
+                                     uint64_t* mapped_addr) const {
   CHECK(mapped_addr);
   MappingList::const_iterator iter;
   for (iter = mappings_.begin(); iter != mappings_.end(); ++iter) {
@@ -153,9 +164,9 @@ bool AddressMapper::GetMappedAddress(const uint64 real_addr,
   return false;
 }
 
-bool AddressMapper::GetMappedIDAndOffset(const uint64 real_addr,
-                                         uint64* id,
-                                         uint64* offset) const {
+bool AddressMapper::GetMappedIDAndOffset(const uint64_t real_addr,
+                                         uint64_t* id,
+                                         uint64_t* offset) const {
   CHECK(id);
   CHECK(offset);
   MappingList::const_iterator iter;
@@ -163,21 +174,21 @@ bool AddressMapper::GetMappedIDAndOffset(const uint64 real_addr,
     if (!iter->ContainsAddress(real_addr))
       continue;
     *id = iter->id;
-    *offset = real_addr - iter->real_addr;
+    *offset = real_addr - iter->real_addr + iter->offset_base;
     return true;
   }
   return false;
 }
 
-uint64 AddressMapper::GetMaxMappedLength() const {
+uint64_t AddressMapper::GetMaxMappedLength() const {
   if (IsEmpty())
     return 0;
 
-  uint64 min = mappings_.begin()->mapped_addr;
+  uint64_t min = mappings_.begin()->mapped_addr;
 
   MappingList::const_iterator iter = mappings_.end();
   --iter;
-  uint64 max = iter->mapped_addr + iter->size;
+  uint64_t max = iter->mapped_addr + iter->size;
 
   return max - min;
 }

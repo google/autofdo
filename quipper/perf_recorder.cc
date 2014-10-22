@@ -10,6 +10,7 @@
 #include "perf_recorder.h"
 #include "perf_serializer.h"
 #include "quipper_string.h"
+#include "scoped_temp_path.h"
 #include "utils.h"
 
 namespace quipper {
@@ -24,10 +25,14 @@ bool PerfRecorder::RecordAndConvertToProtobuf(
     const string& perf_command,
     const int time,
     quipper::PerfDataProto* perf_data) {
-  string full_perf_command = perf_command + " -o - -- " + GetSleepCommand(time);
+  ScopedTempFile output_file;
+  string full_perf_command = perf_command + " -o " + output_file.path() +
+                             " -- " + GetSleepCommand(time);
 
-  std::vector<char> raw_perf_data;
-  RunCommandAndGetStdout(full_perf_command, &raw_perf_data);
+  // The perf command writes the output to a file. |stdout_data| is just a dummy
+  // container so we have something to pass to RunCommandAndGetStdout().
+  std::vector<char> stdout_data;
+  RunCommandAndGetStdout(full_perf_command, &stdout_data);
 
   // Now convert it into a protobuf.
   PerfSerializer perf_serializer;
@@ -39,8 +44,7 @@ bool PerfRecorder::RecordAndConvertToProtobuf(
 
   perf_serializer.set_options(options);
 
-  return (perf_serializer.ReadFromVector(raw_perf_data) &&
-          perf_serializer.Serialize(perf_data));
+  return perf_serializer.SerializeFromFile(output_file.path(), perf_data);
 }
 
 }  // namespace quipper
