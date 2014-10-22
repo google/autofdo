@@ -9,7 +9,6 @@
 #include <string>
 
 #include "base/logging.h"
-#include "base/stringprintf.h"
 
 #include "perf_protobuf_io.h"
 #include "perf_reader.h"
@@ -17,13 +16,14 @@
 #include "perf_test_files.h"
 #include "quipper_string.h"
 #include "quipper_test.h"
+#include "scoped_temp_path.h"
 #include "test_utils.h"
 #include "utils.h"
 
 namespace {
 
 // Returns a string representation of an unsigned integer |value|.
-string UintToString(uint64 value) {
+string UintToString(uint64_t value) {
   stringstream ss;
   ss << value;
   return ss.str();
@@ -32,6 +32,44 @@ string UintToString(uint64 value) {
 }  // namespace
 
 namespace quipper {
+
+namespace {
+
+// Gets the timestamp from an event field in PerfDataProto.
+const uint64_t GetSampleTimestampFromEventProto(
+    const PerfDataProto_PerfEvent& event) {
+  // Get SampleInfo from the correct type-specific event field for the event.
+  if (event.has_mmap_event()) {
+    return event.mmap_event().sample_info().sample_time_ns();
+  } else if (event.has_sample_event()) {
+    return event.sample_event().sample_time_ns();
+  } else if (event.has_comm_event()) {
+    return event.comm_event().sample_info().sample_time_ns();
+  } else if (event.has_fork_event()) {
+    return event.fork_event().sample_info().sample_time_ns();
+  } else if (event.has_lost_event()) {
+    return event.lost_event().sample_info().sample_time_ns();
+  } else if (event.has_throttle_event()) {
+    return event.throttle_event().sample_info().sample_time_ns();
+  } else if (event.has_read_event()) {
+    return event.read_event().sample_info().sample_time_ns();
+  }
+  return 0;
+}
+
+// Verifies that |proto|'s events are in chronological order. No event should
+// have an earlier timestamp than a preceding event.
+void CheckChronologicalOrderOfSerializedEvents(const PerfDataProto& proto) {
+  uint64_t prev_time_ns = 0;
+  for (int i = 0; i < proto.events_size(); ++i) {
+    // Compare each timestamp against the previous event's timestamp.
+    uint64_t time_ns = GetSampleTimestampFromEventProto(proto.events(i));
+    if (i > 0) {
+      EXPECT_GE(time_ns, prev_time_ns);
+    }
+    prev_time_ns = time_ns;
+  }
+}
 
 void SerializeAndDeserialize(const string& input,
                              const string& output,
@@ -65,11 +103,24 @@ void SerializeAndDeserialize(const string& input,
 
 void SerializeToFileAndBack(const string& input,
                             const string& output) {
-  PerfDataProto input_perf_data_proto;
   struct timeval pre_serialize_time;
   gettimeofday(&pre_serialize_time, NULL);
-  PerfSerializer serializer;
-  EXPECT_TRUE(serializer.SerializeFromFile(input, &input_perf_data_proto));
+
+  // Serialize with and without sorting by chronological order.
+  PerfDataProto input_perf_data_proto;
+
+  // Serialize with and without sorting by chronological order.
+  PerfSerializer sorted_serializer;
+  sorted_serializer.set_serialize_sorted_events(true);
+  EXPECT_TRUE(
+      sorted_serializer.SerializeFromFile(input, &input_perf_data_proto));
+  CheckChronologicalOrderOfSerializedEvents(input_perf_data_proto);
+
+  input_perf_data_proto.Clear();
+  PerfSerializer unsorted_serializer;
+  unsorted_serializer.set_serialize_sorted_events(false);
+  EXPECT_TRUE(
+      unsorted_serializer.SerializeFromFile(input, &input_perf_data_proto));
 
   // Make sure the timestamp_sec was properly recorded.
   EXPECT_TRUE(input_perf_data_proto.has_timestamp_sec());
@@ -104,6 +155,8 @@ void SerializeToFileAndBack(const string& input,
   remove(output_filename.c_str());
 }
 
+}  // namespace
+
 TEST(PerfSerializerTest, Test1Cycle) {
   ScopedTempDir output_dir;
   ASSERT_FALSE(output_dir.path().empty());
@@ -128,8 +181,10 @@ TEST(PerfSerializerTest, Test1Cycle) {
     LOG(INFO) << "Testing " << input_perf_data;
     input_perf_reader.ReadFile(input_perf_data);
 
-    // For every other perf data file, discard unused events.
-    bool discard = (i % 2 == 0);
+    // Discard unused events for a pseudorandom selection of half the test data
+    // files. The selection is based on the Md5sum prefix, so that the files can
+    // be moved around in the |kPerfDataFiles| list.
+    bool discard = (Md5Prefix(test_file) % 2 == 0);
 
     SerializeAndDeserialize(input_perf_data, output_perf_data, false, discard);
     output_perf_reader.ReadFile(output_perf_data);
@@ -289,16 +344,40 @@ TEST(PerfSerializerTest, TestProtoFiles) {
     string perf_data_proto_file =
         GetTestInputFilePath(perf_test_files::kPerfDataProtoFiles[i]);
     LOG(INFO) << "Testing " << perf_data_proto_file;
-    PerfDataProto perf_data_proto;
     std::vector<char> data;
     ASSERT_TRUE(FileToBuffer(perf_data_proto_file, &data));
     string text(data.begin(), data.end());
 
+    PerfDataProto perf_data_proto;
     ASSERT_TRUE(TextFormat::ParseFromString(text, &perf_data_proto));
     LOG(INFO) << perf_data_proto.file_attrs_size();
 
+    // Test deserializing.
     PerfSerializer perf_serializer;
     EXPECT_TRUE(perf_serializer.Deserialize(perf_data_proto));
+  }
+}
+
+TEST(PerfSerializerTest, TestBuildIDs) {
+  for (unsigned int i = 0;
+       i < arraysize(perf_test_files::kPerfDataProtoFiles);
+       ++i) {
+    string perf_data_file =
+        GetTestInputFilePath(perf_test_files::kPerfDataFiles[i]);
+    LOG(INFO) << "Testing " << perf_data_file;
+
+    // Serialize into a protobuf.
+    PerfSerializer perf_serializer;
+    PerfDataProto perf_data_proto;
+    EXPECT_TRUE(perf_serializer.SerializeFromFile(perf_data_file,
+                                                  &perf_data_proto));
+
+    // Test a file with build ID filenames removed.
+    for (int i = 0; i < perf_data_proto.build_ids_size(); ++i) {
+      perf_data_proto.mutable_build_ids(i)->clear_filename();
+    }
+    PerfSerializer perf_serializer_build_ids;
+    EXPECT_TRUE(perf_serializer_build_ids.Deserialize(perf_data_proto));
   }
 }
 

@@ -5,7 +5,7 @@
 # TODO(asharif): Convert this to common.mk.
 CXX ?= g++
 
-BASE_VER ?= 180609
+BASE_VER ?= 293518
 PKG_CONFIG ?= pkg-config
 PC_DEPS = openssl protobuf
 PC_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PC_DEPS))
@@ -26,10 +26,10 @@ GENERATED_HEADERS = $(GENERATED_SOURCES:.pb.cc=.pb.h)
 
 COMMON_SOURCES = utils.cc perf_reader.cc perf_parser.cc perf_serializer.cc \
 		 address_mapper.cc perf_protobuf_io.cc perf_recorder.cc \
-		 conversion_utils.cc \
+		 conversion_utils.cc scoped_temp_path.cc \
 		 $(GENERATED_SOURCES)
 COMMON_OBJECTS = $(COMMON_SOURCES:.cc=.o)
-TEST_COMMON_SOURCES = test_utils.cc test_utils_defs.cc
+TEST_COMMON_SOURCES = test_utils.cc
 TEST_COMMON_OBJECTS = $(TEST_COMMON_SOURCES:.cc=.o)
 
 TESTS = $(TEST_SOURCES:.cc=)

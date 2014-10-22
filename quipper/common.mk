@@ -51,9 +51,9 @@
 # compiling the objects.  This can be done by adding one of the following
 # to the Makefile:
 #   - For C source files
-#   $(eval $(call add_object_rules,sub/dir/gen_a.o sub/dir/b.o,CC,c,CFLAGS))
+#     $(eval $(call add_object_rules,sub/dir/gen_a.o sub/dir/gen_b.o,CC,c))
 #   - For C++ source files
-#   $(eval $(call add_object_rules,sub/dir/gen_a.o sub/dir/b.o,CXX,cc,CXXFLAGS))
+#     $(eval $(call add_object_rules,sub/dir/gen_a.o sub/dir/gen_b.o,CXX,cc))
 #
 # Exported targets meant to have prerequisites added to:
 #  - all - Your desired targets should be given
@@ -101,6 +101,8 @@ COLOR ?= 1
 VERBOSE ?= 0
 MODE ?= opt
 ARCH ?= $(shell uname -m)
+NEEDS_ROOT = 0
+NEEDS_MOUNTS = 0
 
 # Put objects in a separate tree based on makefile locations
 # This means you can build a tree without touching it:
@@ -269,48 +271,15 @@ else
 CXXDRIVER = gcc
 endif
 
-# Internal macro to support check_XXX macros below.
-# Usage: $(call check_compile, [code], [compiler], [code_type], [c_flags],
-#               [extra_c_flags], [library_flags], [success_ret], [fail_ret])
-# Return: [success_ret] if compile succeeded, otherwise [fail_ret]
-check_compile = $(shell printf '%b\n' $(1) | \
-  $($(2)) $($(4)) -x $(3) $(LDFLAGS) $(5) - $(6) -o /dev/null > /dev/null 2>&1 \
-  && echo "$(7)" || echo "$(8)")
-
-# Helper macro to check whether a test program will compile with the specified
-# compiler flags.
-# Usage: $(call check_compile_cc, [code], [flags], [alternate_flags])
-# Return: [flags] if compile succeeded, otherwise [alternate_flags]
-check_compile_cc = $(call check_compile,$(1),CC,c,CFLAGS,$(2),,$(2),$(3))
-check_compile_cxx = $(call check_compile,$(1),CXX,c++,CXXFLAGS,$(2),,$(2),$(3))
-
-# Helper macro to check whether a test program will compile with the specified
-# libraries.
-# Usage: $(call check_compile_cc, [code], [library_flags], [alternate_flags])
-# Return: [library_flags] if compile succeeded, otherwise [alternate_flags]
-check_libs_cc = $(call check_compile,$(1),CC,c,CFLAGS,,$(2),$(2),$(3))
-check_libs_cxx = $(call check_compile,$(1),CXX,c++,CXXFLAGS,,$(2),$(2),$(3))
-
-# Helper macro to check whether the compiler accepts the specified flags.
-# Usage: $(call check_compile_cc, [flags], [alternate_flags])
-# Return: [flags] if compile succeeded, otherwise [alternate_flags]
-check_cc = $(call check_compile_cc,'int main() { return 0; }',$(1),$(2))
-check_cxx = $(call check_compile_cxx,'int main() { return 0; }',$(1),$(2))
-
-# Choose the stack protector flags based on whats supported by the compiler.
-SSP_CFLAGS := $(call check_cc,-fstack-protector-strong)
-ifeq ($(SSP_CFLAGS),)
- SSP_CFLAGS := $(call check_cc,-fstack-protector-all)
-endif
-
 # To update these from an including Makefile:
 #  CXXFLAGS += -mahflag  # Append to the list
 #  CXXFLAGS := -mahflag $(CXXFLAGS) # Prepend to the list
 #  CXXFLAGS := $(filter-out badflag,$(CXXFLAGS)) # Filter out a value
 # The same goes for CFLAGS.
-COMMON_CFLAGS-gcc := -fvisibility=internal -ggdb3 -Wa,--noexecstack
-COMMON_CFLAGS-clang := -fvisibility=hidden -ggdb
-COMMON_CFLAGS := -Wall -Werror -fno-strict-aliasing $(SSP_CFLAGS) -O1 -Wformat=2
+COMMON_CFLAGS-gcc := -fstack-protector-strong -fvisibility=internal -ggdb3 \
+  -Wa,--noexecstack
+COMMON_CFLAGS-clang := -fstack-protector-all -fvisibility=hidden -ggdb
+COMMON_CFLAGS := -Wall -Werror -fno-strict-aliasing -O1 -Wformat=2
 CXXFLAGS += $(COMMON_CFLAGS) $(COMMON_CFLAGS-$(CXXDRIVER))
 CFLAGS += $(COMMON_CFLAGS) $(COMMON_CFLAGS-$(CDRIVER))
 CPPFLAGS += -D_FORTIFY_SOURCE=2
@@ -637,11 +606,6 @@ else
   USE_QEMU ?= 0
 endif
 
-# Normally we don't need to run as root or do bind mounts, so only
-# enable it by default when we're using QEMU.
-NEEDS_ROOT ?= $(USE_QEMU)
-NEEDS_MOUNTS ?= $(USE_QEMU)
-
 SYSROOT_OUT = $(OUT)
 ifneq ($(SYSROOT),)
   SYSROOT_OUT = $(subst $(SYSROOT),,$(OUT))
@@ -649,15 +613,6 @@ else
   # Default to / when all the empty-sysroot logic is done.
   SYSROOT = /
 endif
-
-QEMU_NAME = qemu-$(QEMU_ARCH)
-QEMU_PATH = /build/bin/$(QEMU_NAME)
-QEMU_SYSROOT_PATH = $(SYSROOT)$(QEMU_PATH)
-QEMU_SRC_PATH = /usr/bin/$(QEMU_NAME)
-QEMU_BINFMT_PATH = /proc/sys/fs/binfmt_misc/$(QEMU_NAME)
-QEMU_REGISTER_PATH = /proc/sys/fs/binfmt_misc/register
-
-QEMU_MAGIC_arm = ":$(QEMU_NAME):M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x28\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/build/bin/qemu-arm:"
 
 
 #
@@ -676,9 +631,6 @@ ifneq ($(MAKECMDGOALS),clean)
   $(info - COLOR=$(COLOR))
   $(info - ARCH=$(ARCH))
   $(info - QEMU_ARCH=$(QEMU_ARCH))
-  $(info - USE_QEMU=$(USE_QEMU))
-  $(info - NEEDS_ROOT=$(NEEDS_ROOT))
-  $(info - NEEDS_MOUNTS=$(NEEDS_MOUNTS))
   $(info - SYSROOT=$(SYSROOT))
   $(info )
 endif
@@ -698,67 +650,41 @@ all:
 # After the test have completed, if profiling, run coverage analysis
 tests:
 ifeq ($(MODE),profiling)
-	@$(ECHO) "COVERAGE [$(COLOR_YELLOW)STARTED$(COLOR_RESET)]"
-	$(QUIET)FILES="";						\
-		for GCNO in `find . -name "*.gcno"`; do			\
+	@$(ECHO) -n "COVERAGE		gcov "
+	@$(ECHO) "[$(COLOR_YELLOW)STARTED$(COLOR_RESET)]"
+	$(QUIET)(FILES="";						\
+		for GCNO in `find . -name "*.gcno"`;			\
+		do							\
 			GCDA="$${GCNO%.gcno}.gcda";			\
-			if [ -e $${GCDA} ]; then			\
-				FILES="$${FILES} $${GCDA}";		\
-			fi						\
+			[ -e $${GCDA} ] && FILES="$${FILES} $${GCDA}";	\
 		done;							\
-		if [ -n "$${FILES}" ]; then				\
-			gcov -l $${FILES};				\
-			lcov --capture --directory .			\
-				--output-file=lcov-coverage.info;	\
-			genhtml lcov-coverage.info			\
-				--output-directory lcov-html;		\
-		fi
-	@$(ECHO) "COVERAGE [$(COLOR_YELLOW)FINISHED$(COLOR_RESET)]"
+		gcov -l $${FILES})
+	@$(ECHO) -n "COVERAGE		gcov "
+	@$(ECHO) "[$(COLOR_YELLOW)FINISHED$(COLOR_RESET)]"
+	@$(ECHO) -n "COVERAGE		lcov "
+	@$(ECHO) "[$(COLOR_YELLOW)STARTED$(COLOR_RESET)]"
+	$(QUIET)lcov --capture --directory . --output-file=lcov-coverage.info
+	$(QUIET)genhtml lcov-coverage.info --output-directory lcov-html
+	@$(ECHO) -n "COVERAGE		lcov "
+	@$(ECHO) "[$(COLOR_YELLOW)FINISHED$(COLOR_RESET)]"
 endif
 .PHONY: tests
 
+qemu_clean:
+	$(call if_qemu,$(call silent_rm,$(OUT)/qemu-$(QEMU_ARCH)))
+
 qemu_chroot_install:
 ifeq ($(USE_QEMU),1)
-	$(QUIET)$(ECHO) "QEMU   Preparing $(QEMU_NAME)"
-	@# Copying strategy
-	@# Compare /usr/bin/qemu inode to /build/$board/build/bin/qemu, if different
-	@# hard link to a temporary file, then rename temp to target. This should
-	@# ensure that once $QEMU_SYSROOT_PATH exists it will always exist, regardless
-	@# of simultaneous test setups.
-	$(QUIET)if [[ ! -e $(QEMU_SYSROOT_PATH) || \
-	    `stat -c %i $(QEMU_SRC_PATH)` != `stat -c %i $(QEMU_SYSROOT_PATH)` \
-	    ]]; then \
-	  $(ROOT_CMD) ln -Tf $(QEMU_SRC_PATH) $(QEMU_SYSROOT_PATH).$$$$; \
-	  $(ROOT_CMD) mv -Tf $(QEMU_SYSROOT_PATH).$$$$ $(QEMU_SYSROOT_PATH); \
-	fi
-
-	@# Prep the binfmt handler. First mount if needed, then unregister any bad
-	@# mappings and then register our mapping.
-	@# There may still be some race conditions here where one script de-registers
-	@# and another script starts executing before it gets re-registered, however
-	@# it should be rare.
-	-$(QUIET)[[ -e $(QEMU_REGISTER_PATH) ]] || \
-	  $(ROOT_CMD) mount binfmt_misc -t binfmt_misc \
-	    /proc/sys/fs/binfmt_misc
-
-	-$(QUIET)if [[ -e $(QEMU_BINFMT_PATH) && \
-	      `awk '$$1 == "interpreter" {print $$NF}' $(QEMU_BINFMT_PATH)` != \
-	      "$(QEMU_PATH)" ]]; then \
-	  echo -1 | $(ROOT_CMD) tee $(QEMU_BINFMT_PATH) >/dev/null; \
-	fi
-
-	-$(if $(QEMU_MAGIC_$(ARCH)),$(QUIET)[[ -e $(QEMU_BINFMT_PATH) ]] || \
-	  echo $(QEMU_MAGIC_$(ARCH)) | $(ROOT_CMD) tee $(QEMU_REGISTER_PATH) \
-	    >/dev/null)
+	$(QUIET)$(ECHO) "QEMU   Preparing qemu-$(QEMU_ARCH)"
+	$(QUIET)cp -fu /usr/bin/qemu-$(QEMU_ARCH) $(OUT)/qemu-$(QEMU_ARCH)
+	$(QUIET)chmod a+rx $(OUT)/qemu-$(QEMU_ARCH)
 endif
 .PHONY: qemu_clean qemu_chroot_install
 
 # TODO(wad) Move to -L $(SYSROOT) and fakechroot when qemu-user
 #           doesn't hang traversing /proc from SYSROOT.
-SUDO_CMD = sudo
-UNSHARE_CMD = unshare
 QEMU_CMD =
-ROOT_CMD = $(if $(filter 1,$(NEEDS_ROOT)),$(SUDO_CMD) , )
+ROOT_CMD = $(if $(filter 1,$(NEEDS_ROOT)),sudo , )
 MOUNT_CMD = $(if $(filter 1,$(NEEDS_MOUNTS)),$(ROOT_CMD) mount, \#)
 UMOUNT_CMD = $(if $(filter 1,$(NEEDS_MOUNTS)),$(ROOT_CMD) umount, \#)
 QEMU_LDPATH = $(SYSROOT_LDPATH):/lib64:/lib:/usr/lib64:/usr/lib
@@ -767,10 +693,10 @@ ROOT_CMD_LDPATH := $(ROOT_CMD_LDPATH):$(SYSROOT)/lib:$(SYSROOT)/usr/lib64:
 ROOT_CMD_LDPATH := $(ROOT_CMD_LDPATH):$(SYSROOT)/usr/lib
 ifeq ($(USE_QEMU),1)
   export QEMU_CMD = \
-   $(SUDO_CMD) chroot $(SYSROOT) $(QEMU_PATH) \
+   sudo chroot $(SYSROOT) $(SYSROOT_OUT)qemu-$(QEMU_ARCH) \
    -drop-ld-preload \
    -E LD_LIBRARY_PATH="$(QEMU_LDPATH):$(patsubst $(OUT),,$(LD_DIRS))" \
-   -E HOME="$(HOME)" -E SRC="$(SRC)" --
+   -E HOME="$(HOME)" --
   # USE_QEMU conditional function
   define if_qemu
     $(1)
@@ -799,25 +725,22 @@ define TEST_setup
   @$(ECHO) -n "TEST		$(TARGET_OR_MEMBER) "
   @$(ECHO) "[$(COLOR_YELLOW)SETUP$(COLOR_RESET)]"
   $(QUIET)# Setup a target-specific results file
-  $(QUIET)(echo > $(OUT)$(TARGET_OR_MEMBER).setup.test)
   $(QUIET)(echo 1 > $(OUT)$(TARGET_OR_MEMBER).status.test)
   $(QUIET)(echo > $(OUT)$(TARGET_OR_MEMBER).cleanup.test)
   $(QUIET)# No setup if we are not using QEMU
   $(QUIET)# TODO(wad) this is racy until we use a vfs namespace
   $(call if_qemu,\
-    $(QUIET)(echo "mkdir -p '$(SYSROOT)/proc' '$(SYSROOT)/dev' \
-                            '$(SYSROOT)/mnt/host/source'" \
-             >> "$(OUT)$(TARGET_OR_MEMBER).setup.test"))
+    $(QUIET)sudo mkdir -p "$(SYSROOT)/proc" "$(SYSROOT)/dev")
   $(call if_qemu,\
-    $(QUIET)(echo "$(MOUNT_CMD) --bind /mnt/host/source \
-             '$(SYSROOT)/mnt/host/source'" \
-             >> "$(OUT)$(TARGET_OR_MEMBER).setup.test"))
+    $(QUIET)$(MOUNT_CMD) --bind /proc "$(SYSROOT)/proc")
   $(call if_qemu,\
-    $(QUIET)(echo "$(MOUNT_CMD) --bind /proc '$(SYSROOT)/proc'" \
-             >> "$(OUT)$(TARGET_OR_MEMBER).setup.test"))
+    $(QUIET)$(MOUNT_CMD) --bind /dev "$(SYSROOT)/dev")
   $(call if_qemu,\
-    $(QUIET)(echo "$(MOUNT_CMD) --bind /dev '$(SYSROOT)/dev'" \
-             >> "$(OUT)$(TARGET_OR_MEMBER).setup.test"))
+    $(QUIET)(echo "$(UMOUNT_CMD) -l '$(SYSROOT)/proc'" \
+             >> "$(OUT)$(TARGET_OR_MEMBER).cleanup.test"))
+  $(call if_qemu,\
+    $(QUIET)(echo "$(UMOUNT_CMD) -l '$(SYSROOT)/dev'" \
+             >> "$(OUT)$(TARGET_OR_MEMBER).cleanup.test"))
 endef
 
 define TEST_teardown
@@ -834,13 +757,11 @@ define TEST_run
   @$(ECHO) -n "TEST		$(TARGET_OR_MEMBER) "
   @$(ECHO) "[$(COLOR_GREEN)RUN$(COLOR_RESET)]"
   $(QUIET)(echo 1 > "$(OUT)$(TARGET_OR_MEMBER).status.test")
-  $(QUIET)(echo $(ROOT_CMD) SRC="$(SRC)" $(QEMU_CMD) $(VALGRIND_CMD) \
+  -($(ROOT_CMD) $(QEMU_CMD) $(VALGRIND_CMD) \
     "$(strip $(call if_qemu, $(SYSROOT_OUT),$(OUT))$(TARGET_OR_MEMBER))" \
       $(if $(filter-out 0,$(words $(GTEST_ARGS.real))),$(GTEST_ARGS.real),\
-           $(GTEST_ARGS)) >> "$(OUT)$(TARGET_OR_MEMBER).setup.test")
-  -$(QUIET)$(call if_qemu,$(SUDO_CMD) $(UNSHARE_CMD) -m) $(SHELL) \
-      $(OUT)$(TARGET_OR_MEMBER).setup.test \
-  && echo 0 > "$(OUT)$(TARGET_OR_MEMBER).status.test"
+           $(GTEST_ARGS)) && \
+    echo 0 > "$(OUT)$(TARGET_OR_MEMBER).status.test")
 endef
 
 # Recursive list reversal so that we get RMDIR_ON_CLEAN in reverse order.

@@ -83,7 +83,8 @@ uint64 Profile::ProfileMaps::GetAggregatedCount() const {
 
   if (range_count_map.size() > 0) {
     for (const auto &range_count : range_count_map) {
-      ret += range_count.second;
+      ret += range_count.second * (range_count.first.second -
+                                   range_count.first.first);
     }
   } else {
     for (const auto &addr_count : address_count_map) {
@@ -95,8 +96,7 @@ uint64 Profile::ProfileMaps::GetAggregatedCount() const {
 
 void Profile::ProcessPerFunctionProfile(string func_name,
                                         const ProfileMaps &maps) {
-  if (maps.GetAggregatedCount() <=
-      sample_reader_->GetMaxCount() / FLAGS_sample_threshold) {
+  if (!symbol_map_->ShouldEmit(maps.GetAggregatedCount())) {
     return;
   }
 
@@ -136,15 +136,10 @@ void Profile::ProcessPerFunctionProfile(string func_name,
     if (info == NULL) {
       continue;
     }
-    const string *symbol;
-    if (!symbol_map_->GetSymbolInfoByAddr(address_count.first, &symbol,
-                                          NULL, NULL)) {
-      continue;
-    }
     bool is_in_head = symbol_map_->GetSymbolNameByStartAddr(
         address_count.first) != NULL;
     if (is_in_head) {
-      symbol_map_->AddSymbolEntryCount(*symbol, address_count.second);
+      symbol_map_->AddSymbolEntryCount(func_name, address_count.second);
     }
     if (info->source_stack.size() > 0) {
       symbol_map_->AddSourceCount(func_name, info->source_stack,
@@ -177,6 +172,8 @@ void Profile::ProcessPerFunctionProfile(string func_name,
 }
 
 void Profile::ComputeProfile() {
+  symbol_map_->CalculateThresholdFromTotalCount(
+      sample_reader_->GetTotalCount());
   AggregatePerFunctionProfile();
   // Traverse the symbol map to process the profiles.
   for (const auto &symbol_profile : symbol_profile_maps_) {

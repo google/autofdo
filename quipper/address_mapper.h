@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ADDRESS_MAPPER_
-#define ADDRESS_MAPPER_
+#ifndef CHROMIUMOS_WIDE_PROFILING_ADDRESS_MAPPER_H_
+#define CHROMIUMOS_WIDE_PROFILING_ADDRESS_MAPPER_H_
+
+#include <stdint.h>
 
 #include <list>
-
-#include "base/basictypes.h"
 
 namespace quipper {
 
@@ -25,27 +25,34 @@ class AddressMapper {
   // collide with the new range in real address space, indicating it has been
   // unmapped.
   // Returns true if mapping was successful.
-  bool Map(const uint64 real_addr,
-           const uint64 length,
+  bool Map(const uint64_t real_addr,
+           const uint64_t length,
            bool remove_existing_mappings);
 
   // Like Map(real_addr, length, remove_existing_mappings).  |id| is an
   // identifier value to be stored along with the mapping.  AddressMapper does
   // not care whether it is unique compared to all other IDs passed in.  That is
   // up to the caller to keep track of.
-  bool MapWithID(const uint64 real_addr,
-                 const uint64 length,
-                 const uint64 id,
+  // |offset_base| represents the offset within the original region at which the
+  // mapping begins. The original region can be much larger than the mapped
+  // region.
+  // e.g. Given a mapped region with base=0x4000 and size=0x2000 mapped with
+  // offset_base=0x10000, then the address 0x5000 maps to an offset of 0x11000
+  // (0x5000 - 0x4000 + 0x10000).
+  bool MapWithID(const uint64_t real_addr,
+                 const uint64_t length,
+                 const uint64_t id,
+                 const uint64_t offset_base,
                  bool remove_existing_mappings);
 
   // Looks up |real_addr| and returns the mapped address.
-  bool GetMappedAddress(const uint64 real_addr, uint64* mapped_addr) const;
+  bool GetMappedAddress(const uint64_t real_addr, uint64_t* mapped_addr) const;
 
   // Looks up |real_addr| and returns the mapping's ID and offset from the
   // start of the mapped space.
-  bool GetMappedIDAndOffset(const uint64 real_addr,
-                            uint64* id,
-                            uint64* offset) const;
+  bool GetMappedIDAndOffset(const uint64_t real_addr,
+                            uint64_t* id,
+                            uint64_t* offset) const;
 
   // Returns true if there are no mappings.
   bool IsEmpty() const {
@@ -61,21 +68,22 @@ class AddressMapper {
   // There may be gaps in between blocks.
   // If the result is 2^64 (all of quipper space), this returns 0.  Call
   // IsEmpty() to distinguish this from actual emptiness.
-  uint64 GetMaxMappedLength() const;
+  uint64_t GetMaxMappedLength() const;
 
   // Dumps the state of the address mapper to logs. Useful for debugging.
   void DumpToLog() const;
 
  private:
   struct MappedRange {
-    uint64 real_addr;
-    uint64 mapped_addr;
-    uint64 size;
+    uint64_t real_addr;
+    uint64_t mapped_addr;
+    uint64_t size;
 
-    uint64 id;
+    uint64_t id;
+    uint64_t offset_base;
 
     // Length of unmapped space after this range.
-    uint64 unmapped_space_after;
+    uint64_t unmapped_space_after;
 
     // Determines if this range intersects another range in real space.
     inline bool Intersects(const MappedRange& range) const {
@@ -97,7 +105,7 @@ class AddressMapper {
     }
 
     // Determines if this range contains the given address |addr|.
-    inline bool ContainsAddress(uint64 addr) const {
+    inline bool ContainsAddress(uint64_t addr) const {
       return (addr >= real_addr && addr <= real_addr + size - 1);
     }
   };
@@ -111,8 +119,10 @@ class AddressMapper {
 
   // Container for all the existing mappings.
   MappingList mappings_;
+
+  bool CheckMappings() const;
 };
 
 }  // namespace quipper
 
-#endif  // ADDRESS_MAPPER_
+#endif  // CHROMIUMOS_WIDE_PROFILING_ADDRESS_MAPPER_H_

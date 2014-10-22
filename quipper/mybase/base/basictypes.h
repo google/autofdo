@@ -2,20 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_BASICTYPES_H_
-#define BASE_BASICTYPES_H_
+#ifndef CHROMIUMOS_WIDE_PROFILING_MYBASE_BASE_BASICTYPES_H_
+#define CHROMIUMOS_WIDE_PROFILING_MYBASE_BASE_BASICTYPES_H_
 
-#include <stdint.h>
+#include <limits>
 
 #include "base/macros.h"
 
-typedef uint64_t uint64;
-typedef uint32_t uint32;
-typedef uint16_t uint16;
-typedef uint8_t uint8;
-
-static const uint64 kuint64max = ((uint64) 0xFFFFFFFFFFFFFFFFLL);
+static const uint64_t kuint64max = std::numeric_limits<uint64_t>::max();
 
 #define arraysize(x) (sizeof(x) / sizeof(*x))
 
-#endif  // BASE_BASICTYPES_H_
+#endif  // CHROMIUMOS_WIDE_PROFILING_MYBASE_BASE_BASICTYPES_H_

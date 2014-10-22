@@ -75,7 +75,7 @@ bool ProfileCreator::ReadSample(const string &input_profile_name,
     LOG(ERROR) << "Unsupported profiler type: " << profiler;
     return false;
   }
-  if (!sample_reader_->ReadAndSetMaxCount()) {
+  if (!sample_reader_->ReadAndSetTotalCount()) {
     LOG(ERROR) << "Error reading profile.";
     return false;
   }
@@ -130,7 +130,7 @@ bool MergeSample(const string &input_file, const string &input_profiler,
                  const string &binary, const string &output_file) {
   TextSampleReaderWriter writer(output_file);
   if (writer.IsFileExist()) {
-    if (!writer.ReadAndSetMaxCount()) {
+    if (!writer.ReadAndSetTotalCount()) {
       return false;
     }
   }

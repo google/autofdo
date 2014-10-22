@@ -1,8 +1,5 @@
 {
   'target_defaults': {
-    'dependencies': [
-      '../libchromeos/libchromeos-<(libbase_ver).gyp:libchromeos-<(libbase_ver)',
-    ],
     'variables': {
       'deps': [
         'libchrome-<(libbase_ver)',
@@ -22,6 +19,7 @@
         'perf_reader.cc',
         'perf_recorder.cc',
         'perf_serializer.cc',
+        'scoped_temp_path.cc',
         'utils.cc',
       ],
       'dependencies': [
@@ -46,7 +44,6 @@
       'type': 'static_library',
       'sources': [
         'test_utils.cc',
-        'test_utils_defs.cc',
       ],
       'dependencies': [
         'common',
@@ -75,6 +72,17 @@
       ],
       'sources': [
         'quipper.cc',
+      ]
+    },
+    {
+      'target_name': 'perf_converter',
+      'type': 'executable',
+      'dependencies': [
+        'common',
+        'conversion_utils',
+      ],
+      'sources': [
+        'perf_converter.cc',
       ]
     },
   ],

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fstream>
 #include <vector>
 
 #include "base/logging.h"
@@ -24,7 +23,6 @@ bool WriteProtobufToFile(const PerfDataProto& perf_data_proto,
 
 bool ReadProtobufFromFile(PerfDataProto* perf_data_proto,
                           const string& filename) {
-  std::ifstream in(filename.c_str(), std::ios::binary);
   std::vector<char> buffer;
   if (!FileToBuffer(filename, &buffer))
     return false;

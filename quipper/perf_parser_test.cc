@@ -14,6 +14,7 @@
 #include "perf_test_files.h"
 #include "quipper_string.h"
 #include "quipper_test.h"
+#include "scoped_temp_path.h"
 #include "test_utils.h"
 
 namespace quipper {
@@ -26,11 +27,11 @@ void CheckChronologicalOrderOfEvents(const PerfReader& reader,
   // ReadPerfSampleInfo() uses the |sample_type_| member of PerfReader to
   // determine which sample info fields are present.
   struct perf_sample sample_info;
-  CHECK(reader.ReadPerfSampleInfo(**events[0]->raw_event, &sample_info));
-  uint64 prev_time = sample_info.time;
+  CHECK(reader.ReadPerfSampleInfo(*events[0]->raw_event, &sample_info));
+  uint64_t prev_time = sample_info.time;
   for (unsigned int i = 1; i < events.size(); ++i) {
     struct perf_sample sample_info;
-    CHECK(reader.ReadPerfSampleInfo(**events[i]->raw_event, &sample_info));
+    CHECK(reader.ReadPerfSampleInfo(*events[i]->raw_event, &sample_info));
     CHECK_LE(prev_time, sample_info.time);
     prev_time = sample_info.time;
   }

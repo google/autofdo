@@ -1,0 +1,9 @@
+# https://cs.corp.google.com/#google3/devtools/metadata/presubmit.proto
+
+presubmit: {
+  review_notify: "cwp-reviews"
+  check_lint: {}
+  include_presubmit: "//depot/google3/analysis/uma/chromeos_wide_profiling/METADATA"
+  include_presubmit: "//depot/google3/perftools/gwp/METADATA"
+  include_presubmit: "//depot/google3/devtools/crosstool/autofdo/METADATA"
+}

@@ -4,15 +4,15 @@
 
 #include <string>
 
-#include "perf_reader.h"
-#include "perf_serializer.h"
 #include "perf_protobuf_io.h"
+#include "perf_reader.h"
 #include "perf_recorder.h"
+#include "perf_serializer.h"
 #include "quipper_string.h"
 #include "quipper_test.h"
 #include "test_utils.h"
 
-namespace quipper{
+namespace quipper {
 
 TEST(PerfRecorderTest, TestRecord) {
   // Read perf data using the PerfReader class.
@@ -24,6 +24,7 @@ TEST(PerfRecorderTest, TestRecord) {
   EXPECT_TRUE(perf_recorder.RecordAndConvertToProtobuf(perf_command_line,
                                                        1,
                                                        &perf_data_proto));
+  EXPECT_GT(perf_data_proto.build_ids_size(), 0);
 }
 
 }  // namespace quipper

@@ -1,12 +1,11 @@
 // Copyright (c) 2013 The Chromium OS Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+#define QUIPPER_EXTERNAL_TEST_PATHS  // inserted by sync_quipper.py
 
 #include "test_utils.h"
 
-#include <errno.h>
 #include <string.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -71,19 +70,6 @@ string GetPerfBuildIDArgs() {
   for (size_t i = 0; i < arraysize(kPerfBuildIDArgs); ++i)
     args += string(kPerfBuildIDArgs[i]) + " ";
   return args;
-}
-
-// Trim leading and trailing whitespace from |str|.
-void TrimWhitespace(string* str) {
-  const char kWhitespaceCharacters[] = " \t\n\r";
-  size_t end = str->find_last_not_of(kWhitespaceCharacters);
-  if (end != std::string::npos) {
-    size_t start = str->find_first_not_of(kWhitespaceCharacters);
-    *str = str->substr(start, end + 1 - start);
-  } else {
-    // The string contains only whitespace.
-    *str = "";
-  }
 }
 
 // Splits a character array by |delimiter| into a vector of strings tokens.
@@ -156,11 +142,21 @@ const char* kSupportedMetadata[] = {
   NULL,
 };
 
-long int GetFileSize(const string& filename) {
+#ifndef QUIPPER_EXTERNAL_TEST_PATHS
+string GetTestInputFilePath(const string& filename) {
+  return "testdata/" + filename;
+}
+
+string GetPerfPath() {
+  return "/usr/bin/perf";
+}
+#endif  // !QUIPPER_EXTERNAL_TEST_PATHS
+
+int64_t GetFileSize(const string& filename) {
   FILE* fp = fopen(filename.c_str(), "rb");
   if (!fp)
     return -1;
-  long int file_size = GetFileSizeFromHandle(fp);
+  int64_t file_size = GetFileSizeFromHandle(fp);
   fclose(fp);
   return file_size;
 }
@@ -174,28 +170,6 @@ bool CompareFileContents(const string& filename1, const string& filename2) {
   }
 
   return file1_contents == file2_contents;
-}
-
-ScopedTempFile::ScopedTempFile() {
-  char filename[] = "/tmp/XXXXXX";
-  int fd = mkstemp(filename);
-  if (fd == -1)
-    return;
-  close(fd);
-  path_ = filename;
-}
-
-ScopedTempDir::ScopedTempDir() {
-  char dirname[] = "/tmp/XXXXXX";
-  const char* name = mkdtemp(dirname);
-  if (!name)
-    return;
-  path_ = string(name) + "/";
-}
-
-ScopedTempPath::~ScopedTempPath() {
-  if (!path_.empty() && remove(path_.c_str()))
-    LOG(ERROR) << "Error while removing " << path_ << ", errno: " << errno;
 }
 
 bool GetPerfBuildIDMap(const string& filename,

@@ -3,17 +3,18 @@
 // found in the LICENSE file.
 
 #include <openssl/md5.h>
+#include <sys/stat.h>
 
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
+#include <fstream>  // NOLINT(readability/streams)
 #include <iomanip>
 #include <sstream>
 #include <zlib.h>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/macros.h"
 
 #include "utils.h"
 
@@ -26,17 +27,17 @@ const int kFileReadSize = 1024;
 // Number of hex digits in a byte.
 const int kNumHexDigitsInByte = 2;
 
-// Initial buffer size when reading compresed files.
+// Initial buffer size when reading compressed files.
 const int kInitialBufferSizeForCompressedFiles = 4096;
 
 }  // namespace
 
 namespace quipper {
 
-long int GetFileSizeFromHandle(FILE* fp) {
-  long int position = ftell(fp);
+int64_t GetFileSizeFromHandle(FILE* fp) {
+  int64_t position = ftell(fp);
   fseek(fp, 0, SEEK_END);
-  long int file_size = ftell(fp);
+  int64_t file_size = ftell(fp);
   // Restore the original file handle position.
   fseek(fp, position, SEEK_SET);
   return file_size;
@@ -48,21 +49,27 @@ event_t* CallocMemoryForEvent(size_t size) {
   return event;
 }
 
+event_t* ReallocMemoryForEvent(event_t* event, size_t new_size) {
+  event_t* new_event = reinterpret_cast<event_t*>(realloc(event, new_size));
+  CHECK(new_event);  // NB: event is "leaked" if this CHECK fails.
+  return new_event;
+}
+
 build_id_event* CallocMemoryForBuildID(size_t size) {
   build_id_event* event = reinterpret_cast<build_id_event*>(calloc(1, size));
   CHECK(event);
   return event;
 }
 
-uint64 Md5Prefix(const string& input) {
-  uint64 digest_prefix = 0;
+uint64_t Md5Prefix(const string& input) {
+  uint64_t digest_prefix = 0;
   unsigned char digest[MD5_DIGEST_LENGTH + 1];
 
   MD5(reinterpret_cast<const unsigned char*>(input.c_str()), input.size(),
       digest);
   // We need 64-bits / # of bits in a byte.
   stringstream ss;
-  for( size_t i = 0 ; i < sizeof(uint64) ; i++ )
+  for (size_t i = 0; i < sizeof(uint64_t); i++)
     // The setw(2) and setfill('0') calls are needed to make sure we output 2
     // hex characters for every 8-bits of the hash.
     ss << std::hex << std::setw(2) << std::setfill('0')
@@ -129,13 +136,18 @@ bool FileToBuffer(const string& filename, std::vector<char>* contents) {
   FILE* fp = fopen(filename.c_str(), "rb");
   if (!fp)
     return false;
-  long int file_size = quipper::GetFileSizeFromHandle(fp);
+  int64_t file_size = quipper::GetFileSizeFromHandle(fp);
   contents->resize(file_size);
   // Do not read anything if the file exists but is empty.
   if (file_size > 0)
-    CHECK_GT(fread(&(*contents)[0], file_size, 1, fp), 0U);
+    CHECK_GT(fread(contents->data(), file_size, 1, fp), 0U);
   fclose(fp);
   return true;
+}
+
+bool FileExists(const string& filename) {
+  struct stat st;
+  return stat(filename.c_str(), &st) == 0;
 }
 
 string HexToString(const u8* array, size_t length) {
@@ -166,7 +178,7 @@ bool StringToHex(const string& str, u8* array, size_t length) {
   return true;
 }
 
-uint64 AlignSize(uint64 size, uint32 align_size) {
+uint64_t AlignSize(uint64_t size, uint32_t align_size) {
   return ((size + align_size - 1) / align_size) * align_size;
 }
 
@@ -182,11 +194,12 @@ uint64 AlignSize(uint64 size, uint32 align_size) {
 //
 // Returns the size of the 8-byte-aligned memory for storing |string|.
 size_t GetUint64AlignedStringLength(const string& str) {
-  return AlignSize(str.size() + 1, sizeof(uint64));
+  return AlignSize(str.size() + 1, sizeof(uint64_t));
 }
 
-uint64 GetSampleFieldsForEventType(uint32 event_type, uint64 sample_type) {
-  uint64 mask = kuint64max;
+uint64_t GetSampleFieldsForEventType(uint32_t event_type,
+                                     uint64_t sample_type) {
+  uint64_t mask = kuint64max;
   switch (event_type) {
   case PERF_RECORD_SAMPLE:
     // IP and pid/tid fields of sample events are read as part of event_t, so
@@ -211,8 +224,8 @@ uint64 GetSampleFieldsForEventType(uint32 event_type, uint64 sample_type) {
   return sample_type & mask;
 }
 
-uint64 GetPerfSampleDataOffset(const event_t& event) {
-  uint64 offset = kuint64max;
+uint64_t GetPerfSampleDataOffset(const event_t& event) {
+  uint64_t offset = kuint64max;
   switch (event.header.type) {
   case PERF_RECORD_SAMPLE:
     offset = sizeof(event.ip);
@@ -245,7 +258,7 @@ uint64 GetPerfSampleDataOffset(const event_t& event) {
   }
   // Make sure the offset was valid
   CHECK_NE(offset, kuint64max);
-  CHECK_EQ(offset % sizeof(uint64), 0U);
+  CHECK_EQ(offset % sizeof(uint64_t), 0U);
   return offset;
 }
 
@@ -293,6 +306,18 @@ bool RunCommandAndGetStdout(const string& command, std::vector<char>* output) {
     return false;
 
   return true;
+}
+
+void TrimWhitespace(string* str) {
+  const char kWhitespaceCharacters[] = " \t\n\r";
+  size_t end = str->find_last_not_of(kWhitespaceCharacters);
+  if (end != std::string::npos) {
+    size_t start = str->find_first_not_of(kWhitespaceCharacters);
+    *str = str->substr(start, end + 1 - start);
+  } else {
+    // The string contains only whitespace.
+    *str = "";
+  }
 }
 
 }  // namespace quipper

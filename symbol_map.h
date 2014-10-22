@@ -164,8 +164,21 @@ class SymbolMap {
     return map_.size();
   }
 
-  // Returns total sample counts in the profile.
-  uint64 TotalCount() const;
+  void set_count_threshold(int64 n) {count_threshold_ = n;}
+  int64 count_threshold() const {return count_threshold_;}
+
+  // Returns true if the count is large enough to be emitted.
+  bool ShouldEmit(int64 count) const {
+    CHECK_GT(count_threshold_, 0);
+    return count > count_threshold_;
+  }
+
+  // Caculates sample threshold from given total count.
+  void CalculateThresholdFromTotalCount(int64 total_count);
+
+  // Caculates sample threshold from symbol map.
+  // All symbols should have been counted.
+  void CalculateThreshold();
 
   // Returns relocation start address.
   uint64 base_addr() const {
@@ -289,6 +302,11 @@ class SymbolMap {
   void Dump() const;
   void DumpFuncLevelProfileCompare(const SymbolMap &map) const;
 
+  void AddAlias(const string& sym, const string& alias);
+
+  // Validates if the current symbol map is sane.
+  bool Validate() const;
+
  private:
   // Reads from the binary's elf section to build the symbol map.
   void BuildSymbolMap();
@@ -306,6 +324,7 @@ class SymbolMap {
   AddressSymbolMap address_symbol_map_;
   const string binary_;
   uint64 base_addr_;
+  int64 count_threshold_;
   /* working_set_[i] stores # of instructions that consumes
      i/NUM_GCOV_WORKING_SETS of total instruction counts.  */
   gcov_working_set_info working_set_[NUM_GCOV_WORKING_SETS];

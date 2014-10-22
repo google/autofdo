@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PERF_PROTOBUF_IO_H_
-#define PERF_PROTOBUF_IO_H_
+#ifndef CHROMIUMOS_WIDE_PROFILING_PERF_PROTOBUF_IO_H_
+#define CHROMIUMOS_WIDE_PROFILING_PERF_PROTOBUF_IO_H_
 
 #include <string>
 #include "quipper_proto.h"
@@ -19,4 +19,4 @@ bool ReadProtobufFromFile(quipper::PerfDataProto* perf_data_proto,
 
 }  // namespace quipper
 
-#endif  // PERF_PROTOBUF_IO_H_
+#endif  // CHROMIUMOS_WIDE_PROFILING_PERF_PROTOBUF_IO_H_

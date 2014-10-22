@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PERF_TEST_FILES_
-#define PERF_TEST_FILES_
+#ifndef CHROMIUMOS_WIDE_PROFILING_PERF_TEST_FILES_H_
+#define CHROMIUMOS_WIDE_PROFILING_PERF_TEST_FILES_H_
 
 // TODO(sque): Re-enable callgraph testing when longer-term
 // changes to quipper are done.
-//#define TEST_CALLGRAPH
+// #define TEST_CALLGRAPH
 
 namespace perf_test_files {
 
@@ -62,6 +62,7 @@ const char* kPerfDataFiles[] = {
   // Data from other architectures.
   "perf.data.i686",     // 32-bit x86
   "perf.data.armv7",    // ARM v7
+  "perf.data.armv7.perf_3.14",      // ARM v7 obtained using perf 3.14.
 
   // Same as above, obtained from a system running kernel-next.
   "perf.data.singleprocess.next",
@@ -83,9 +84,12 @@ const char* kPerfDataFiles[] = {
   // Obtained from a system that uses NUMA topology.
   "perf.data.numatopology",
 
-  // Data which contains events with non-consecutive event ids.
-  // Events are cycles (id 0) and branch-misses (id 5).
-  "perf.data.cycles_and_branch",
+  // Perf data that contains hardware and software events.
+  // Command:
+  //    perf record -a -c 1000000 -e cycles,branch-misses,cpu-clock -- sleep 2
+  // HW events are cycles and branch-misses, SW event is cpu-clock.
+  // This also tests non-consecutive event types.
+  "perf.data.hw_and_sw",
 
   // This test first mmap()s a DSO, then fork()s to copy the mapping to the
   // child and then modifies the mapping by mmap()ing a DSO on top of the old
@@ -107,6 +111,9 @@ const char* kPerfPipedDataFiles[] = {
   "perf.data.piped.target.next",
 
   // Piped data that contains hardware and software events.
+  // Command:
+  //    perf record -a -c 1000000 -e cycles,branch-misses,cpu-clock -o -
+  //        -- sleep 2
   // HW events are cycles and branch-misses, SW event is cpu-clock.
   "perf.data.piped.hw_and_sw",
 
@@ -115,10 +122,15 @@ const char* kPerfPipedDataFiles[] = {
   "perf.data.piped.extradata",
 };
 
+const char* kCorruptedPerfPipedDataFiles[] = {
+  // Has a SAMPLE event with size set to zero. Don't go into an infinite loop!
+  "perf.data.piped.corrupted.zero_size_sample",
+};
+
 const char* kPerfDataProtoFiles[] = {
   "perf.callgraph.pb_text",
 };
 
 }  // namespace perf_test_files
 
-#endif  // PERF_TEST_FILES_
+#endif  // CHROMIUMOS_WIDE_PROFILING_PERF_TEST_FILES_H_

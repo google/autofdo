@@ -4,10 +4,12 @@
 
 #include "perf_serializer.h"
 
-#include <bitset>
-
+#include <stdint.h>
 #include <stdio.h>
 #include <sys/time.h>
+
+#include <bitset>
+#include <utility>
 
 #include "base/logging.h"
 
@@ -16,7 +18,7 @@
 
 namespace quipper {
 
-PerfSerializer::PerfSerializer() {
+PerfSerializer::PerfSerializer() : serialize_sorted_events_(true) {
 }
 
 PerfSerializer::~PerfSerializer() {
@@ -36,25 +38,23 @@ bool PerfSerializer::Serialize(PerfDataProto* perf_data_proto) {
     return false;
   }
 
-  if (!ParseRawEvents() ||
+  if (!ParseRawEvents()) {
+    return false;
+  }
+
+  // Serialize events in either chronological or raw data order.
+  if (!serialize_sorted_events_ &&
       !SerializeEvents(parsed_events_, perf_data_proto->mutable_events())) {
+    return false;
+  } else if (serialize_sorted_events_ &&
+      !SerializeEventPointers(parsed_events_sorted_by_time_,
+                              perf_data_proto->mutable_events())) {
     return false;
   }
 
   perf_data_proto->add_metadata_mask(metadata_mask_);
 
-  if (!SerializeBuildIDs(
-          build_id_events_, perf_data_proto->mutable_build_ids()) ||
-      !SerializeStringMetadata(
-          string_metadata_, perf_data_proto->mutable_string_metadata()) ||
-      !SerializeUint32Metadata(
-          uint32_metadata_, perf_data_proto->mutable_uint32_metadata()) ||
-      !SerializeUint64Metadata(
-          uint64_metadata_, perf_data_proto->mutable_uint64_metadata()) ||
-      !SerializeCPUTopologyMetadata(
-          cpu_topology_, perf_data_proto->mutable_cpu_topology()) ||
-      !SerializeNUMATopologyMetadata(
-          numa_topology_, perf_data_proto->mutable_numa_topology())) {
+  if (!SerializeMetadata(perf_data_proto)) {
     return false;
   }
 
@@ -96,25 +96,22 @@ bool PerfSerializer::Deserialize(const PerfDataProto& perf_data_proto) {
   CHECK_GT(attrs_.size(), 0U);
   sample_type_ = attrs_[0].attr.sample_type;
 
-  SetRawEvents(perf_data_proto.events().size());
-  if (!DeserializeEvents(perf_data_proto.events(), &parsed_events_))
+  // DeserializeEvent lets the parsed_event.raw_event own the event_t
+  // temporarily.
+  const bool deserialize_events_successful =
+      DeserializeEvents(perf_data_proto.events(), &parsed_events_);
+  // Have events_ take ownership of the raw_event pointers. We do this even if
+  // DeserializeEvents was unsuccessful to avoid leaking the successfully
+  // deserialized events.
+  for (const ParsedEvent& event : parsed_events_)
+    events_.emplace_back(event.raw_event);
+  if (!deserialize_events_successful)
     return false;
 
   if (perf_data_proto.metadata_mask_size())
     metadata_mask_ = perf_data_proto.metadata_mask(0);
 
-  if (!DeserializeBuildIDs(perf_data_proto.build_ids(),
-                           &build_id_events_) ||
-      !DeserializeStringMetadata(perf_data_proto.string_metadata(),
-                                 &string_metadata_) ||
-      !DeserializeUint32Metadata(perf_data_proto.uint32_metadata(),
-                                 &uint32_metadata_) ||
-      !DeserializeUint64Metadata(perf_data_proto.uint64_metadata(),
-                                 &uint64_metadata_) ||
-      !DeserializeCPUTopologyMetadata(perf_data_proto.cpu_topology(),
-                                      &cpu_topology_) ||
-      !DeserializeNUMATopologyMetadata(perf_data_proto.numa_topology(),
-                                       &numa_topology_)) {
+  if (!DeserializeMetadata(perf_data_proto)) {
     return false;
   }
 
@@ -267,14 +264,20 @@ bool PerfSerializer::DeserializePerfEventType(
   return true;
 }
 
+bool PerfSerializer::SerializeEventPointer(
+    const ParsedEvent* event_ptr,
+    PerfDataProto_PerfEvent* event_proto) const {
+  const ParsedEvent& event = *event_ptr;
+  return SerializeEvent(event, event_proto);
+}
+
 bool PerfSerializer::SerializeEvent(
     const ParsedEvent& event,
     PerfDataProto_PerfEvent* event_proto) const {
-  const perf_event_header& header = (*event.raw_event)->header;
-  const event_t& raw_event = **event.raw_event;
-  if (!SerializeEventHeader(header, event_proto->mutable_header()))
+  const event_t& raw_event = *event.raw_event;
+  if (!SerializeEventHeader(raw_event.header, event_proto->mutable_header()))
     return false;
-  switch (header.type) {
+  switch (raw_event.header.type) {
     case PERF_RECORD_SAMPLE:
       if (!SerializeRecordSample(raw_event,
                                  event_proto->mutable_sample_event())) {
@@ -310,7 +313,7 @@ bool PerfSerializer::SerializeEvent(
         return false;
       break;
     default:
-      LOG(ERROR) << "Unknown raw_event type: " << header.type;
+      LOG(ERROR) << "Unknown raw_event type: " << raw_event.header.type;
       break;
   }
   return true;
@@ -321,42 +324,57 @@ bool PerfSerializer::DeserializeEvent(
     ParsedEvent* event) const {
   // Here, event->raw_event points to a location in |events_|
   // However, the location doesn't contain a pointer to an event yet.
-  // Since we don't know how much memory to allocate, use a local event_t for
-  // now.
-  event_t temp_event;
-  memset(&temp_event, 0, sizeof(temp_event));
-  if (!DeserializeEventHeader(event_proto.header(), &temp_event.header))
+  // Since we don't know how much memory to allocate, use an oversized event_t
+  // for now.
+  // TODO(dhsharp): Come up with a better size prediction. We don't want to
+  // overrun the allocated space. sizeof(event_t) is almost meaningless wrt the
+  // space necessary for the event--it is the size of the largest member of the
+  // union. For better or worse, this is dominated by the PATH_MAX-sized array
+  // in struct mmap_event. However, events now often have a "sample id" placed
+  // immediately after it. Previously to this, an on-stack event_t was used,
+  // which is dangerous because the stack could have been overrun. Since no
+  // issues were reported, we can presume that amount of space was sufficient.
+  // The deserialized header.size should not be completely trusted, because the
+  // event content may have been changed (eg, md5 string replacement).
+  perf_event_header header = {};
+  if (!DeserializeEventHeader(event_proto.header(), &header))
     return false;
+  const size_t alloc_event_size = header.size + 4096;
+  malloced_unique_ptr<event_t> temp_event(
+      CallocMemoryForEvent(alloc_event_size));
+  temp_event->header = header;
   bool event_deserialized = true;
   switch (event_proto.header().type()) {
     case PERF_RECORD_SAMPLE:
-      if (!DeserializeRecordSample(event_proto.sample_event(), &temp_event))
+      if (!DeserializeRecordSample(event_proto.sample_event(),
+                                   temp_event.get()))
         event_deserialized = false;
       break;
     case PERF_RECORD_MMAP:
-      if (!DeserializeMMapSample(event_proto.mmap_event(), &temp_event))
+      if (!DeserializeMMapSample(event_proto.mmap_event(), temp_event.get()))
         event_deserialized = false;
       break;
     case PERF_RECORD_COMM:
-      if (!DeserializeCommSample(event_proto.comm_event(), &temp_event))
+      if (!DeserializeCommSample(event_proto.comm_event(), temp_event.get()))
         event_deserialized = false;
       break;
     case PERF_RECORD_EXIT:
     case PERF_RECORD_FORK:
-      if (!DeserializeForkSample(event_proto.fork_event(), &temp_event))
+      if (!DeserializeForkSample(event_proto.fork_event(), temp_event.get()))
         event_deserialized = false;
       break;
     case PERF_RECORD_LOST:
-      if (!DeserializeLostSample(event_proto.lost_event(), &temp_event))
+      if (!DeserializeLostSample(event_proto.lost_event(), temp_event.get()))
         event_deserialized = false;
       break;
     case PERF_RECORD_THROTTLE:
     case PERF_RECORD_UNTHROTTLE:
-      if (!DeserializeThrottleSample(event_proto.throttle_event(), &temp_event))
+      if (!DeserializeThrottleSample(event_proto.throttle_event(),
+                                     temp_event.get()))
         event_deserialized = false;
       break;
     case PERF_RECORD_READ:
-      if (!DeserializeReadSample(event_proto.read_event(), &temp_event))
+      if (!DeserializeReadSample(event_proto.read_event(), temp_event.get()))
         event_deserialized = false;
       break;
     case PERF_RECORD_MAX:
@@ -365,12 +383,18 @@ bool PerfSerializer::DeserializeEvent(
       break;
   }
   if (!event_deserialized) {
-    *event->raw_event = NULL;
+    event->raw_event = NULL;
     return false;
   }
-  // Copy the event from the stack to the heap.
-  *event->raw_event = CallocMemoryForEvent(temp_event.header.size);
-  memcpy(*event->raw_event, &temp_event, temp_event.header.size);
+  // Reallocate the event down to its final size.
+  const size_t final_event_size = temp_event->header.size;
+  CHECK_LE(final_event_size, alloc_event_size)
+      << "Likely overran the event buffer.";
+  temp_event.reset(ReallocMemoryForEvent(temp_event.release(),
+                                         final_event_size));
+
+  // raw_event temporarily owns the event.
+  event->raw_event = temp_event.release();
   return true;
 }
 
@@ -467,23 +491,23 @@ bool PerfSerializer::DeserializeRecordSample(
   if (sample.has_period())
     sample_info.period = sample.period();
   if (sample.callchain_size() > 0) {
-    uint64 callchain_size = sample.callchain_size();
-    sample_info.callchain =
-        reinterpret_cast<struct ip_callchain*>(new uint64[callchain_size + 1]);
+    uint64_t callchain_size = sample.callchain_size();
+    sample_info.callchain = reinterpret_cast<struct ip_callchain*>(
+        new uint64_t[callchain_size + 1]);
     sample_info.callchain->nr = callchain_size;
     for (size_t i = 0; i < callchain_size; ++i)
       sample_info.callchain->ips[i] = sample.callchain(i);
   }
   if (sample.raw_size() > 0) {
     sample_info.raw_size = sample.raw_size();
-    sample_info.raw_data = new uint8[sample.raw_size()];
+    sample_info.raw_data = new uint8_t[sample.raw_size()];
     memset(sample_info.raw_data, 0, sample.raw_size());
   }
   if (sample.branch_stack_size() > 0) {
-    uint64 branch_stack_size = sample.branch_stack_size();
+    uint64_t branch_stack_size = sample.branch_stack_size();
     sample_info.branch_stack =
         reinterpret_cast<struct branch_stack*>(
-            new uint8[sizeof(uint64) +
+            new uint8_t[sizeof(uint64_t) +
                       branch_stack_size * sizeof(struct branch_entry)]);
     sample_info.branch_stack->nr = branch_stack_size;
     for (size_t i = 0; i < branch_stack_size; ++i) {
@@ -550,13 +574,13 @@ bool PerfSerializer::DeserializeCommSample(
   // Sometimes the command string will be modified.  e.g. if the original comm
   // string is not recoverable from the Md5sum prefix, then use the latter as a
   // replacement comm string.  However, if the original was < 8 bytes (fit into
-  // |sizeof(uint64)|), then the size is no longer correct.  This section checks
-  // for the size difference and updates the size in the header.
-  uint64 sample_fields =
+  // |sizeof(uint64_t)|), then the size is no longer correct.  This section
+  // checks for the size difference and updates the size in the header.
+  uint64_t sample_fields =
       GetSampleFieldsForEventType(comm.header.type, sample_type_);
   std::bitset<sizeof(sample_fields) * CHAR_BIT> sample_type_bits(sample_fields);
   comm.header.size = GetPerfSampleDataOffset(*event) +
-                     sample_type_bits.count() * sizeof(uint64);
+                     sample_type_bits.count() * sizeof(uint64_t);
 
   return DeserializeSampleInfo(sample.sample_info(), event);
 }
@@ -611,7 +635,7 @@ bool PerfSerializer::SerializeThrottleSample(
     const event_t& event,
     PerfDataProto_ThrottleEvent* sample) const {
   const struct throttle_event& throttle = event.throttle;
-  sample->set_time(throttle.time);
+  sample->set_time_ns(throttle.time);
   sample->set_id(throttle.id);
   sample->set_stream_id(throttle.stream_id);
 
@@ -622,7 +646,7 @@ bool PerfSerializer::DeserializeThrottleSample(
     const PerfDataProto_ThrottleEvent& sample,
     event_t* event) const {
   struct throttle_event& throttle = event->throttle;
-  throttle.time = sample.time();
+  throttle.time = sample.time_ns();
   throttle.id = sample.id();
   throttle.stream_id = sample.stream_id();
 
@@ -685,19 +709,19 @@ bool PerfSerializer::DeserializeSampleInfo(
   if (sample.has_tid()) {
     sample_info.pid = sample.pid();
     sample_info.tid = sample.tid();
-    sample_info_size += sizeof(uint64);
+    sample_info_size += sizeof(uint64_t);
   }
   if (sample.has_sample_time_ns()) {
     sample_info.time = sample.sample_time_ns();
-    sample_info_size += sizeof(uint64);
+    sample_info_size += sizeof(uint64_t);
   }
   if (sample.has_id()) {
     sample_info.id = sample.id();
-    sample_info_size += sizeof(uint64);
+    sample_info_size += sizeof(uint64_t);
   }
   if (sample.has_cpu()) {
     sample_info.cpu = sample.cpu();
-    sample_info_size += sizeof(uint64);
+    sample_info_size += sizeof(uint64_t);
   }
 
   // The event info may have changed (e.g. strings replaced with Md5sum), so
@@ -724,8 +748,157 @@ bool PerfSerializer::DeserializeBuildIDs(
   return DeserializeBuildIDEvents(from, to);
 }
 
+bool PerfSerializer::SerializeMetadata(PerfDataProto* to) const {
+  if (!SerializeBuildIDs(build_id_events_, to->mutable_build_ids()) ||
+      !SerializeUint32Metadata(uint32_metadata_,
+                               to->mutable_uint32_metadata()) ||
+      !SerializeUint64Metadata(uint64_metadata_,
+                               to->mutable_uint64_metadata()) ||
+      !SerializeCPUTopologyMetadata(cpu_topology_,
+                                    to->mutable_cpu_topology()) ||
+      !SerializeNUMATopologyMetadata(numa_topology_,
+                                     to->mutable_numa_topology())) {
+    return false;
+  }
+  typedef PerfDataProto_StringMetadata_StringAndMd5sumPrefix
+      StringAndMd5sumPrefix;
+  // Handle the string metadata specially.
+  for (size_t i = 0; i < string_metadata_.size(); ++i) {
+    StringAndMd5sumPrefix* to_metadata = NULL;
+    uint32_t type = string_metadata_[i].type;
+    PerfDataProto_StringMetadata* proto_string_metadata =
+        to->mutable_string_metadata();
+    bool is_command_line = false;
+    switch (type) {
+    case HEADER_HOSTNAME:
+      to_metadata = proto_string_metadata->mutable_hostname();
+      break;
+    case HEADER_OSRELEASE:
+      to_metadata = proto_string_metadata->mutable_kernel_version();
+      break;
+    case HEADER_VERSION:
+      to_metadata = proto_string_metadata->mutable_perf_version();
+      break;
+    case HEADER_ARCH:
+      to_metadata = proto_string_metadata->mutable_architecture();
+      break;
+    case HEADER_CPUDESC:
+      to_metadata = proto_string_metadata->mutable_cpu_description();
+      break;
+    case HEADER_CPUID:
+      to_metadata = proto_string_metadata->mutable_cpu_id();
+      break;
+    case HEADER_CMDLINE:
+      is_command_line = true;
+      to_metadata = proto_string_metadata->mutable_perf_command_line_whole();
+      break;
+    default:
+      LOG(ERROR) << "Unsupported string metadata type: " << type;
+      continue;
+    }
+    if (is_command_line) {
+      // Handle command lines as a special case. It has two protobuf fields, one
+      // of which is a repeated field.
+      string full_command_line;
+      for (size_t j = 0; j < string_metadata_[i].data.size(); ++j) {
+        StringAndMd5sumPrefix* command_line_token =
+                proto_string_metadata->add_perf_command_line_token();
+        command_line_token->set_value(string_metadata_[i].data[j].str);
+        command_line_token->
+            set_value_md5_prefix(Md5Prefix(command_line_token->value()));
+        full_command_line += string_metadata_[i].data[j].str + " ";
+      }
+      // Delete the extra space at the end of the newly created command string.
+      TrimWhitespace(&full_command_line);
+      to_metadata->set_value(full_command_line);
+      to_metadata->set_value_md5_prefix(Md5Prefix(full_command_line));
+    } else {
+      DCHECK(to_metadata);  // Make sure a valid destination metadata was found.
+      // In some cases there is a null or empty string metadata value in the
+      // perf data. Make sure not to access |string_metadata_[i].data[0]| if
+      // that is the case.
+      if (!string_metadata_[i].data.empty()) {
+        to_metadata->set_value(string_metadata_[i].data[0].str);
+      } else {
+        to_metadata->set_value(string());
+      }
+      to_metadata->set_value_md5_prefix(Md5Prefix(to_metadata->value()));
+    }
+  }
+  return true;
+}
+
+bool PerfSerializer::DeserializeMetadata(const PerfDataProto& from) {
+  if (!DeserializeBuildIDs(from.build_ids(), &build_id_events_) ||
+      !DeserializeUint32Metadata(from.uint32_metadata(), &uint32_metadata_) ||
+      !DeserializeUint64Metadata(from.uint64_metadata(), &uint64_metadata_) ||
+      !DeserializeCPUTopologyMetadata(from.cpu_topology(), &cpu_topology_) ||
+      !DeserializeNUMATopologyMetadata(from.numa_topology(), &numa_topology_)) {
+    return false;
+  }
+
+  // Handle the string metadata specially.
+  typedef PerfDataProto_StringMetadata_StringAndMd5sumPrefix
+      StringAndMd5sumPrefix;
+  const PerfDataProto_StringMetadata& data = from.string_metadata();
+  std::vector<std::pair<u32, StringAndMd5sumPrefix> > metadata_strings;
+  if (data.has_hostname()) {
+    metadata_strings.push_back(
+        std::make_pair(static_cast<u32>(HEADER_HOSTNAME), data.hostname()));
+  }
+  if (data.has_kernel_version()) {
+    metadata_strings.push_back(
+        std::make_pair(static_cast<u32>(HEADER_OSRELEASE),
+                       data.kernel_version()));
+  }
+  if (data.has_perf_version()) {
+    metadata_strings.push_back(
+        std::make_pair(static_cast<u32>(HEADER_VERSION), data.perf_version()));
+  }
+  if (data.has_architecture()) {
+    metadata_strings.push_back(
+        std::make_pair(static_cast<u32>(HEADER_ARCH), data.architecture()));
+  }
+  if (data.has_cpu_description()) {
+    metadata_strings.push_back(
+        std::make_pair(static_cast<u32>(HEADER_CPUDESC),
+                       data.cpu_description()));
+  }
+  if (data.has_cpu_id()) {
+    metadata_strings.push_back(
+        std::make_pair(static_cast<u32>(HEADER_CPUID), data.cpu_id()));
+  }
+
+  // Add each string metadata element to |string_metadata_|.
+  for (size_t i = 0; i < metadata_strings.size(); ++i) {
+    PerfStringMetadata metadata;
+    metadata.type = metadata_strings[i].first;
+    CStringWithLength cstring;
+    cstring.str = metadata_strings[i].second.value();
+    cstring.len = cstring.str.size() + 1;   // Include the null terminator.
+    metadata.data.push_back(cstring);
+
+    string_metadata_.push_back(metadata);
+  }
+
+  // Add the command line tokens as a special case (repeated field).
+  if (data.perf_command_line_token_size() > 0) {
+    PerfStringMetadata metadata;
+    metadata.type = HEADER_CMDLINE;
+    for (int i = 0; i < data.perf_command_line_token_size(); ++i) {
+      CStringWithLength cstring;
+      cstring.str = data.perf_command_line_token(i).value();
+      cstring.len = cstring.str.size() + 1;   // Include the null terminator.
+      metadata.data.push_back(cstring);
+    }
+    string_metadata_.push_back(metadata);
+  }
+
+  return true;
+}
+
 bool PerfSerializer::SerializeBuildIDEvent(
-    build_id_event* const& from,
+    const build_id_event* from,
     PerfDataProto_PerfBuildID* to) const {
   to->set_misc(from->header.misc);
   to->set_pid(from->pid);
@@ -749,30 +922,10 @@ bool PerfSerializer::DeserializeBuildIDEvent(
   event->pid = from.pid();
   memcpy(event->build_id, from.build_id_hash().c_str(), kBuildIDArraySize);
 
-  CHECK_GT(snprintf(event->filename, filename.size() + 1, "%s",
-                    filename.c_str()),
-           0);
-  return true;
-}
-
-bool PerfSerializer::SerializeSingleStringMetadata(
-    const PerfStringMetadata& metadata,
-    PerfDataProto_PerfStringMetadata* proto_metadata) const {
-  proto_metadata->set_type(metadata.type);
-  for (size_t i = 0; i < metadata.data.size(); ++i)
-    proto_metadata->add_data(metadata.data[i].str);
-  return true;
-}
-
-bool PerfSerializer::DeserializeSingleStringMetadata(
-    const PerfDataProto_PerfStringMetadata& proto_metadata,
-    PerfStringMetadata* metadata) const {
-  metadata->type = proto_metadata.type();
-  for (int i = 0; i < proto_metadata.data_size(); ++i) {
-    CStringWithLength single_string;
-    single_string.str = proto_metadata.data(i);
-    single_string.len = GetUint64AlignedStringLength(single_string.str);
-    metadata->data.push_back(single_string);
+  if (from.has_filename() && !filename.empty()) {
+    CHECK_GT(snprintf(event->filename, filename.size() + 1, "%s",
+                      filename.c_str()),
+             0);
   }
   return true;
 }
@@ -869,13 +1022,6 @@ bool PerfSerializer::DeserializeNodeTopologyMetadata(
   metadata->cpu_list.str = proto_metadata.cpu_list();
   metadata->cpu_list.len = GetUint64AlignedStringLength(metadata->cpu_list.str);
   return true;
-}
-
-void PerfSerializer::SetRawEvents(size_t num_events) {
-  events_.resize(num_events);
-  parsed_events_.resize(num_events);
-  for (size_t i = 0; i < num_events; ++i)
-    parsed_events_[i].raw_event = &events_[i];
 }
 
 }  // namespace quipper
