@@ -172,7 +172,17 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
   gcov_write_unsigned(length_4bytes);
   gcov_write_unsigned(string_index_map.size());
   for (const auto &name_index : string_index_map) {
-    gcov_write_string(name_index.first.c_str());
+    char *c = strdup(name_index.first.c_str());
+    int len = strlen(c);
+    // Workaround https://gcc.gnu.org/bugzilla/show_bug.cgi?id=64346
+    // We should not have D4Ev in our profile because it does not exist
+    // in symbol table and would lead to undefined symbols during linking.
+    if (len > 5 &&
+        (!strcmp(c + len - 4, "D4Ev") || !strcmp(c + len - 4, "D4Ev"))) {
+      c[len - 3] = '2';
+    }
+    gcov_write_string(c);
+    free(c);
   }
 
   // Compute the length of the GCOV_TAG_AFDO_FUNCTION section.
@@ -381,7 +391,7 @@ class ProfileDumper : public SymbolTraverser {
     vector<uint32> positions;
     for (const auto &pos_count : node->pos_counts)
       positions.push_back(pos_count.first);
-    sort(positions.begin(), positions.end());
+    std::sort(positions.begin(), positions.end());
     i = 0;
     for (const auto &pos : positions) {
       PositionCountMap::const_iterator pos_count = node->pos_counts.find(pos);

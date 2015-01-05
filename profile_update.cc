@@ -53,6 +53,7 @@ int main(int argc, char **argv) {
   AutoFDOProfileReader reader(&symbol_map, NULL);
   reader.ReadFromFile(FLAGS_input);
   symbol_map.UpdateSymbolMap(FLAGS_binary, addr2line.get());
+  symbol_map.CalculateThreshold();
 
   ModuleGrouper *grouper = ModuleGrouper::GroupModule(
       FLAGS_binary, GCOV_ELF_SECTION_NAME, &symbol_map);

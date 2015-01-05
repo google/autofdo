@@ -55,16 +55,6 @@ class AddressRangeList {
     return result;
   }
 
-  static uint64 RangesMax(const RangeList *ranges) {
-    uint64 result = 0;
-    for (AddressRangeList::RangeList::const_iterator iter =
-             ranges->begin();
-         iter != ranges->end(); ++iter) {
-      result = max(result, iter->second);
-    }
-    return result;
-  }
-
  private:
   // The associated ByteReader that handles endianness issues for us
   ByteReader* reader_;

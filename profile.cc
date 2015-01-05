@@ -28,9 +28,6 @@
 
 DEFINE_bool(use_lbr, true,
             "Whether to use lbr profile.");
-DEFINE_uint64(sample_threshold, 50000,
-              "Sample threshold divider. The threshold of total function count"
-              " is determined by max_sample_count/sample_threshold.");
 
 namespace autofdo {
 Profile::ProfileMaps *Profile::GetProfileMaps(uint64 addr) {
@@ -62,16 +59,16 @@ void Profile::AggregatePerFunctionProfile() {
   for (const auto &range_count : *range_map) {
     ProfileMaps *maps = GetProfileMaps(range_count.first.first + start);
     if (maps != NULL) {
-      maps->range_count_map[make_pair(
-          range_count.first.first + start,
-          range_count.first.second + start)] += range_count.second;
+      maps->range_count_map[std::make_pair(range_count.first.first + start,
+                                           range_count.first.second + start)] +=
+          range_count.second;
     }
   }
   const BranchCountMap *branch_map = &sample_reader_->branch_count_map();
   for (const auto &branch_count : *branch_map) {
     ProfileMaps *maps = GetProfileMaps(branch_count.first.first + start);
     if (maps != NULL) {
-      maps->branch_count_map[make_pair(
+      maps->branch_count_map[std::make_pair(
           branch_count.first.first + start,
           branch_count.first.second + start)] += branch_count.second;
     }

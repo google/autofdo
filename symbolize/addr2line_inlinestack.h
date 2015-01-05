@@ -44,7 +44,7 @@ class SubprogramInfo {
   SubprogramInfo(int cu_index, uint64 offset, const SubprogramInfo *parent,
                  bool inlined)
       : cu_index_(cu_index), offset_(offset), parent_(parent), name_(),
-        address_ranges_(0), inlined_(inlined), comp_directory_(NULL),
+        inlined_(inlined), comp_directory_(NULL),
         callsite_directory_(NULL), callsite_filename_(NULL), callsite_line_(0),
         callsite_discr_(0), abstract_origin_(0), specification_(0),
         used_(false) { }
@@ -147,27 +147,34 @@ class InlineStackHandler: public Dwarf2Handler {
   InlineStackHandler(
       AddressRangeList *address_ranges,
       const SectionMap& sections,
-      ByteReader *reader)
-      : directory_names_(NULL), file_names_(NULL), line_handler_(NULL),
-        sections_(sections), reader_(reader), address_ranges_(address_ranges),
-        cu_index_(-1), subprograms_by_offset_maps_(),
-        compilation_unit_comp_dir_(), sampled_functions_(NULL)
-  { }
+      ByteReader *reader,
+      uint64 vaddr_of_first_load_segment)
+      : InlineStackHandler(
+          address_ranges, sections, reader, nullptr,
+          vaddr_of_first_load_segment) {
+  }
 
   InlineStackHandler(
       AddressRangeList *address_ranges,
       const SectionMap& sections,
       ByteReader *reader,
-      const map<uint64, uint64> *sampled_functions)
+      const map<uint64, uint64> *sampled_functions,
+      uint64 vaddr_of_first_load_segment)
       : directory_names_(NULL), file_names_(NULL), line_handler_(NULL),
-        sections_(sections), reader_(reader), address_ranges_(address_ranges),
+        sections_(sections), reader_(reader),
+        vaddr_of_first_load_segment_(vaddr_of_first_load_segment),
+        address_ranges_(address_ranges),
+        subprogram_stack_(), die_stack_(),
         cu_index_(-1), subprograms_by_offset_maps_(),
-        compilation_unit_comp_dir_(), sampled_functions_(sampled_functions)
+        compilation_unit_comp_dir_(), sampled_functions_(sampled_functions),
+        overlap_count_(0)
   { }
 
   virtual bool StartCompilationUnit(uint64 offset, uint8 address_size,
                                     uint8 offset_size, uint64 cu_length,
                                     uint8 dwarf_version);
+
+  virtual bool StartSplitCompilationUnit(uint64 offset, uint64 cu_length);
 
   virtual bool StartDIE(uint64 offset, enum DwarfTag tag,
                         const AttributeList& attrs);
@@ -218,11 +225,15 @@ class InlineStackHandler: public Dwarf2Handler {
 
   void FindBadSubprograms(set<const SubprogramInfo *> *bad_subprograms);
 
+  AddressRangeList::RangeList SortAndMerge(
+      AddressRangeList::RangeList rangelist);
+
   const DirectoryVector *directory_names_;
   const FileVector *file_names_;
   LineInfoHandler *line_handler_;
   const SectionMap& sections_;
   ByteReader *reader_;
+  uint64 vaddr_of_first_load_segment_;
   AddressRangeList *address_ranges_;
   vector<SubprogramInfo*> subprogram_stack_;
   vector<DwarfTag> die_stack_;
@@ -242,6 +253,7 @@ class InlineStackHandler: public Dwarf2Handler {
   // StringPiece objects pointing to these copies.
   vector<string*> compilation_unit_comp_dir_;
   const map<uint64, uint64> *sampled_functions_;
+  int overlap_count_;
   DISALLOW_COPY_AND_ASSIGN(InlineStackHandler);
 };
 
