@@ -109,7 +109,7 @@ bool Google3Addr2line::Prepare() {
                                                       &section_size);
     if (section_data == NULL)
       continue;
-    sections[section_name] = make_pair(section_data, section_size);
+    sections[section_name] = std::make_pair(section_data, section_size);
   }
 
   size_t debug_info_size = 0;
@@ -122,7 +122,8 @@ bool Google3Addr2line::Prepare() {
                                                 debug_ranges_size,
                                                 &reader);
   inline_stack_handler_ = new InlineStackHandler(
-      &debug_ranges, sections, &reader, sampled_functions_);
+      &debug_ranges, sections, &reader, sampled_functions_,
+      elf_->VaddrOfFirstLoadSegment());
 
   // Extract the line information
   // If .debug_info section is available, we will locate .debug_line using

@@ -151,7 +151,7 @@ void CompilationUnit::ReadAbbrevs() {
       const enum DwarfAttribute name =
         static_cast<enum DwarfAttribute>(nametemp);
       const enum DwarfForm form = static_cast<enum DwarfForm>(formtemp);
-      abbrev.attributes.push_back(make_pair(name, form));
+      abbrev.attributes.push_back(std::make_pair(name, form));
     }
     CHECK(abbrev.number == abbrevs_->size());
     abbrevs_->push_back(abbrev);
@@ -377,13 +377,22 @@ uint64 CompilationUnit::Start() {
   else
     ourlength += 4;
 
-  // If the user does not want it, just return.
-  if (!handler_->StartCompilationUnit(offset_from_section_start_,
-                                      reader_->AddressSize(),
-                                      reader_->OffsetSize(),
-                                      header_.length,
-                                      header_.version))
-    return ourlength;
+  if (is_split_dwarf_) {
+    // If the user does not want it, just return.
+    if (!handler_->StartSplitCompilationUnit(offset_from_section_start_,
+                                            header_.length)) {
+      return ourlength;
+    }
+  } else {
+    // If the user does not want it, just return.
+    if (!handler_->StartCompilationUnit(offset_from_section_start_,
+                                        reader_->AddressSize(),
+                                        reader_->OffsetSize(),
+                                        header_.length,
+                                        header_.version)) {
+      return ourlength;
+    }
+  }
 
   // Otherwise, continue by reading our abbreviation entries.
   ReadAbbrevs();
@@ -699,19 +708,24 @@ void CompilationUnit::ProcessSplitDwarf() {
       }
     }
   }
+  bool found_in_dwp = false;
   if (dwp_reader_ != NULL) {
     // If we have a .dwp file, read the debug sections for the requested CU.
     SectionMap sections;
     dwp_reader_->ReadDebugSectionsForCU(dwo_id_, &sections);
-    CompilationUnit dwp_comp_unit(dwp_path_, sections, 0, dwp_byte_reader_,
-                                  handler_);
-    dwp_comp_unit.SetSplitDwarf(addr_buffer_, addr_buffer_length_, addr_base_,
-                                ranges_base_);
-    dwp_comp_unit.Start();
-    if (dwp_comp_unit.malformed())
-      LOG(WARNING) << "File '" << dwp_path_ << "' has mangled "
-                   << ".debug_info.dwo section.";
-  } else {
+    if (!sections.empty()) {
+      found_in_dwp = true;
+      CompilationUnit dwp_comp_unit(dwp_path_, sections, 0, dwp_byte_reader_,
+                                    handler_);
+      dwp_comp_unit.SetSplitDwarf(addr_buffer_, addr_buffer_length_, addr_base_,
+                                  ranges_base_);
+      dwp_comp_unit.Start();
+      if (dwp_comp_unit.malformed())
+        LOG(WARNING) << "File '" << dwp_path_ << "' has mangled "
+                     << ".debug_info.dwo section.";
+    }
+  }
+  if (!found_in_dwp) {
     // If no .dwp file, try to open the .dwo file.
     if (stat(dwo_name_, &statbuf) == 0) {
       ElfReader elf(dwo_name_);
@@ -732,7 +746,7 @@ void CompilationUnit::ProcessSplitDwarf() {
       } else {
         LOG(WARNING) << "File '" << dwo_name_ << "' is not an ELF file.";
       }
-    } else {
+    } else if (dwp_reader_ == NULL) {
       LOG(WARNING) << "Cannot open file '" << dwo_name_ << "'.";
     }
   }
@@ -753,8 +767,8 @@ void CompilationUnit::ReadDebugSectionsFromDwo(ElfReader* elf_reader,
     const char* section_data = elf_reader->GetSectionByName(dwo_name,
                                                             &section_size);
     if (section_data != NULL)
-      sections->insert(
-          make_pair(base_name, make_pair(section_data, section_size)));
+      sections->insert(std::make_pair(
+          base_name, std::make_pair(section_data, section_size)));
   }
 }
 
@@ -819,8 +833,8 @@ void DwpReader::ReadDebugSectionsForCU(uint64 dwo_id,
   if (version_ == 1) {
     int slot = LookupCU(dwo_id);
     if (slot == -1) {
-      LOG(WARNING) << "dwo_id 0x" << hex << dwo_id <<
-                      " not found in .dwp file.";
+      LOG(WARNING) << "dwo_id 0x" << std::hex << dwo_id
+                   << " not found in .dwp file.";
       return;
     }
 
@@ -847,25 +861,25 @@ void DwpReader::ReadDebugSectionsForCU(uint64 dwo_id,
       // add them to the sections table with their normal names.
       if (strncmp(section_name, ".debug_abbrev", 13) == 0) {
         section_data = elf_reader_->GetSectionByIndex(shndx, &section_size);
-        sections->insert(make_pair(".debug_abbrev",
-                                   make_pair(section_data, section_size)));
+        sections->insert(std::make_pair(
+            ".debug_abbrev", std::make_pair(section_data, section_size)));
       } else if (strncmp(section_name, ".debug_info", 11) == 0) {
         section_data = elf_reader_->GetSectionByIndex(shndx, &section_size);
-        sections->insert(make_pair(".debug_info",
-                                   make_pair(section_data, section_size)));
+        sections->insert(std::make_pair(
+            ".debug_info", std::make_pair(section_data, section_size)));
       } else if (strncmp(section_name, ".debug_str_offsets", 18) == 0) {
         section_data = elf_reader_->GetSectionByIndex(shndx, &section_size);
-        sections->insert(make_pair(".debug_str_offsets",
-                                   make_pair(section_data, section_size)));
+        sections->insert(std::make_pair(
+            ".debug_str_offsets", std::make_pair(section_data, section_size)));
       }
     }
-    sections->insert(make_pair(".debug_str",
-                               make_pair(string_buffer_, string_buffer_size_)));
+    sections->insert(std::make_pair(
+        ".debug_str", std::make_pair(string_buffer_, string_buffer_size_)));
   } else if (version_ == 2) {
     uint32 index = LookupCUv2(dwo_id);
     if (index == 0) {
-      LOG(WARNING) << "dwo_id 0x" << hex << dwo_id <<
-                      " not found in .dwp file.";
+      LOG(WARNING) << "dwo_id 0x" << std::hex << dwo_id
+                   << " not found in .dwp file.";
       return;
     }
 
@@ -892,19 +906,19 @@ void DwpReader::ReadDebugSectionsForCU(uint64 dwo_id,
       uint32 size =
           byte_reader_.ReadFourBytes(size_row + col * sizeof(uint32));
       if (section_id == DW_SECT_ABBREV) {
-        sections->insert(make_pair(".debug_abbrev",
-                                   make_pair(abbrev_data_ + offset, size)));
+        sections->insert(std::make_pair(
+            ".debug_abbrev", std::make_pair(abbrev_data_ + offset, size)));
       } else if (section_id == DW_SECT_INFO) {
-        sections->insert(make_pair(".debug_info",
-                                   make_pair(info_data_ + offset, size)));
+        sections->insert(std::make_pair(
+            ".debug_info", std::make_pair(info_data_ + offset, size)));
       } else if (section_id == DW_SECT_STR_OFFSETS) {
-        sections->insert(make_pair(".debug_str_offsets",
-                                   make_pair(str_offsets_data_ + offset,
-                                             size)));
+        sections->insert(
+            std::make_pair(".debug_str_offsets",
+                           std::make_pair(str_offsets_data_ + offset, size)));
       }
     }
-    sections->insert(make_pair(".debug_str",
-                               make_pair(string_buffer_, string_buffer_size_)));
+    sections->insert(std::make_pair(
+        ".debug_str", std::make_pair(string_buffer_, string_buffer_size_)));
   }
 }
 

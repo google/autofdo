@@ -198,6 +198,12 @@ class Dwarf2Handler {
                                     uint8 offset_size, uint64 cu_length,
                                     uint8 dwarf_version) { return false; }
 
+  // Start to process a split compilation unit at OFFSET from the beginning of
+  // the debug_info section in the .dwp/.dwo file.  Return false if you would
+  // like to skip this compilation unit.
+  virtual bool StartSplitCompilationUnit(uint64 offset,
+                                         uint64 cu_length) { return false; }
+
   // Start to process a DIE at OFFSET from the beginning of the
   // debug_info section.  Return false if you would like to skip this
   // DIE.

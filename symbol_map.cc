@@ -94,7 +94,7 @@ void GetSortedTargetCountPairs(const CallTargetCountMap &call_target_count_map,
   for (const auto &name_count : call_target_count_map) {
     target_counts->push_back(name_count);
   }
-  sort(target_counts->begin(), target_counts->end(), TargetCountCompare());
+  std::sort(target_counts->begin(), target_counts->end(), TargetCountCompare());
 }
 
 SymbolMap::~SymbolMap() {
@@ -253,7 +253,7 @@ class SymbolReader : public ElfReader::SymbolSink {
       return;
     }
     pair<AddressSymbolMap::iterator, bool> ret = address_symbol_map_->insert(
-        make_pair(address, make_pair(string(name), size)));
+        std::make_pair(address, std::make_pair(string(name), size)));
     if (!ret.second) {
       (*name_alias_map_)[ret.first->second.first].insert(name);
     }
@@ -405,7 +405,7 @@ void Symbol::Dump(int ident) const {
   vector<uint32> positions;
   for (const auto &pos_count : pos_counts)
     positions.push_back(pos_count.first);
-  sort(positions.begin(), positions.end());
+  std::sort(positions.begin(), positions.end());
   for (const auto &pos : positions) {
     PositionCountMap::const_iterator ret = pos_counts.find(pos);
     DCHECK(ret != pos_counts.end());
@@ -423,7 +423,7 @@ void Symbol::Dump(int ident) const {
   for (const auto &pos_symbol : callsites) {
     calls.push_back(pos_symbol.first);
   }
-  sort(calls.begin(), calls.end(), CallsiteLessThan());
+  std::sort(calls.begin(), calls.end(), CallsiteLessThan());
   for (const auto &callsite : calls) {
     PrintSourceLocation(info.start_line, callsite.first, ident + 2);
     callsites.find(callsite)->second->Dump(ident + 2);
@@ -623,7 +623,7 @@ void SymbolMap::ComputeWorkingSets() {
       continue;
     }
     iter--;
-    ret.insert(make_pair(iter->first, iter->second.second));
+    ret.insert(std::make_pair(iter->first, iter->second.second));
     next_start_addr = iter->first + iter->second.second;
   }
   return ret;

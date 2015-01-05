@@ -19,6 +19,30 @@
 #include "base/logging.h"
 #include "symbolize/bytereader.h"
 
+namespace {
+
+// Returns true if b's address range set is a subset of a's.
+bool SubprogramContains(
+    const autofdo::SubprogramInfo *a,
+    const autofdo::SubprogramInfo *b) {
+  // For each range in b, we try to find a range in a that contains it.
+  for (const auto &b_range : *b->address_ranges()) {
+    bool found = false;
+    for (const auto &a_range : *a->address_ranges()) {
+      if (a_range.first <= b_range.first && a_range.second >= b_range.second) {
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      return false;
+    }
+  }
+  return true;
+}
+}  // namespace
+
 namespace autofdo {
 
 void SubprogramInfo::SwapAddressRanges(AddressRangeList::RangeList *ranges) {
@@ -27,7 +51,7 @@ void SubprogramInfo::SwapAddressRanges(AddressRangeList::RangeList *ranges) {
 
 void SubprogramInfo::SetSingletonRangeLow(uint64 addr) {
   if (address_ranges_.empty()) {
-    address_ranges_.push_back(make_pair(addr, 0ULL));
+    address_ranges_.push_back(std::make_pair(addr, 0ULL));
   } else {
     CHECK_EQ(1, address_ranges_.size());
     address_ranges_[0].first = addr;
@@ -36,7 +60,7 @@ void SubprogramInfo::SetSingletonRangeLow(uint64 addr) {
 
 void SubprogramInfo::SetSingletonRangeHigh(uint64 addr, bool is_offset) {
   if (address_ranges_.empty()) {
-    address_ranges_.push_back(make_pair(0ULL, addr));
+    address_ranges_.push_back(std::make_pair(0ULL, addr));
   } else {
     CHECK_EQ(1, address_ranges_.size());
     if (is_offset)
@@ -57,6 +81,12 @@ bool InlineStackHandler::StartCompilationUnit(uint64 offset,
   ++cu_index_;
   subprograms_by_offset_maps_.push_back(new SubprogramsByOffsetMap);
   CHECK(subprograms_by_offset_maps_.size() == cu_index_ + 1);
+  return true;
+}
+
+bool InlineStackHandler::StartSplitCompilationUnit(uint64 offset,
+                                                   uint64 /*cu_length*/) {
+  compilation_unit_offset_ = offset;
   return true;
 }
 
@@ -124,7 +154,7 @@ bool InlineStackHandler::StartDIE(uint64 offset,
         child->set_comp_directory(compilation_unit_comp_dir_.back()->c_str());
       SubprogramsByOffsetMap* subprograms_by_offset =
           subprograms_by_offset_maps_.back();
-      subprograms_by_offset->insert(make_pair(offset, child));
+      subprograms_by_offset->insert(std::make_pair(offset, child));
       subprogram_stack_.push_back(child);
       return true;
     }
@@ -244,13 +274,19 @@ void InlineStackHandler::ProcessAttributeUnsigned(
         CHECK_EQ(0, subprogram_stack_.back()->address_ranges()->size());
         AddressRangeList::RangeList ranges;
         address_ranges_->ReadRangeList(data, compilation_unit_base_, &ranges);
-        subprogram_stack_.back()->SwapAddressRanges(&ranges);
-        if (sampled_functions_ != NULL &&
-            subprogram_stack_.size() == 1 &&
-            sampled_functions_->find(AddressRangeList::RangesMin(&ranges))
+
+        if (sampled_functions_ != NULL && subprogram_stack_.size() == 1) {
+          for (const auto &range : ranges) {
+            if (sampled_functions_->find(range.first)
                 != sampled_functions_->end()) {
-          subprogram_stack_.front()->set_used();
+              subprogram_stack_.front()->set_used();
+              break;
+            }
+          }
         }
+        AddressRangeList::RangeList sorted_ranges = SortAndMerge(ranges);
+        subprogram_stack_.back()->SwapAddressRanges(&sorted_ranges);
+
         break;
       }
       case DW_AT_decl_line: {
@@ -293,69 +329,90 @@ void InlineStackHandler::FindBadSubprograms(
   // of the debug information corresponds to the actual emitted code.
   // The others may be correct (if they got compiled identically) or
   // they may be wrong.  This code filters out bad debug information
-  // using two approaches:
+  // using three approaches:
   //
-  // 1) If a non-inlined function's address ranges contain the
+  // 1) If a range starts below vaddr_of_first_load_segment_, it is invalid and
+  //    should be marked bad.
+  //
+  // 2) If a non-inlined function's address ranges contain the
   //    starting address of other non-inlined functions, then it is
   //    bad.  This approach is safe because the starting address for
   //    functions is accurate across all the DIEs.
   //
-  // 2) If multiple functions start at the same address after pruning
-  //    using phase one, then pick the largest one.  This heuristic is
-  //    based on the assumption that if the largest one were bad,
+  // 3) If multiple functions share a same range start address after pruning
+  //    using phase one, then drop all the ones contained by others. This
+  //    heuristic is based on the assumption that if the largest one were bad,
   //    then it would have conflicted with another function and would have
-  //    been pruned in step 1.
+  //    been pruned in step 2.
+  //
+  //    If we happen to find two functions that shares a same range start
+  //    address but neither contains the other, we discard the one we observed
+  //    first.
+  //
+
+  // Find bad subprograms according to rule (1) above
+  for (const auto &subprog : subprogram_insert_order_) {
+    for (const auto &range : *subprog->address_ranges()) {
+      if (range.first < vaddr_of_first_load_segment_) {
+        bad_subprograms->insert(subprog);
+        break;
+      }
+    }
+  }
 
   // Find the start addresses for each non-inlined subprogram.
   set<uint64> start_addresses;
-  for (vector<SubprogramInfo *>::iterator subprogs =
-           subprogram_insert_order_.begin();
-       subprogs != subprogram_insert_order_.end();
-       ++subprogs) {
-    SubprogramInfo *subprog = *subprogs;
+  for (const auto &subprog : subprogram_insert_order_) {
+    // Filter out inlined subprograms
     if (subprog->inlined())
       continue;
 
-    uint64 start_address =
-        AddressRangeList::RangesMin(subprog->address_ranges());
-    start_addresses.insert(start_address);
+    // Filter out bad subprograms
+    if (bad_subprograms->find(subprog) != bad_subprograms->end())
+      continue;
+
+    for (const auto &range : *subprog->address_ranges()) {
+      start_addresses.insert(range.first);
+    }
   }
 
-  // Find bad non-inlined subprograms according to rule (1) above.
-  for (vector<SubprogramInfo *>::iterator subprogs =
-           subprogram_insert_order_.begin();
-       subprogs != subprogram_insert_order_.end();
-       ++subprogs) {
-    SubprogramInfo *subprog = *subprogs;
+  // Find bad non-inlined subprograms according to rule (2) above.
+  for (const auto &subprog : subprogram_insert_order_) {
+    // Filter out inlined subprograms
     if (subprog->inlined())
+      continue;
+
+    // Filter out bad subprograms
+    if (bad_subprograms->find(subprog) != bad_subprograms->end())
       continue;
 
     typedef AddressRangeList::RangeList RangeList;
     const RangeList *ranges = subprog->address_ranges();
-    uint64 min_address = AddressRangeList::RangesMin(ranges);
-    uint64 max_address = AddressRangeList::RangesMax(ranges);
 
-    set<uint64>::iterator closest_match =
-        start_addresses.lower_bound(min_address);
+    for (const auto &range : *ranges) {
+      uint64 min_address = range.first;
+      uint64 max_address = range.second;
 
-    if (closest_match != start_addresses.end() &&
-        (*closest_match) == min_address)
-      ++closest_match;
+      set<uint64>::iterator closest_match =
+          start_addresses.lower_bound(min_address);
 
-    if (closest_match != start_addresses.end() &&
-        (*closest_match) < max_address)
-      bad_subprograms->insert(subprog);
+      if (closest_match != start_addresses.end() &&
+          (*closest_match) == min_address) {
+        ++closest_match;
+      }
+
+      if (closest_match != start_addresses.end() &&
+          (*closest_match) < max_address) {
+        bad_subprograms->insert(subprog);
+        break;
+      }
+    }
   }
 
-  // Find the bad non-inlined subprograms according to rule (2) above.
-  map<uint64, SubprogramInfo *> good_subprograms;
-  for (vector<SubprogramInfo *>::iterator subprogs =
-           subprogram_insert_order_.begin();
-       subprogs != subprogram_insert_order_.end();
-       ++subprogs) {
-    SubprogramInfo *subprog = *subprogs;
-
-    // Filter out non-inlined subprograms
+  // Find the bad non-inlined subprograms according to rule (3) above.
+  map<uint64, set<SubprogramInfo *>> subprogram_index;
+  for (SubprogramInfo *subprog : subprogram_insert_order_) {
+    // Filter out inlined subprograms
     if (subprog->inlined())
       continue;
 
@@ -367,28 +424,34 @@ void InlineStackHandler::FindBadSubprograms(
     if (bad_subprograms->find(subprog) != bad_subprograms->end())
       continue;
 
-    // See if there is another subprogram at this address
-    uint64 start_address = AddressRangeList::RangesMin(
-        subprog->address_ranges());
-    map<uint64, SubprogramInfo *>::iterator other =
-        good_subprograms.find(start_address);
-
-    if (other == good_subprograms.end()) {
-      // If there isn't, then update the map
-      good_subprograms[start_address] = subprog;
-    } else {
-      // If there is, update the map if this function is bigger
-      uint64 end_address = AddressRangeList::RangesMax(
-          subprog->address_ranges());
-      uint64 other_end_address = AddressRangeList::RangesMax(
-          other->second->address_ranges());
-
-      if (end_address > other_end_address) {
-        good_subprograms[start_address] = subprog;
-        bad_subprograms->insert(other->second);
-      } else {
-        bad_subprograms->insert(subprog);
+    bool keep_subprog = true;
+    set<SubprogramInfo *> overlapping_subprograms;
+    for (const auto &range : *subprog->address_ranges()) {
+      for (const auto &other_subprog : subprogram_index[range.first]) {
+        if (SubprogramContains(other_subprog, subprog)) {
+          keep_subprog = false;
+          break;
+        } else {
+          overlapping_subprograms.insert(other_subprog);
+        }
       }
+      if (!keep_subprog) {
+        break;
+      }
+    }
+
+    if (keep_subprog) {
+      for (const auto &bad : overlapping_subprograms) {
+        for (const auto &other_range : *bad->address_ranges()) {
+          subprogram_index[other_range.first].erase(bad);
+        }
+        bad_subprograms->insert(bad);
+      }
+      for (const auto &range : *subprog->address_ranges()) {
+        subprogram_index[range.first].insert(subprog);
+      }
+    } else {
+      bad_subprograms->insert(subprog);
     }
   }
 
@@ -397,13 +460,17 @@ void InlineStackHandler::FindBadSubprograms(
   // subprograms are stored in a leaf-to-parent order in
   // subprogram_insert_order_, it suffices to scan the vector
   // backwards once.
+  // Also, if a subprogram is not a subset of its parent, mark it bad.
   for (vector<SubprogramInfo *>::reverse_iterator subprogs =
            subprogram_insert_order_.rbegin();
        subprogs != subprogram_insert_order_.rend();
        ++subprogs) {
     SubprogramInfo *subprog = *subprogs;
-    if (bad_subprograms->find(subprog->parent()) != bad_subprograms->end()) {
-      bad_subprograms->insert(subprog);
+    if (subprog->parent()) {
+      if (bad_subprograms->find(subprog->parent()) != bad_subprograms->end() ||
+          !SubprogramContains(subprog->parent(), subprog)) {
+        bad_subprograms->insert(subprog);
+      }
     }
   }
 }
@@ -431,6 +498,29 @@ void InlineStackHandler::PopulateSubprogramsByAddress() {
 
   // Clear this vector to save some memory
   subprogram_insert_order_.clear();
+  if (overlap_count_ > 0) {
+    LOG(WARNING) << overlap_count_ << " overlapping ranges";
+  }
+}
+
+AddressRangeList::RangeList InlineStackHandler::SortAndMerge(
+    AddressRangeList::RangeList rangelist) {
+  AddressRangeList::RangeList merged;
+
+  std::sort(rangelist.begin(), rangelist.end());
+  for (const auto &range : rangelist) {
+    if (merged.empty() || range.first >= merged.back().second) {
+      merged.push_back(range);
+    } else {
+      merged.back().second = std::max(range.second, merged.back().second);
+    }
+  }
+
+  if (merged.size() < rangelist.size()) {
+    ++overlap_count_;
+  }
+
+  return merged;
 }
 
 const SubprogramInfo *InlineStackHandler::GetSubprogramForAddress(
