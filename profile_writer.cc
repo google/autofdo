@@ -178,7 +178,7 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
     // We should not have D4Ev in our profile because it does not exist
     // in symbol table and would lead to undefined symbols during linking.
     if (len > 5 &&
-        (!strcmp(c + len - 4, "D4Ev") || !strcmp(c + len - 4, "D4Ev"))) {
+        (!strcmp(c + len - 4, "D4Ev") || !strcmp(c + len - 4, "C4Ev"))) {
       c[len - 3] = '2';
     }
     gcov_write_string(c);
