@@ -220,7 +220,11 @@ void CheckNoPerfEventAttrPadding() {
   CHECK_EQ(sizeof(attr),
            (reinterpret_cast<u64>(&attr.__reserved_2) -
             reinterpret_cast<u64>(&attr)) +
-           sizeof(attr.__reserved_2));
+           sizeof(attr.branch_sample_type) +
+	   sizeof(attr.sample_regs_user) +
+	   sizeof(attr.sample_stack_user) +
+	   sizeof(attr.__reserved_2) +
+	   sizeof(attr.sample_regs_intr));
 }
 
 void CheckNoEventTypePadding() {
