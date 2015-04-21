@@ -20,7 +20,7 @@
 #include <utility>
 
 #include "base/logging.h"
-#include "quipper/perf_parser.h"
+#include "chromiumos-wide-profiling/perf_parser.h"
 
 namespace {
 // Returns true if name equals full_name, or full_name is empty and name
