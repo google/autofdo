@@ -44,8 +44,8 @@ create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) create_llvm_prof.cc
 create_llvm_prof_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 
 noinst_LIBRARIES = libquipper.a
-libquipper_a_SOURCES = quipper/address_mapper.cc quipper/perf_reader.cc \
-                       quipper/perf_parser.cc quipper/utils.cc
+libquipper_a_SOURCES = chromiumos-wide-profiling/address_mapper.cc chromiumos-wide-profiling/perf_reader.cc \
+                       chromiumos-wide-profiling/perf_parser.cc chromiumos-wide-profiling/utils.cc
 
 noinst_LIBRARIES += libglog.a
 libglog_a_SOURCES = glog/src/glog/log_severity.h \

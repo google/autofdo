@@ -314,8 +314,8 @@ profile_update_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) create_llvm_prof.cc
 create_llvm_prof_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 noinst_LIBRARIES = libquipper.a libglog.a libgflags.a libsymbolize.a
-libquipper_a_SOURCES = quipper/address_mapper.cc quipper/perf_reader.cc \
-                       quipper/perf_parser.cc quipper/utils.cc
+libquipper_a_SOURCES = chromiumos-wide-profiling/address_mapper.cc chromiumos-wide-profiling/perf_reader.cc \
+                       chromiumos-wide-profiling/perf_parser.cc chromiumos-wide-profiling/utils.cc
 
 libglog_a_SOURCES = glog/src/glog/log_severity.h \
                     glog/src/logging.cc glog/src/raw_logging.cc \
@@ -683,61 +683,61 @@ libglog_a-signalhandler.obj: glog/src/signalhandler.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libglog_a_CXXFLAGS) $(CXXFLAGS) -c -o libglog_a-signalhandler.obj `if test -f 'glog/src/signalhandler.cc'; then $(CYGPATH_W) 'glog/src/signalhandler.cc'; else $(CYGPATH_W) '$(srcdir)/glog/src/signalhandler.cc'; fi`
 
-address_mapper.o: quipper/address_mapper.cc
-@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT address_mapper.o -MD -MP -MF $(DEPDIR)/address_mapper.Tpo -c -o address_mapper.o `test -f 'quipper/address_mapper.cc' || echo '$(srcdir)/'`quipper/address_mapper.cc
+address_mapper.o: chromiumos-wide-profiling/address_mapper.cc
+@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT address_mapper.o -MD -MP -MF $(DEPDIR)/address_mapper.Tpo -c -o address_mapper.o `test -f 'chromiumos-wide-profiling/address_mapper.cc' || echo '$(srcdir)/'`chromiumos-wide-profiling/address_mapper.cc
 @am__fastdepCXX_TRUE@	$(am__mv) $(DEPDIR)/address_mapper.Tpo $(DEPDIR)/address_mapper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='quipper/address_mapper.cc' object='address_mapper.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='chromiumos-wide-profiling/address_mapper.cc' object='address_mapper.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o address_mapper.o `test -f 'quipper/address_mapper.cc' || echo '$(srcdir)/'`quipper/address_mapper.cc
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o address_mapper.o `test -f 'chromiumos-wide-profiling/address_mapper.cc' || echo '$(srcdir)/'`chromiumos-wide-profiling/address_mapper.cc
 
-address_mapper.obj: quipper/address_mapper.cc
-@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT address_mapper.obj -MD -MP -MF $(DEPDIR)/address_mapper.Tpo -c -o address_mapper.obj `if test -f 'quipper/address_mapper.cc'; then $(CYGPATH_W) 'quipper/address_mapper.cc'; else $(CYGPATH_W) '$(srcdir)/quipper/address_mapper.cc'; fi`
+address_mapper.obj: chromiumos-wide-profiling/address_mapper.cc
+@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT address_mapper.obj -MD -MP -MF $(DEPDIR)/address_mapper.Tpo -c -o address_mapper.obj `if test -f 'chromiumos-wide-profiling/address_mapper.cc'; then $(CYGPATH_W) 'chromiumos-wide-profiling/address_mapper.cc'; else $(CYGPATH_W) '$(srcdir)/chromiumos-wide-profiling/address_mapper.cc'; fi`
 @am__fastdepCXX_TRUE@	$(am__mv) $(DEPDIR)/address_mapper.Tpo $(DEPDIR)/address_mapper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='quipper/address_mapper.cc' object='address_mapper.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='chromiumos-wide-profiling/address_mapper.cc' object='address_mapper.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o address_mapper.obj `if test -f 'quipper/address_mapper.cc'; then $(CYGPATH_W) 'quipper/address_mapper.cc'; else $(CYGPATH_W) '$(srcdir)/quipper/address_mapper.cc'; fi`
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o address_mapper.obj `if test -f 'chromiumos-wide-profiling/address_mapper.cc'; then $(CYGPATH_W) 'chromiumos-wide-profiling/address_mapper.cc'; else $(CYGPATH_W) '$(srcdir)/chromiumos-wide-profiling/address_mapper.cc'; fi`
 
-perf_reader.o: quipper/perf_reader.cc
-@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT perf_reader.o -MD -MP -MF $(DEPDIR)/perf_reader.Tpo -c -o perf_reader.o `test -f 'quipper/perf_reader.cc' || echo '$(srcdir)/'`quipper/perf_reader.cc
+perf_reader.o: chromiumos-wide-profiling/perf_reader.cc
+@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT perf_reader.o -MD -MP -MF $(DEPDIR)/perf_reader.Tpo -c -o perf_reader.o `test -f 'chromiumos-wide-profiling/perf_reader.cc' || echo '$(srcdir)/'`chromiumos-wide-profiling/perf_reader.cc
 @am__fastdepCXX_TRUE@	$(am__mv) $(DEPDIR)/perf_reader.Tpo $(DEPDIR)/perf_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='quipper/perf_reader.cc' object='perf_reader.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='chromiumos-wide-profiling/perf_reader.cc' object='perf_reader.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o perf_reader.o `test -f 'quipper/perf_reader.cc' || echo '$(srcdir)/'`quipper/perf_reader.cc
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o perf_reader.o `test -f 'chromiumos-wide-profiling/perf_reader.cc' || echo '$(srcdir)/'`chromiumos-wide-profiling/perf_reader.cc
 
-perf_reader.obj: quipper/perf_reader.cc
-@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT perf_reader.obj -MD -MP -MF $(DEPDIR)/perf_reader.Tpo -c -o perf_reader.obj `if test -f 'quipper/perf_reader.cc'; then $(CYGPATH_W) 'quipper/perf_reader.cc'; else $(CYGPATH_W) '$(srcdir)/quipper/perf_reader.cc'; fi`
+perf_reader.obj: chromiumos-wide-profiling/perf_reader.cc
+@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT perf_reader.obj -MD -MP -MF $(DEPDIR)/perf_reader.Tpo -c -o perf_reader.obj `if test -f 'chromiumos-wide-profiling/perf_reader.cc'; then $(CYGPATH_W) 'chromiumos-wide-profiling/perf_reader.cc'; else $(CYGPATH_W) '$(srcdir)/chromiumos-wide-profiling/perf_reader.cc'; fi`
 @am__fastdepCXX_TRUE@	$(am__mv) $(DEPDIR)/perf_reader.Tpo $(DEPDIR)/perf_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='quipper/perf_reader.cc' object='perf_reader.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='chromiumos-wide-profiling/perf_reader.cc' object='perf_reader.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o perf_reader.obj `if test -f 'quipper/perf_reader.cc'; then $(CYGPATH_W) 'quipper/perf_reader.cc'; else $(CYGPATH_W) '$(srcdir)/quipper/perf_reader.cc'; fi`
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o perf_reader.obj `if test -f 'chromiumos-wide-profiling/perf_reader.cc'; then $(CYGPATH_W) 'chromiumos-wide-profiling/perf_reader.cc'; else $(CYGPATH_W) '$(srcdir)/chromiumos-wide-profiling/perf_reader.cc'; fi`
 
-perf_parser.o: quipper/perf_parser.cc
-@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT perf_parser.o -MD -MP -MF $(DEPDIR)/perf_parser.Tpo -c -o perf_parser.o `test -f 'quipper/perf_parser.cc' || echo '$(srcdir)/'`quipper/perf_parser.cc
+perf_parser.o: chromiumos-wide-profiling/perf_parser.cc
+@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT perf_parser.o -MD -MP -MF $(DEPDIR)/perf_parser.Tpo -c -o perf_parser.o `test -f 'chromiumos-wide-profiling/perf_parser.cc' || echo '$(srcdir)/'`chromiumos-wide-profiling/perf_parser.cc
 @am__fastdepCXX_TRUE@	$(am__mv) $(DEPDIR)/perf_parser.Tpo $(DEPDIR)/perf_parser.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='quipper/perf_parser.cc' object='perf_parser.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='chromiumos-wide-profiling/perf_parser.cc' object='perf_parser.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o perf_parser.o `test -f 'quipper/perf_parser.cc' || echo '$(srcdir)/'`quipper/perf_parser.cc
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o perf_parser.o `test -f 'chromiumos-wide-profiling/perf_parser.cc' || echo '$(srcdir)/'`chromiumos-wide-profiling/perf_parser.cc
 
-perf_parser.obj: quipper/perf_parser.cc
-@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT perf_parser.obj -MD -MP -MF $(DEPDIR)/perf_parser.Tpo -c -o perf_parser.obj `if test -f 'quipper/perf_parser.cc'; then $(CYGPATH_W) 'quipper/perf_parser.cc'; else $(CYGPATH_W) '$(srcdir)/quipper/perf_parser.cc'; fi`
+perf_parser.obj: chromiumos-wide-profiling/perf_parser.cc
+@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT perf_parser.obj -MD -MP -MF $(DEPDIR)/perf_parser.Tpo -c -o perf_parser.obj `if test -f 'chromiumos-wide-profiling/perf_parser.cc'; then $(CYGPATH_W) 'chromiumos-wide-profiling/perf_parser.cc'; else $(CYGPATH_W) '$(srcdir)/chromiumos-wide-profiling/perf_parser.cc'; fi`
 @am__fastdepCXX_TRUE@	$(am__mv) $(DEPDIR)/perf_parser.Tpo $(DEPDIR)/perf_parser.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='quipper/perf_parser.cc' object='perf_parser.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='chromiumos-wide-profiling/perf_parser.cc' object='perf_parser.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o perf_parser.obj `if test -f 'quipper/perf_parser.cc'; then $(CYGPATH_W) 'quipper/perf_parser.cc'; else $(CYGPATH_W) '$(srcdir)/quipper/perf_parser.cc'; fi`
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o perf_parser.obj `if test -f 'chromiumos-wide-profiling/perf_parser.cc'; then $(CYGPATH_W) 'chromiumos-wide-profiling/perf_parser.cc'; else $(CYGPATH_W) '$(srcdir)/chromiumos-wide-profiling/perf_parser.cc'; fi`
 
-utils.o: quipper/utils.cc
-@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT utils.o -MD -MP -MF $(DEPDIR)/utils.Tpo -c -o utils.o `test -f 'quipper/utils.cc' || echo '$(srcdir)/'`quipper/utils.cc
+utils.o: chromiumos-wide-profiling/utils.cc
+@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT utils.o -MD -MP -MF $(DEPDIR)/utils.Tpo -c -o utils.o `test -f 'chromiumos-wide-profiling/utils.cc' || echo '$(srcdir)/'`chromiumos-wide-profiling/utils.cc
 @am__fastdepCXX_TRUE@	$(am__mv) $(DEPDIR)/utils.Tpo $(DEPDIR)/utils.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='quipper/utils.cc' object='utils.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='chromiumos-wide-profiling/utils.cc' object='utils.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o utils.o `test -f 'quipper/utils.cc' || echo '$(srcdir)/'`quipper/utils.cc
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o utils.o `test -f 'chromiumos-wide-profiling/utils.cc' || echo '$(srcdir)/'`chromiumos-wide-profiling/utils.cc
 
-utils.obj: quipper/utils.cc
-@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT utils.obj -MD -MP -MF $(DEPDIR)/utils.Tpo -c -o utils.obj `if test -f 'quipper/utils.cc'; then $(CYGPATH_W) 'quipper/utils.cc'; else $(CYGPATH_W) '$(srcdir)/quipper/utils.cc'; fi`
+utils.obj: chromiumos-wide-profiling/utils.cc
+@am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT utils.obj -MD -MP -MF $(DEPDIR)/utils.Tpo -c -o utils.obj `if test -f 'chromiumos-wide-profiling/utils.cc'; then $(CYGPATH_W) 'chromiumos-wide-profiling/utils.cc'; else $(CYGPATH_W) '$(srcdir)/chromiumos-wide-profiling/utils.cc'; fi`
 @am__fastdepCXX_TRUE@	$(am__mv) $(DEPDIR)/utils.Tpo $(DEPDIR)/utils.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='quipper/utils.cc' object='utils.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='chromiumos-wide-profiling/utils.cc' object='utils.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o utils.obj `if test -f 'quipper/utils.cc'; then $(CYGPATH_W) 'quipper/utils.cc'; else $(CYGPATH_W) '$(srcdir)/quipper/utils.cc'; fi`
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o utils.obj `if test -f 'chromiumos-wide-profiling/utils.cc'; then $(CYGPATH_W) 'chromiumos-wide-profiling/utils.cc'; else $(CYGPATH_W) '$(srcdir)/chromiumos-wide-profiling/utils.cc'; fi`
 
 addr2line_inlinestack.o: symbolize/addr2line_inlinestack.cc
 @am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT addr2line_inlinestack.o -MD -MP -MF $(DEPDIR)/addr2line_inlinestack.Tpo -c -o addr2line_inlinestack.o `test -f 'symbolize/addr2line_inlinestack.cc' || echo '$(srcdir)/'`symbolize/addr2line_inlinestack.cc
