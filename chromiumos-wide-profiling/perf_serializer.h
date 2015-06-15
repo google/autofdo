@@ -10,8 +10,8 @@
 
 #include "base/macros.h"
 
+#include "chromiumos-wide-profiling/compat/proto.h"
 #include "chromiumos-wide-profiling/perf_parser.h"
-#include "chromiumos-wide-profiling/quipper_proto.h"
 
 namespace quipper {
 

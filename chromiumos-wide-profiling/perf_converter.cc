@@ -11,8 +11,8 @@
 
 #include "base/logging.h"
 
+#include "chromiumos-wide-profiling/compat/string.h"
 #include "chromiumos-wide-profiling/conversion_utils.h"
-#include "chromiumos-wide-profiling/quipper_string.h"
 
 using quipper::FormatAndFile;
 using quipper::kPerfFormat;

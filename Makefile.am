@@ -45,7 +45,9 @@ create_llvm_prof_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 
 noinst_LIBRARIES = libquipper.a
 libquipper_a_SOURCES = chromiumos-wide-profiling/address_mapper.cc chromiumos-wide-profiling/perf_reader.cc \
-                       chromiumos-wide-profiling/perf_parser.cc chromiumos-wide-profiling/utils.cc
+                       chromiumos-wide-profiling/perf_parser.cc chromiumos-wide-profiling/utils.cc \
+                       chromiumos-wide-profiling/buffer_reader.cc chromiumos-wide-profiling/data_reader.cc \
+                       chromiumos-wide-profiling/buffer_writer.cc chromiumos-wide-profiling/data_writer.cc
 
 noinst_LIBRARIES += libglog.a
 libglog_a_SOURCES = glog/src/glog/log_severity.h \

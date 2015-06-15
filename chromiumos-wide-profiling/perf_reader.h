@@ -14,8 +14,8 @@
 
 #include "base/macros.h"
 
+#include "chromiumos-wide-profiling/compat/string.h"
 #include "chromiumos-wide-profiling/kernel/perf_internals.h"
-#include "chromiumos-wide-profiling/quipper_string.h"
 #include "chromiumos-wide-profiling/utils.h"
 
 namespace quipper {
@@ -68,8 +68,8 @@ struct PerfNodeTopologyMetadata {
   CStringWithLength cpu_list;
 };
 
-class BufferWithSize;
-class ConstBufferWithSize;
+class DataReader;
+class DataWriter;
 
 class PerfReader {
  public:
@@ -91,7 +91,8 @@ class PerfReader {
   bool ReadFile(const string& filename);
   bool ReadFromVector(const std::vector<char>& data);
   bool ReadFromString(const string& str);
-  bool ReadFromPointer(const char* perf_data, size_t size);
+  bool ReadFromPointer(const char* data, size_t size);
+  bool ReadFromData(DataReader* data);
 
   // TODO(rohinmshah): GetSize should not use RegenerateHeader (so that it can
   // be const).  Ideally, RegenerateHeader would be deleted and instead of
@@ -183,81 +184,77 @@ class PerfReader {
     return tracing_data_;
   }
 
+  uint64_t metadata_mask() const {
+    return metadata_mask_;
+  }
+
+  const std::vector<PerfStringMetadata>& string_metadata() const {
+    return string_metadata_;
+  }
+
  protected:
-  bool ReadHeader(const ConstBufferWithSize& data);
+  bool ReadHeader(DataReader* data);
 
-  bool ReadAttrs(const ConstBufferWithSize& data);
-  bool ReadAttr(const ConstBufferWithSize& data, size_t* offset);
-  bool ReadEventAttr(const ConstBufferWithSize& data, size_t* offset,
-                     perf_event_attr* attr);
-  bool ReadUniqueIDs(const ConstBufferWithSize& data, size_t num_ids,
-                     size_t* offset, std::vector<u64>* ids);
+  bool ReadAttrsSection(DataReader* data);
+  bool ReadAttr(DataReader* data);
+  bool ReadEventAttr(DataReader* data, perf_event_attr* attr);
+  bool ReadUniqueIDs(DataReader* data, size_t num_ids, std::vector<u64>* ids);
 
-  bool ReadEventTypes(const ConstBufferWithSize& data);
+  bool ReadEventTypesSection(DataReader* data);
   // if event_size == 0, then not in an event.
-  bool ReadEventType(const ConstBufferWithSize& data, size_t attr_idx,
-                     size_t event_size, size_t* offset);
+  bool ReadEventType(DataReader* data, size_t attr_idx, size_t event_size);
 
-  bool ReadData(const ConstBufferWithSize& data);
+  bool ReadDataSection(DataReader* data);
 
   // Reads metadata in normal mode.
-  bool ReadMetadata(const ConstBufferWithSize& data);
-  bool ReadTracingMetadata(const ConstBufferWithSize& data,
-                           size_t offset, size_t size);
-  bool ReadBuildIDMetadata(const ConstBufferWithSize& data, u32 type,
-                           size_t offset, size_t size);
-  bool ReadStringMetadata(const ConstBufferWithSize& data, u32 type,
-                          size_t offset, size_t size);
-  bool ReadUint32Metadata(const ConstBufferWithSize& data, u32 type,
-                          size_t offset, size_t size);
-  bool ReadUint64Metadata(const ConstBufferWithSize& data, u32 type,
-                          size_t offset, size_t size);
-  bool ReadCPUTopologyMetadata(const ConstBufferWithSize& data, u32 type,
-                               size_t offset, size_t size);
-  bool ReadNUMATopologyMetadata(const ConstBufferWithSize& data, u32 type,
-                                size_t offset, size_t size);
-  bool ReadEventDescMetadata(const ConstBufferWithSize& data, u32 type,
-                             size_t offset, size_t size);
+  bool ReadMetadata(DataReader* data);
+
+  // The following functions read various types of metadata.
+  bool ReadTracingMetadata(DataReader* data, size_t size);
+  bool ReadBuildIDMetadata(DataReader* data, size_t size);
+  // Reads contents of a build ID event or block beyond the header. Useful for
+  // reading build IDs in piped mode, where the header must be read first in
+  // order to determine that it is a build ID event.
+  bool ReadBuildIDMetadataWithoutHeader(DataReader* data,
+                                        const perf_event_header& header);
+
+  bool ReadStringMetadata(DataReader* data, u32 type, size_t size);
+  bool ReadUint32Metadata(DataReader* data, u32 type, size_t size);
+  bool ReadUint64Metadata(DataReader* data, u32 type, size_t size);
+  bool ReadCPUTopologyMetadata(DataReader* data, u32 type, size_t size);
+  bool ReadNUMATopologyMetadata(DataReader* data, u32 type, size_t size);
+  bool ReadEventDescMetadata(DataReader* data, u32 type, size_t size);
 
   // Read perf data from piped perf output data.
-  bool ReadPipedData(const ConstBufferWithSize& data);
-  bool ReadTracingMetadataEvent(const ConstBufferWithSize& data, size_t offset);
+  bool ReadPipedData(DataReader* data);
 
   // Like WriteToPointer, but does not check if the buffer is large enough.
   bool WriteToPointerWithoutCheckingSize(char* buffer, size_t size);
 
-  bool WriteHeader(const BufferWithSize& data) const;
-  bool WriteAttrs(const BufferWithSize& data) const;
-  bool WriteEventTypes(const BufferWithSize& data) const;
-  bool WriteData(const BufferWithSize& data) const;
-  bool WriteMetadata(const BufferWithSize& data) const;
+  bool WriteHeader(DataWriter* data) const;
+  bool WriteAttrs(DataWriter* data) const;
+  bool WriteEventTypes(DataWriter* data) const;
+  bool WriteData(DataWriter* data) const;
+  bool WriteMetadata(DataWriter* data) const;
 
   // For writing the various types of metadata.
-  bool WriteBuildIDMetadata(u32 type, size_t* offset,
-                            const BufferWithSize& data) const;
-  bool WriteStringMetadata(u32 type, size_t* offset,
-                           const BufferWithSize& data) const;
-  bool WriteUint32Metadata(u32 type, size_t* offset,
-                           const BufferWithSize& data) const;
-  bool WriteUint64Metadata(u32 type, size_t* offset,
-                           const BufferWithSize& data) const;
-  bool WriteEventDescMetadata(u32 type, size_t* offset,
-                              const BufferWithSize& data) const;
-  bool WriteCPUTopologyMetadata(u32 type, size_t* offset,
-                                const BufferWithSize& data) const;
-  bool WriteNUMATopologyMetadata(u32 type, size_t* offset,
-                                 const BufferWithSize& data) const;
+  bool WriteBuildIDMetadata(u32 type, DataWriter* data) const;
+  bool WriteStringMetadata(u32 type, DataWriter* data) const;
+  bool WriteUint32Metadata(u32 type, DataWriter* data) const;
+  bool WriteUint64Metadata(u32 type, DataWriter* data) const;
+  bool WriteEventDescMetadata(u32 type, DataWriter* data) const;
+  bool WriteCPUTopologyMetadata(u32 type, DataWriter* data) const;
+  bool WriteNUMATopologyMetadata(u32 type, DataWriter* data) const;
 
   // For reading event blocks within piped perf data.
-  bool ReadAttrEventBlock(const ConstBufferWithSize& data, size_t offset,
-                          size_t size);
+  bool ReadAttrEventBlock(DataReader* data, size_t size);
 
   // Swaps byte order for non-header fields of the data structure pointed to by
   // |event|, if |is_cross_endian_| is true. Otherwise leaves the data the same.
   void MaybeSwapEventFields(event_t* event);
 
-  // Returns the number of types of metadata stored.
-  size_t GetNumMetadata() const;
+  // Returns the number of types of metadata stored and written to output data.
+  size_t GetNumSupportedMetadata() const;
 
   // For computing the sizes of the various types of metadata.
   size_t GetBuildIDMetadataSize() const;
@@ -294,9 +291,6 @@ class PerfReader {
   bool is_cross_endian_;
 
  private:
-  u32 ReadPerfEventAttrSize(const ConstBufferWithSize& data,
-                            size_t attr_offset);
-
   // The file header is either a normal header or a piped header.
   union {
     struct perf_file_header header_;

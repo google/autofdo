@@ -4,9 +4,9 @@
 
 #include "base/logging.h"
 
+#include "chromiumos-wide-profiling/compat/test.h"
 #include "chromiumos-wide-profiling/conversion_utils.h"
 #include "chromiumos-wide-profiling/perf_test_files.h"
-#include "chromiumos-wide-profiling/quipper_test.h"
 #include "chromiumos-wide-profiling/scoped_temp_path.h"
 #include "chromiumos-wide-profiling/test_utils.h"
 #include "chromiumos-wide-profiling/utils.h"

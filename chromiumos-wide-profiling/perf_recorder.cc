@@ -10,8 +10,8 @@
 #include <sstream>
 #include <vector>
 
+#include "chromiumos-wide-profiling/compat/string.h"
 #include "chromiumos-wide-profiling/perf_serializer.h"
-#include "chromiumos-wide-profiling/quipper_string.h"
 #include "chromiumos-wide-profiling/run_command.h"
 #include "chromiumos-wide-profiling/scoped_temp_path.h"
 #include "chromiumos-wide-profiling/utils.h"
