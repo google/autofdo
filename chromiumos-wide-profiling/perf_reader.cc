@@ -220,7 +220,8 @@ void CheckNoPerfEventAttrPadding() {
   CHECK_EQ(sizeof(attr),
            (reinterpret_cast<u64>(&attr.__reserved_2) -
             reinterpret_cast<u64>(&attr)) +
-           sizeof(attr.__reserved_2));
+	   4 +
+	   sizeof(attr.sample_regs_intr));
 }
 
 void CheckNoEventTypePadding() {
@@ -1091,7 +1092,13 @@ bool PerfReader::IsSupportedEventType(uint32_t type) {
 
 bool PerfReader::ReadPerfSampleInfo(const event_t& event,
                                     struct perf_sample* sample) const {
+
   CHECK(sample);
+
+  if (event.header.type >= PERF_RECORD_USER_TYPE_START && event.header.type < PERF_RECORD_HEADER_MAX) {
+    memset(sample, 0, sizeof(perf_sample));
+    return true;
+  }
 
   if (!IsSupportedEventType(event.header.type)) {
     LOG(ERROR) << "Unsupported event type " << event.header.type;
@@ -1810,6 +1817,9 @@ bool PerfReader::ReadPipedData(const ConstBufferWithSize& data) {
     }
 
     switch (header.type) {
+    case PERF_RECORD_FINISHED_ROUND:
+      result = true;
+      break;
     case PERF_RECORD_HEADER_ATTR:
       result = ReadAttrEventBlock(data, new_offset, size_without_header);
       break;
