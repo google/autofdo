@@ -13,8 +13,8 @@
 
 #include "base/logging.h"
 
+#include "chromiumos-wide-profiling/compat/proto.h"
 #include "chromiumos-wide-profiling/perf_serializer.h"
-#include "chromiumos-wide-profiling/quipper_proto.h"
 #include "chromiumos-wide-profiling/run_command.h"
 #include "chromiumos-wide-profiling/utils.h"
 

@@ -4,7 +4,9 @@
 
 #include "chromiumos-wide-profiling/test_perf_data.h"
 
+#include <algorithm>
 #include <ostream>  // NOLINT
+#include <vector>
 
 #include "base/logging.h"
 
@@ -14,8 +16,20 @@
 namespace quipper {
 namespace testing {
 
+namespace {
+
+// Write extra bytes to an output stream.
+void WriteExtraBytes(size_t size, std::ostream* out) {
+  std::vector<char> padding(size);
+  out->write(padding.data(), size);
+}
+
+}  // namespace
+
 ExamplePerfDataFileHeader::ExamplePerfDataFileHeader(
-    const size_t attr_count, const unsigned long features) {  // NOLINT
+    const size_t attr_count,
+    const u64 data_size,
+    const unsigned long features) {  // NOLINT
   CHECK_EQ(112U, sizeof(perf_file_attr)) << "perf_file_attr has changed size!";
   const size_t attrs_size = attr_count * sizeof(perf_file_attr);
   header_ = {
@@ -23,7 +37,7 @@ ExamplePerfDataFileHeader::ExamplePerfDataFileHeader(
     .size = 104,
     .attr_size = sizeof(perf_file_attr),
     .attrs = {.offset = 104, .size = attrs_size},
-    .data = {.offset = 104 + attrs_size, .size = (1+14)*sizeof(u64)},
+    .data = {.offset = 104 + attrs_size, .size = data_size},
     .event_types = {0},
     .adds_features = {features, 0, 0, 0},
   };
@@ -33,6 +47,22 @@ void ExamplePerfDataFileHeader::WriteTo(std::ostream* out) const {
   out->write(reinterpret_cast<const char*>(&header_), sizeof(header_));
   CHECK_EQ(static_cast<u64>(out->tellp()), header_.size);
   CHECK_EQ(static_cast<u64>(out->tellp()), header_.attrs.offset);
+}
+
+ExamplePerfDataFileHeader_CustomAttrSize::
+    ExamplePerfDataFileHeader_CustomAttrSize(
+        const size_t event_attr_size, const u64 data_size)
+            : ExamplePerfDataFileHeader(1, data_size, 0) {  // NOLINT
+  const size_t file_attr_size = event_attr_size + sizeof(perf_file_section);
+  header_ = {
+    .magic = kPerfMagic,
+    .size = 104,
+    .attr_size = file_attr_size,
+    .attrs = {.offset = 104, .size = file_attr_size},
+    .data = {.offset = 104 + file_attr_size, .size = data_size},
+    .event_types = {0},
+    .adds_features = {0, 0, 0, 0},
+  };
 }
 
 void ExamplePipedPerfDataFileHeader::WriteTo(std::ostream* out) const {
@@ -49,8 +79,8 @@ void ExamplePerfEventAttrEvent_Hardware::WriteTo(std::ostream* out) const {
   // be initialized with designated initializers.
   perf_event_attr attr = {};
   attr.type = PERF_TYPE_HARDWARE;
-  attr.size = sizeof(perf_event_attr);
-  attr.config = 0;
+  attr.size = attr_size_;
+  attr.config = config_;
   attr.sample_period = 100001;
   attr.sample_type = sample_type_;
   attr.sample_id_all = sample_id_all_;
@@ -59,12 +89,40 @@ void ExamplePerfEventAttrEvent_Hardware::WriteTo(std::ostream* out) const {
     .header = {
       .type = PERF_RECORD_HEADER_ATTR,
       .misc = 0,
-      .size = sizeof(attr_event),  // No ids to add to size.
+      // No ids to add to size.
+      .size = static_cast<u16>(sizeof(event.header) + attr.size),
     },
     .attr = attr,
   };
 
-  out->write(reinterpret_cast<const char*>(&event), sizeof(event));
+  out->write(reinterpret_cast<const char*>(&event),
+             std::min(sizeof(event), static_cast<size_t>(event.header.size)));
+  if (sizeof(event) < event.header.size)
+    WriteExtraBytes(event.header.size - sizeof(event), out);
+}
+
+void ExamplePerfFileAttr_Hardware::WriteTo(std::ostream* out) const {
+  // Due to the unnamed union fields (eg, sample_period), this structure can't
+  // be initialized with designated initializers.
+  perf_event_attr attr = {};
+  attr.type = PERF_TYPE_HARDWARE;
+  attr.size = attr_size_;
+  attr.config = config_;
+  attr.sample_period = 1;
+  attr.sample_type = sample_type_;
+  attr.sample_id_all = sample_id_all_;
+
+  // perf_event_attr can be of a size other than the static struct size. Thus we
+  // cannot simply statically create a perf_file_attr (which contains a
+  // perf_event_attr and a perf_file_section). Instead, create and write each
+  // component separately.
+  out->write(reinterpret_cast<const char*>(&attr),
+             std::min(sizeof(attr), static_cast<size_t>(attr_size_)));
+  if (sizeof(attr) < attr.size)
+    WriteExtraBytes(attr.size - sizeof(attr), out);
+
+  const perf_file_section ids = { .offset = 104, .size = 0 };
+  out->write(reinterpret_cast<const char*>(&ids), sizeof(ids));
 }
 
 void ExamplePerfFileAttr_Tracepoint::WriteTo(std::ostream* out) const {
@@ -90,13 +148,13 @@ void ExamplePerfFileAttr_Tracepoint::WriteTo(std::ostream* out) const {
   out->write(reinterpret_cast<const char*>(&file_attr), sizeof(file_attr));
 }
 
-void ExampleMmapEvent_Tid::WriteTo(std::ostream* out) const {
+void ExampleMmapEvent::WriteTo(std::ostream* out) const {
   const size_t filename_aligned_length =
       GetUint64AlignedStringLength(filename_);
   const size_t event_size =
       offsetof(struct mmap_event, filename) +
       filename_aligned_length +
-      1*sizeof(u64);  // sample_id_all
+      sample_id_.size();  // sample_id_all
 
   struct mmap_event event = {
     .header = {
@@ -110,29 +168,26 @@ void ExampleMmapEvent_Tid::WriteTo(std::ostream* out) const {
     .pgoff = pgoff_,
     // .filename = ..., // written separately
   };
-  const u64 sample_id[] = {
-    PunU32U64{.v32={pid_, pid_}}.v64,  // TID (u32 pid, tid)
-  };
 
   const size_t pre_mmap_offset = out->tellp();
   out->write(reinterpret_cast<const char*>(&event),
              offsetof(struct mmap_event, filename));
   *out << filename_
        << string(filename_aligned_length - filename_.size(), '\0');
-  out->write(reinterpret_cast<const char*>(sample_id), sizeof(sample_id));
+  out->write(sample_id_.data(), sample_id_.size());
   const size_t written_event_size =
       static_cast<size_t>(out->tellp()) - pre_mmap_offset;
   CHECK_EQ(event.header.size,
            static_cast<u64>(written_event_size));
 }
 
-void ExampleMmap2Event_Tid::WriteTo(std::ostream* out) const {
+void ExampleMmap2Event::WriteTo(std::ostream* out) const {
   const size_t filename_aligned_length =
       GetUint64AlignedStringLength(filename_);
   const size_t event_size =
       offsetof(struct mmap2_event, filename) +
       filename_aligned_length +
-      1*sizeof(u64);  // sample_id_all
+      sample_id_.size();  // sample_id_all
 
   struct mmap2_event event = {
     .header = {
@@ -152,40 +207,69 @@ void ExampleMmap2Event_Tid::WriteTo(std::ostream* out) const {
     .flags = 2,   // == MAP_PRIVATE
     // .filename = ..., // written separately
   };
-  const u64 sample_id[] = {
-    PunU32U64{.v32={pid_, pid_}}.v64,  // TID (u32 pid, tid)
-  };
 
   const size_t pre_mmap_offset = out->tellp();
   out->write(reinterpret_cast<const char*>(&event),
              offsetof(struct mmap2_event, filename));
   *out << filename_
        << string(filename_aligned_length - filename_.size(), '\0');
-  out->write(reinterpret_cast<const char*>(sample_id), sizeof(sample_id));
+  out->write(sample_id_.data(), sample_id_.size());
   const size_t written_event_size =
       static_cast<size_t>(out->tellp()) - pre_mmap_offset;
   CHECK_EQ(event.header.size,
            static_cast<u64>(written_event_size));
 }
 
-void ExamplePerfSampleEvent_IpTid::WriteTo(std::ostream* out) const {
+void FinishedRoundEvent::WriteTo(std::ostream* out) const {
+  const perf_event_header event = {
+    .type = PERF_RECORD_FINISHED_ROUND,
+    .misc = 0,
+    .size = sizeof(struct perf_event_header),
+  };
+  out->write(reinterpret_cast<const char*>(&event), sizeof(event));
+}
+
+size_t ExamplePerfSampleEvent::GetSize() const {
+  return sizeof(struct sample_event) + sample_info_.size();
+}
+
+void ExamplePerfSampleEvent::WriteTo(std::ostream* out) const {
   const sample_event event = {
     .header = {
       .type = PERF_RECORD_SAMPLE,
       .misc = PERF_RECORD_MISC_USER,
-      .size = sizeof(struct sample_event) + 2*sizeof(u64),
+      .size = static_cast<u16>(GetSize()),
     }
   };
-  const u64 sample_event_array[] = {
-    ip_,                               // IP
-    PunU32U64{.v32={pid_, tid_}}.v64,  // TID (u32 pid, tid)
-  };
-  CHECK_EQ(event.header.size,
-           sizeof(event.header) + sizeof(sample_event_array));
   out->write(reinterpret_cast<const char*>(&event), sizeof(event));
-  out->write(reinterpret_cast<const char*>(sample_event_array),
-             sizeof(sample_event_array));
+  out->write(sample_info_.data(), sample_info_.size());
 }
+
+ExamplePerfSampleEvent_BranchStack::ExamplePerfSampleEvent_BranchStack()
+  : ExamplePerfSampleEvent(
+      SampleInfo()
+      .BranchStack_nr(16)
+      .BranchStack_lbr(0x00007f4a313bb8cc, 0x00007f4a313bdb40, 0x02)
+      .BranchStack_lbr(0x00007f4a30ce4de2, 0x00007f4a313bb8b3, 0x02)
+      .BranchStack_lbr(0x00007f4a313bb8b0, 0x00007f4a30ce4de0, 0x01)
+      .BranchStack_lbr(0x00007f4a30ff45c1, 0x00007f4a313bb8a0, 0x02)
+      .BranchStack_lbr(0x00007f4a30ff49f2, 0x00007f4a30ff45bb, 0x02)
+      .BranchStack_lbr(0x00007f4a30ff4a98, 0x00007f4a30ff49ed, 0x02)
+      .BranchStack_lbr(0x00007f4a30ff4a7c, 0x00007f4a30ff4a91, 0x02)
+      .BranchStack_lbr(0x00007f4a30ff4a34, 0x00007f4a30ff4a46, 0x02)
+      .BranchStack_lbr(0x00007f4a30ff4c22, 0x00007f4a30ff4a0e, 0x02)
+      .BranchStack_lbr(0x00007f4a30ff4bb3, 0x00007f4a30ff4c1b, 0x01)
+      .BranchStack_lbr(0x00007f4a30ff4a09, 0x00007f4a30ff4b60, 0x02)
+      .BranchStack_lbr(0x00007f4a30ff49e8, 0x00007f4a30ff4a00, 0x02)
+      .BranchStack_lbr(0x00007f4a30ff42db, 0x00007f4a30ff49e0, 0x02)
+      .BranchStack_lbr(0x00007f4a30ff42bb, 0x00007f4a30ff42d4, 0x02)
+      .BranchStack_lbr(0x00007f4a333bf88b, 0x00007f4a30ff42ac, 0x02)
+      .BranchStack_lbr(0x00007f4a333bf853, 0x00007f4a333bf885, 0x02)) {
+}
+
+// Event size matching the event produced above
+const size_t ExamplePerfSampleEvent_BranchStack::kEventSize =
+    (1 /*perf_event_header*/ + 1 /*nr*/ + 16*3 /*lbr*/) * sizeof(u64);
 
 void ExamplePerfSampleEvent_Tracepoint::WriteTo(std::ostream* out) const {
   const sample_event event = {
@@ -216,6 +300,37 @@ void ExamplePerfSampleEvent_Tracepoint::WriteTo(std::ostream* out) const {
   out->write(reinterpret_cast<const char*>(&event), sizeof(event));
   out->write(reinterpret_cast<const char*>(sample_event_array),
              sizeof(sample_event_array));
+}
+
+// Event size matching the event produced above
+const size_t ExamplePerfSampleEvent_Tracepoint::kEventSize =
+    (1 /*perf_event_header*/ + 14 /*sample array*/) * sizeof(u64);
+
+void ExampleStringMetadata::WriteTo(std::ostream* out) const {
+  const perf_file_section &index_entry = index_entry_.index_entry_;
+  CHECK_EQ(static_cast<u64>(out->tellp()), index_entry.offset);
+  const u32 data_size = data_.size();
+  out->write(reinterpret_cast<const char*>(&data_size), sizeof(data_size));
+  out->write(data_.data(), data_.size());
+
+  CHECK_EQ(static_cast<u64>(out->tellp()), index_entry.offset + size());
+}
+
+void ExampleStringMetadataEvent::WriteTo(std::ostream* out) const {
+  const size_t initial_position = out->tellp();
+
+  const u32 data_size = data_.size();
+  const perf_event_header header = {
+    .type = type_,
+    .misc = 0,
+    .size = static_cast<u16>(sizeof(header) + sizeof(data_size) + data_.size()),
+  };
+  out->write(reinterpret_cast<const char*>(&header), sizeof(header));
+
+  out->write(reinterpret_cast<const char*>(&data_size), sizeof(data_size));
+  out->write(reinterpret_cast<const char*>(data_.data()), data_.size());
+
+  CHECK_EQ(static_cast<u64>(out->tellp()), initial_position + header.size);
 }
 
 static const char kTraceMetadataValue[] =

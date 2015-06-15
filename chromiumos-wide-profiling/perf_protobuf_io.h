@@ -5,9 +5,8 @@
 #ifndef CHROMIUMOS_WIDE_PROFILING_PERF_PROTOBUF_IO_H_
 #define CHROMIUMOS_WIDE_PROFILING_PERF_PROTOBUF_IO_H_
 
-#include <string>
-#include "chromiumos-wide-profiling/quipper_proto.h"
-#include "chromiumos-wide-profiling/quipper_string.h"
+#include "chromiumos-wide-profiling/compat/proto.h"
+#include "chromiumos-wide-profiling/compat/string.h"
 
 namespace quipper {
 

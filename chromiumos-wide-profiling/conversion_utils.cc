@@ -11,16 +11,13 @@
 #include <string>
 #include <vector>
 
-#include <google/protobuf/text_format.h>
-
 #include "base/logging.h"
 
+#include "chromiumos-wide-profiling/compat/proto.h"
+#include "chromiumos-wide-profiling/compat/string.h"
 #include "chromiumos-wide-profiling/perf_protobuf_io.h"
 #include "chromiumos-wide-profiling/perf_serializer.h"
-#include "chromiumos-wide-profiling/quipper_string.h"
 #include "chromiumos-wide-profiling/utils.h"
-
-using google::protobuf::TextFormat;
 
 namespace quipper {
 

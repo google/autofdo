@@ -30,8 +30,6 @@ struct DSOInfo {
 
   // Comparator that allows this to be stored in a STL set.
   bool operator<(const DSOInfo& other) const {
-    if (name == other.name)
-      return build_id < other.build_id;
     return name < other.name;
   }
 };

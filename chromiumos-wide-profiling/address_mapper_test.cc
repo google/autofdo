@@ -9,8 +9,8 @@
 
 #include "base/logging.h"
 
+#include "chromiumos-wide-profiling/compat/test.h"
 #include "chromiumos-wide-profiling/limits.h"
-#include "chromiumos-wide-profiling/quipper_test.h"
 
 namespace quipper {
 

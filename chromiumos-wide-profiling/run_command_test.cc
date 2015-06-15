@@ -4,24 +4,24 @@
 
 #include "chromiumos-wide-profiling/run_command.h"
 
-#include "chromiumos-wide-profiling/quipper_test.h"
-
 #include <vector>
-#include <string>
+
+#include "chromiumos-wide-profiling/compat/string.h"
+#include "chromiumos-wide-profiling/compat/test.h"
 
 namespace quipper {
 
 TEST(RunCommandTest, StoresStdout) {
   std::vector<char> output;
   EXPECT_TRUE(RunCommand({"/bin/sh", "-c", "echo 'Hello, world!'"}, &output));
-  std::string output_str(output.begin(), output.end());
+  string output_str(output.begin(), output.end());
   EXPECT_EQ("Hello, world!\n", output_str);
 }
 
 TEST(RunCommandTest, RunsFromPath) {
   std::vector<char> output;
   EXPECT_TRUE(RunCommand({"sh", "-c", "echo 'Hello, world!'"}, &output));
-  std::string output_str(output.begin(), output.end());
+  string output_str(output.begin(), output.end());
   EXPECT_EQ("Hello, world!\n", output_str);
 }
 

@@ -7,10 +7,10 @@
 
 #include "base/logging.h"
 
+#include "chromiumos-wide-profiling/compat/string.h"
 #include "chromiumos-wide-profiling/perf_protobuf_io.h"
 #include "chromiumos-wide-profiling/perf_reader.h"
 #include "chromiumos-wide-profiling/perf_recorder.h"
-#include "chromiumos-wide-profiling/quipper_string.h"
 
 namespace {
 

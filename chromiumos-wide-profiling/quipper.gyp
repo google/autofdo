@@ -14,6 +14,10 @@
       'type': 'static_library',
       'sources': [
         'address_mapper.cc',
+        'buffer_reader.cc',
+        'buffer_writer.cc',
+        'data_reader.cc',
+        'data_writer.cc',
         'perf_parser.cc',
         'perf_protobuf_io.cc',
         'perf_reader.cc',
@@ -101,6 +105,30 @@
           'includes': ['../common-mk/common_test.gypi'],
           'sources': [
             'address_mapper_test.cc',
+          ]
+        },
+        {
+          'target_name': 'buffer_reader_test',
+          'type': 'executable',
+          'dependencies': [
+            'common',
+            'common_test',
+          ],
+          'includes': ['../common-mk/common_test.gypi'],
+          'sources': [
+            'buffer_reader_test.cc',
+          ]
+        },
+        {
+          'target_name': 'buffer_writer_test',
+          'type': 'executable',
+          'dependencies': [
+            'common',
+            'common_test',
+          ],
+          'includes': ['../common-mk/common_test.gypi'],
+          'sources': [
+            'buffer_writer_test.cc',
           ]
         },
         {
