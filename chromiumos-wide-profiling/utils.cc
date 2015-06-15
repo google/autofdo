@@ -4,7 +4,11 @@
 
 #include "chromiumos-wide-profiling/utils.h"
 
+#define NO_MD5 1
+
+#ifndef NO_MD5
 #include <openssl/md5.h>
+#endif
 #include <sys/stat.h>
 
 #include <cctype>
@@ -60,6 +64,9 @@ build_id_event* CallocMemoryForBuildID(size_t size) {
 static uint64_t Md5Prefix(
     const unsigned char* data,
     unsigned long length) { // NOLINT
+#ifdef NO_MD5
+  return 0;
+#else
   uint64_t digest_prefix = 0;
   unsigned char digest[MD5_DIGEST_LENGTH + 1];
 
@@ -73,6 +80,7 @@ static uint64_t Md5Prefix(
        << static_cast<unsigned int>(digest[i]);
   ss >> digest_prefix;
   return digest_prefix;
+#endif
 }
 
 uint64_t Md5Prefix(const string& input) {
