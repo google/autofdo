@@ -44,7 +44,9 @@ class AutoFDOProfileReader {
   void ReadWorkingSet();
   void ReadModuleGroup();
   void ReadFunctionProfile();
-  void ReadSymbolProfile(const SourceStack &stack);
+  // Reads in profile recursively. Updates the symbol_map_ if update is true.
+  // Otherwise just read in and dump the data.
+  void ReadSymbolProfile(const SourceStack &stack, bool update);
   void ReadNameTable();
 
   SymbolMap *symbol_map_;

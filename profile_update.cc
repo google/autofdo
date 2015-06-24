@@ -16,6 +16,7 @@
 // in the new binary.
 
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -47,11 +48,15 @@ using autofdo::AutoFDOProfileWriter;
 int main(int argc, char **argv) {
   google::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
-  SymbolMap symbol_map;
-  std::unique_ptr<Addr2line> addr2line(Addr2line::Create(FLAGS_binary));
+  SymbolMap symbol_map(FLAGS_binary);
 
   AutoFDOProfileReader reader(&symbol_map, NULL);
   reader.ReadFromFile(FLAGS_input);
+  set<uint64> empty_sampled_addrs;
+  map<uint64, uint64> sampled_functions =
+      symbol_map.GetSampledSymbolStartAddressSizeMap(empty_sampled_addrs);
+  std::unique_ptr<Addr2line> addr2line(Addr2line::CreateWithSampledFunctions(
+      FLAGS_binary, &sampled_functions));
   symbol_map.UpdateSymbolMap(FLAGS_binary, addr2line.get());
   symbol_map.CalculateThreshold();
 
