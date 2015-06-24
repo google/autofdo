@@ -106,9 +106,9 @@ class Symbol {
   // This constructor is used to create inlined symbol.
   Symbol(const char *name, const char *dir, const char *file, uint32 start)
       : info(SourceInfo(name, dir, file, start, 0, 0)),
-        total_count(0), head_count(0), callsites(0), pos_counts(0) {}
+        total_count(0), head_count(0) {}
 
-  Symbol() : total_count(0), head_count(0), callsites(0), pos_counts(0) {}
+  Symbol() : total_count(0), head_count(0) {}
 
   ~Symbol();
 

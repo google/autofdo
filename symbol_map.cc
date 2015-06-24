@@ -626,6 +626,16 @@ void SymbolMap::ComputeWorkingSets() {
     ret.insert(std::make_pair(iter->first, iter->second.second));
     next_start_addr = iter->first + iter->second.second;
   }
+  for (const auto &addr_symbol : address_symbol_map_) {
+    if (ret.find(addr_symbol.first) != ret.end()) {
+      continue;
+    }
+    const auto &iter = map_.find(addr_symbol.second.first);
+    if (iter != map_.end() && iter->second != NULL
+        && iter->second->total_count > 0) {
+      ret[addr_symbol.first] = addr_symbol.second.second;
+    }
+  }
   return ret;
 }
 

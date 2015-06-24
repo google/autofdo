@@ -73,11 +73,12 @@ void AutoFDOProfileReader::ReadFunctionProfile() {
   uint32 num_functions = gcov_read_unsigned();
   SourceStack stack;
   for (uint32 i = 0; i < num_functions; i++) {
-    ReadSymbolProfile(stack);
+    ReadSymbolProfile(stack, true);
   }
 }
 
-void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack) {
+void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
+                                             bool update) {
   uint64 head_count;
   if (stack.size() == 0) {
     head_count = gcov_read_counter();
@@ -90,6 +91,9 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack) {
   if (stack.size() == 0) {
     symbol_map_->AddSymbol(name);
     symbol_map_->AddSymbolEntryCount(name, head_count);
+    if (symbol_map_->GetSymbolByName(name)->total_count > 0) {
+      update = false;
+    }
   }
   for (int i = 0; i < num_pos_counts; i++) {
     uint32 offset = gcov_read_unsigned();
@@ -99,16 +103,20 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack) {
     SourceStack new_stack;
     new_stack.push_back(info);
     new_stack.insert(new_stack.end(), stack.begin(), stack.end());
-    symbol_map_->AddSourceCount(new_stack[new_stack.size() - 1].func_name,
-                                new_stack, count, 1, SymbolMap::SUM);
+    if (update) {
+      symbol_map_->AddSourceCount(new_stack[new_stack.size() - 1].func_name,
+                                  new_stack, count, 1, SymbolMap::SUM);
+    }
     for (int j = 0; j < num_targets; j++) {
       // Only indirect call target histogram is supported now.
       CHECK_EQ(gcov_read_unsigned(), HIST_TYPE_INDIR_CALL_TOPN);
       const string &target_name = names_.at(gcov_read_counter());
       uint64 target_count = gcov_read_counter();
-      symbol_map_->AddIndirectCallTarget(
-          new_stack[new_stack.size() - 1].func_name,
-          new_stack, target_name, target_count);
+      if (update) {
+        symbol_map_->AddIndirectCallTarget(
+            new_stack[new_stack.size() - 1].func_name,
+            new_stack, target_name, target_count);
+      }
     }
   }
   for (int i = 0; i < num_callsites; i++) {
@@ -120,7 +128,7 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack) {
     SourceStack new_stack;
     new_stack.push_back(info);
     new_stack.insert(new_stack.end(), stack.begin(), stack.end());
-    ReadSymbolProfile(new_stack);
+    ReadSymbolProfile(new_stack, update);
   }
 }
 
