@@ -39,11 +39,11 @@ class LLVMSourceProfileWriter : public SymbolTraverser {
   }
 
  protected:
-  void WriteSourceLocation(uint32 start_line, uint32 offset) {
+  void WriteSourceLocation(uint32 offset) {
     if (offset & 0xffff) {
-      fprintf(outf_, "%u.%u: ", (offset >> 16) + start_line, offset & 0xffff);
+      fprintf(outf_, "%u.%u: ", offset >> 16, offset & 0xffff);
     } else {
-      fprintf(outf_, "%u: ", (offset >> 16) + start_line);
+      fprintf(outf_, "%u: ", offset >> 16);
     }
   }
 
@@ -78,7 +78,7 @@ class LLVMSourceProfileWriter : public SymbolTraverser {
     for (const auto &pos : positions) {
       PositionCountMap::const_iterator ret = node->pos_counts.find(pos);
       DCHECK(ret != node->pos_counts.end());
-      WriteSourceLocation(node->info.start_line, pos);
+      WriteSourceLocation(pos);
       fprintf(outf_, "%llu", ret->second.count);
 
       // If there is a call at this location, emit the possible

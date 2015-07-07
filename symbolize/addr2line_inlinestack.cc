@@ -90,6 +90,17 @@ bool InlineStackHandler::StartSplitCompilationUnit(uint64 offset,
   return true;
 }
 
+const SubprogramInfo *
+InlineStackHandler::FindSubprogramInfo(uint64 abstract_origin) const {
+  for (SubprogramsByOffsetMap *sbo : subprograms_by_offset_maps_) {
+      //printf("  %lld\n", kv.first);
+    auto I = sbo->find(abstract_origin);
+    if (I != sbo->end())
+      return I->second;
+  }
+  return nullptr;
+}
+
 void InlineStackHandler::CleanupUnusedSubprograms() {
   SubprogramsByOffsetMap* subprograms_by_offset =
       subprograms_by_offset_maps_.back();
@@ -181,7 +192,7 @@ void InlineStackHandler::EndDIE(uint64 offset) {
     subprogram_stack_.pop_back();
   }
   if (die == DW_TAG_compile_unit && sampled_functions_ != NULL) {
-    CleanupUnusedSubprograms();
+    //CleanupUnusedSubprograms();
   }
 }
 
@@ -247,9 +258,14 @@ void InlineStackHandler::ProcessAttributeUnsigned(
         subprogram_stack_.back()->set_callsite_discr(data);
         break;
       case DW_AT_abstract_origin:
-        CHECK(form == DW_FORM_ref4);
-        subprogram_stack_.back()->set_abstract_origin(
-            compilation_unit_offset_ + data);
+        CHECK(form == DW_FORM_ref4 ||
+              form == DW_FORM_ref_addr);
+        if (form == DW_FORM_ref4) {
+          subprogram_stack_.back()->set_abstract_origin(
+              compilation_unit_offset_ + data);
+        } else {
+          subprogram_stack_.back()->set_abstract_origin(data);
+        }
         break;
       case DW_AT_specification:
         CHECK(form == DW_FORM_ref4);
@@ -547,7 +563,7 @@ const SubprogramInfo *InlineStackHandler::GetDeclaration(
     } else {
       uint64 abstract_origin = declaration->abstract_origin();
       if (abstract_origin)
-        declaration = subprograms_by_offset->find(abstract_origin)->second;
+        declaration = FindSubprogramInfo(abstract_origin);
       else
         break;
     }
@@ -557,13 +573,10 @@ const SubprogramInfo *InlineStackHandler::GetDeclaration(
 
 const SubprogramInfo *InlineStackHandler::GetAbstractOrigin(
     const SubprogramInfo *subprog) const {
-  const int cu_index = subprog->cu_index();
-  CHECK(cu_index < subprograms_by_offset_maps_.size());
-  SubprogramsByOffsetMap* subprograms_by_offset =
-      subprograms_by_offset_maps_[cu_index];
-  if (subprog->abstract_origin())
-    return subprograms_by_offset->find(subprog->abstract_origin())->second;
-  else
+  if (subprog->abstract_origin()) {
+    const SubprogramInfo *info = FindSubprogramInfo(subprog->abstract_origin());
+    return info;
+  } else
     return subprog;
 }
 

@@ -361,6 +361,7 @@ void SymbolMap::AddSourceCount(const string &symbol_name,
     return;
   }
   Symbol *symbol = TraverseInlineStack(symbol_name, src, count);
+  symbol->info.start_line = src[0].start_line;
   if (op == MAX) {
     if (count > symbol->pos_counts[src[0].Offset()].count) {
       symbol->pos_counts[src[0].Offset()].count = count;

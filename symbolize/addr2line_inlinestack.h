@@ -215,6 +215,7 @@ class InlineStackHandler: public Dwarf2Handler {
 
   // Cleans up memory consumed by subprograms that are not used.
   void CleanupUnusedSubprograms();
+  const SubprogramInfo *FindSubprogramInfo(uint64 abstract_origin) const;
 
   void PopulateSubprogramsByAddress();
 

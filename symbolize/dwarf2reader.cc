@@ -224,14 +224,11 @@ const char* CompilationUnit::SkipAttribute(const char* start,
       break;
     case DW_FORM_ref_addr:
       // DWARF2 and 3 differ on whether ref_addr is address size or
-      // offset size.
-      if (header_.version == 2) {
-        return start + reader_->AddressSize();
-      } else {
-        return start + reader_->OffsetSize();
-      }
+      // offset size according to respective standard.
+      // BUT, per http://wiki.dwarfstd.org/index.php?title=DWARF_FAQ#How_big_is_a_DW_FORM_ref_addr.3F
+      // it is a bug in DWARF2 standard, so they are both offset.
+      return start + reader_->OffsetSize();
       break;
-
     case DW_FORM_block1:
       return start + 1 + reader_->ReadOneByte(start);
       break;
