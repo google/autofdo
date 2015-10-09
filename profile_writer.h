@@ -132,10 +132,10 @@ class SymbolTraverser {
   virtual ~SymbolTraverser() {}
 
  protected:
-  SymbolTraverser() {}
+  SymbolTraverser() : level_(0) {}
   virtual void Start(const SymbolMap &symbol_map) {
     for (const auto &name_symbol : symbol_map.map()) {
-      if (name_symbol.second->total_count == 0) {
+      if (!symbol_map.ShouldEmit(name_symbol.second->total_count)) {
         continue;
       }
       VisitTopSymbol(name_symbol.first, name_symbol.second);
@@ -145,14 +145,17 @@ class SymbolTraverser {
   virtual void VisitTopSymbol(const string &name, const Symbol *node) {}
   virtual void Visit(const Symbol *node) = 0;
   virtual void VisitCallsite(const Callsite &offset) {}
+  int level_;
 
  private:
   void Traverse(const Symbol *node) {
+    level_++;
     Visit(node);
     for (const auto &callsite_symbol : node->callsites) {
       VisitCallsite(callsite_symbol.first);
       Traverse(callsite_symbol.second);
     }
+    level_--;
   }
   DISALLOW_COPY_AND_ASSIGN(SymbolTraverser);
 };

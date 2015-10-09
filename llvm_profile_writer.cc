@@ -32,53 +32,60 @@ namespace autofdo {
 
 class LLVMSourceProfileWriter : public SymbolTraverser {
  public:
-  static void Write(FILE *outf, const SymbolMap &symbol_map,
-                    const StringIndexMap &map) {
-    LLVMSourceProfileWriter writer(outf, map);
+  static void Write(FILE *outf, const SymbolMap &symbol_map) {
+    LLVMSourceProfileWriter writer(outf);
     writer.Start(symbol_map);
   }
 
  protected:
-  void WriteSourceLocation(uint32 start_line, uint32 offset) {
+  void WriteSourceLocation(uint32 offset) {
     if (offset & 0xffff) {
-      fprintf(outf_, "%u.%u: ", (offset >> 16) + start_line, offset & 0xffff);
+      fprintf(outf_, "%u.%u: ", (offset >> 16), offset & 0xffff);
     } else {
-      fprintf(outf_, "%u: ", (offset >> 16) + start_line);
+      fprintf(outf_, "%u: ", (offset >> 16));
     }
   }
 
-  virtual void Visit(const Symbol *node) {
+  void WriteIndentation() {
+    for (int i = 0; i < level_; i++) {
+      fprintf(outf_, " ");
+    }
+  }
+
+  void VisitTopSymbol(const string &name, const Symbol *node) override {
+    fprintf(outf_, "%s:%llu:%llu\n", name.c_str(), node->total_count,
+            node->head_count);
+  }
+
+  void VisitCallsite(const Callsite &callsite) override {
+    WriteIndentation();
+    WriteSourceLocation(callsite.first);
+    if (strlen(callsite.second) == 0)
+      fprintf(outf_, "noname:");
+    else
+      fprintf(outf_, "%s:", callsite.second);
+  }
+
+
+  void Visit(const Symbol *node) override {
+    if (level_ > 1) {
+      fprintf(outf_, "%llu\n", node->total_count);
+    }
     // Sort sample locations by line number.
     vector<uint32> positions;
     for (const auto &pos_count : node->pos_counts) {
-      // Do not waste storage writing 0 counts.
-      if (pos_count.second.count == 0) {
-        continue;
-      }
       positions.push_back(pos_count.first);
     }
 
-    // Similarly, do not waste time emitting profiles for
-    // functions that have no counts in them.
-    if (positions.empty())
-      return;
-
-    // Clang does not generate a name for the implicit ctor of anonymous
-    // structs, so there won't be a name to attach the samples to. If
-    // the name of this function is empty, ignore it.
-    if (strlen(node->info.func_name) == 0)
-      return;
-
     // We have samples inside the function body. Write them out.
-    sort(positions.begin(), positions.end());
-    fprintf(outf_, "%s:%llu:%llu\n", node->info.func_name, node->total_count,
-            node->head_count);
+    std::sort(positions.begin(), positions.end());
 
     // Emit all the locations and their sample counts.
     for (const auto &pos : positions) {
       PositionCountMap::const_iterator ret = node->pos_counts.find(pos);
       DCHECK(ret != node->pos_counts.end());
-      WriteSourceLocation(node->info.start_line, pos);
+      WriteIndentation();
+      WriteSourceLocation(pos);
       fprintf(outf_, "%llu", ret->second.count);
 
       // If there is a call at this location, emit the possible
@@ -96,16 +103,8 @@ class LLVMSourceProfileWriter : public SymbolTraverser {
   }
 
  private:
-  explicit LLVMSourceProfileWriter(FILE *outf, const StringIndexMap &map)
-      : map_(map), outf_(outf) {}
+  explicit LLVMSourceProfileWriter(FILE *outf) : outf_(outf) {}
 
-  int GetStringIndex(const string &str) {
-    StringIndexMap::const_iterator ret = map_.find(str);
-    CHECK(ret != map_.end());
-    return ret->second;
-  }
-
-  const StringIndexMap &map_;
   FILE *outf_;
   DISALLOW_COPY_AND_ASSIGN(LLVMSourceProfileWriter);
 };
@@ -124,10 +123,12 @@ void LLVMProfileWriter::WriteProfile() {
   // for functions found in the binary.
   StringIndexMap string_index_map;
   StringTableUpdater::Update(symbol_map_, &string_index_map);
-  LLVMSourceProfileWriter::Write(outf_, symbol_map_, string_index_map);
+  LLVMSourceProfileWriter::Write(outf_, symbol_map_);
 }
 
-void LLVMProfileWriter::WriteFinish() { fclose(outf_); }
+void LLVMProfileWriter::WriteFinish() {
+  fclose(outf_);
+}
 
 bool LLVMProfileWriter::WriteToFile(const string &output_filename) {
   if (FLAGS_debug_dump) Dump();
