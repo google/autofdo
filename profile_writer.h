@@ -189,8 +189,7 @@ class StringTableUpdater: public SymbolTraverser {
   DISALLOW_COPY_AND_ASSIGN(StringTableUpdater);
 };
 
-// Writer class for LLVM profiles. This writes a text file with a
-// simple frequency-based profile.
+// Writer class for LLVM profiles.
 class LLVMProfileWriter : public ProfileWriter {
  public:
   explicit LLVMProfileWriter(const SymbolMap &symbol_map,
@@ -201,49 +200,71 @@ class LLVMProfileWriter : public ProfileWriter {
 
  private:
   // Open the output file and write its header.
-  FILE *WriteHeader(const string &output_filename);
+  bool WriteHeader(const string &output_filename);
 
-  // Write the body of the profile in text format.
+  // Write the body of the profile.
   //
-  //    function1:total_samples:total_head_samples
-  //    offset1[.discriminator]: number_of_samples [fn1:num fn2:num ... ]
-  //    offset2[.discriminator]: number_of_samples [fn3:num fn4:num ... ]
-  //    ...
-  //    offsetN[.discriminator]: number_of_samples [fn5:num fn6:num ... ]
+  // Numbers are encoded as ULEB128 values and all strings are encoded in a name
+  // table. The file is organized in the following sections:
   //
-  // Function names must be mangled in order for the profile loader to
-  // match them in the current translation unit. The two numbers in the
-  // function header specify how many total samples were accumulated in
-  // the function (first number), and the total number of samples accumulated
-  // at the prologue of the function (second number). This head sample
-  // count provides an indicator of how frequent is the function invoked.
+  // MAGIC (uint64_t)
+  //    File identifier computed by function SPMagic() (0x5350524f463432ff)
   //
-  // Each sampled line may contain several items. Some are optional
-  // (marked below):
+  // VERSION (uint32_t)
+  //    File format version number computed by SPVersion()
   //
-  // a- Source line offset. This number represents the line number
-  //    in the function where the sample was collected. The line number
-  //    is always relative to the line where symbol of the function
-  //    is defined. So, if the function has its header at line 280,
-  //    the offset 13 is at line 293 in the file.
+  // NAME TABLE
+  //    SIZE (uint32_t)
+  //        Number of entries in the name table.
+  //    NAMES
+  //        A NUL-separated list of SIZE strings.
   //
-  // b- [OPTIONAL] Discriminator. This is used if the sampled program
-  //    was compiled with DWARF discriminator support
-  //    (http://wiki.dwarfstd.org/index.php?title=Path_Discriminators)
-  //
-  // c- Number of samples. This is the number of samples collected by
-  //    the profiler at this source location.
-  //
-  // d- [OPTIONAL] Potential call targets and samples. If present, this
-  //    line contains a call instruction. This models both direct and
-  //    indirect calls. Each called target is listed together with the
-  //    number of samples. For example,
-  //
-  //    130: 7  foo:3  bar:2  baz:7
-  //
-  //    The above means that at relative line offset 130 there is a
-  //    call instruction that calls one of foo(), bar() and baz(). With
-  //    baz() being the relatively more frequent call target.
+  // FUNCTION BODY (one for each uninlined function body present in the profile)
+  //    HEAD_SAMPLES (uint64_t) [only for top-level functions]
+  //        Total number of samples collected at the head (prologue) of the
+  //        function.
+  //        NOTE: This field should only be present for top-level functions
+  //              (i.e., not inlined into any caller). Inlined function calls
+  //              have no prologue, so they don't need this.
+  //    NAME_IDX (uint32_t)
+  //        Index into the name table indicating the function name.
+  //    SAMPLES (uint64_t)
+  //        Total number of samples collected in this function.
+  //    NRECS (uint32_t)
+  //        Total number of sampling records this function's profile.
+  //    BODY RECORDS
+  //        A list of NRECS entries. Each entry contains:
+  //          OFFSET (uint32_t)
+  //            Line offset from the start of the function.
+  //          DISCRIMINATOR (uint32_t)
+  //            Discriminator value (see description of discriminators
+  //            in the text format documentation above).
+  //          SAMPLES (uint64_t)
+  //            Number of samples collected at this location.
+  //          NUM_CALLS (uint32_t)
+  //            Number of non-inlined function calls made at this location. In
+  //            the
+  //            case of direct calls, this number will always be 1. For indirect
+  //            calls (virtual functions and function pointers) this will
+  //            represent all the actual functions called at runtime.
+  //          CALL_TARGETS
+  //            A list of NUM_CALLS entries for each called function:
+  //               NAME_IDX (uint32_t)
+  //                  Index into the name table with the callee name.
+  //               SAMPLES (uint64_t)
+  //                  Number of samples collected at the call site.
+  //    NUM_INLINED_FUNCTIONS (uint32_t)
+  //      Number of callees inlined into this function.
+  //    INLINED FUNCTION RECORDS
+  //      A list of NUM_INLINED_FUNCTIONS entries describing each of the inlined
+  //      callees.
+  //        OFFSET (uint32_t)
+  //          Line offset from the start of the function.
+  //        DISCRIMINATOR (uint32_t)
+  //          Discriminator value (see description of discriminators
+  //          in the text format documentation above).
+  //        FUNCTION BODY
+  //          A FUNCTION BODY entry describing the inlined function.
   void WriteProfile();
 
   // Close the profile file and flush out any trailing data.
