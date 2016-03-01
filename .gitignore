@@ -15,10 +15,6 @@ config.h
 config.h.in
 config.log
 config.status
-compile
-depcomp
-install-sh
-missing
 stamp-h1
 
 /create_gcov

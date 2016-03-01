@@ -1,5 +1,7 @@
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
+# In general, the safest way to proceed is to run the following:
+#    % aclocal -I . && autoheader && autoconf && automake --add-missing
 
 AC_PREREQ([2.68])
 AC_INIT([FULL-PACKAGE-NAME], [VERSION], [BUG-REPORT-ADDRESS])
