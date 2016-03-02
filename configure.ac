@@ -1,12 +1,14 @@
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
+#
 # In general, the safest way to proceed is to run the following:
-#    % aclocal -I . && autoheader && autoconf && automake --add-missing
+#    % aclocal -I . && autoheader && autoconf && automake --add-missing -c
 
 AC_PREREQ([2.68])
-AC_INIT([FULL-PACKAGE-NAME], [VERSION], [BUG-REPORT-ADDRESS])
+AC_INIT([AutoFDO], [0.14], [autofdo@googlegroups.com])
 AC_CONFIG_MACRO_DIR([m4])
-AM_CONFIG_HEADER(glog/src/config.h)
+AC_CONFIG_HEADERS(config.h glog/src/config.h)
+AM_INIT_AUTOMAKE([subdir-objects])
 
 # Checks for programs.
 AC_PROG_CXX
@@ -14,7 +16,7 @@ AC_PROG_CC
 AC_PROG_RANLIB
 
 AX_CXX_COMPILE_STDCXX_11
-AM_INIT_AUTOMAKE([subdir-objects])
+AX_LLVM([ProfileData])
 
 ac_cv_have_libgflags=1
 AC_DEFINE(HAVE_LIB_GFLAGS, 1, [define if you have google gflags library])

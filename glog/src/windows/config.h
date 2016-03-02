@@ -15,14 +15,23 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
+/* Define to 1 if you have the `crypto' library (-lcrypto). */
+#undef HAVE_LIBCRYPTO
+
 /* Define to 1 if you have the <libunwind.h> header file. */
 #undef HAVE_LIBUNWIND_H
+
+/* Define to 1 if you have the `z' library (-lz). */
+#undef HAVE_LIBZ
 
 /* define if you have google gflags library */
 #undef HAVE_LIB_GFLAGS
 
 /* define if you have libunwind */
 #undef HAVE_LIB_UNWIND
+
+/* Define if there is a working LLVM library. */
+#undef HAVE_LLVM
 
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
