@@ -27,6 +27,9 @@
 /* define if you have google gflags library */
 #undef HAVE_LIB_GFLAGS
 
+/* define if the LLVM library is available */
+#undef HAVE_LLVM
+
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
 
