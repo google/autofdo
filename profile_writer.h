@@ -17,8 +17,13 @@
 #ifndef AUTOFDO_PROFILE_WRITER_H_
 #define AUTOFDO_PROFILE_WRITER_H_
 
+#include "config.h"
 #include "module_grouper.h"
 #include "symbol_map.h"
+
+#if defined(HAVE_LLVM)
+#include "llvm/ProfileData/SampleProfWriter.h"
+#endif
 
 namespace autofdo {
 
@@ -47,7 +52,7 @@ class AutoFDOProfileWriter : public ProfileWriter {
       : ProfileWriter(symbol_map, module_map),
         gcov_version_(gcov_version) {}
 
-  virtual bool WriteToFile(const string &output_file);
+  bool WriteToFile(const string &output_file) override;
 
  private:
   // Opens the output file, and writes the header.
@@ -170,7 +175,7 @@ class StringTableUpdater: public SymbolTraverser {
   }
 
  protected:
-  virtual void Visit(const Symbol *node) {
+  void Visit(const Symbol *node) override {
     (*map_)[node->info.func_name ? node->info.func_name : string()] = 0;
     for (const auto &pos_count : node->pos_counts) {
       for (const auto &name_count : pos_count.second.target_map) {
@@ -179,7 +184,7 @@ class StringTableUpdater: public SymbolTraverser {
     }
   }
 
-  virtual void VisitTopSymbol(const string &name, const Symbol *node) {
+  void VisitTopSymbol(const string &name, const Symbol *node) override {
     (*map_)[name] = 0;
   }
 
@@ -189,91 +194,26 @@ class StringTableUpdater: public SymbolTraverser {
   DISALLOW_COPY_AND_ASSIGN(StringTableUpdater);
 };
 
+#if defined(HAVE_LLVM)
+
 // Writer class for LLVM profiles.
 class LLVMProfileWriter : public ProfileWriter {
  public:
-  explicit LLVMProfileWriter(const SymbolMap &symbol_map,
-                             const ModuleMap &module_map)
-      : ProfileWriter(symbol_map, module_map) {}
+  explicit LLVMProfileWriter(
+      const SymbolMap &symbol_map, const ModuleMap &module_map,
+      llvm::sampleprof::SampleProfileFormat output_format)
+      : ProfileWriter(symbol_map, module_map), format_(output_format) {}
 
-  virtual bool WriteToFile(const string &output_filename);
+  bool WriteToFile(const string &output_filename) override;
 
  private:
-  // Open the output file and write its header.
-  bool WriteHeader(const string &output_filename);
-
-  // Write the body of the profile.
-  //
-  // Numbers are encoded as ULEB128 values and all strings are encoded in a name
-  // table. The file is organized in the following sections:
-  //
-  // MAGIC (uint64_t)
-  //    File identifier computed by function SPMagic() (0x5350524f463432ff)
-  //
-  // VERSION (uint32_t)
-  //    File format version number computed by SPVersion()
-  //
-  // NAME TABLE
-  //    SIZE (uint32_t)
-  //        Number of entries in the name table.
-  //    NAMES
-  //        A NUL-separated list of SIZE strings.
-  //
-  // FUNCTION BODY (one for each uninlined function body present in the profile)
-  //    HEAD_SAMPLES (uint64_t) [only for top-level functions]
-  //        Total number of samples collected at the head (prologue) of the
-  //        function.
-  //        NOTE: This field should only be present for top-level functions
-  //              (i.e., not inlined into any caller). Inlined function calls
-  //              have no prologue, so they don't need this.
-  //    NAME_IDX (uint32_t)
-  //        Index into the name table indicating the function name.
-  //    SAMPLES (uint64_t)
-  //        Total number of samples collected in this function.
-  //    NRECS (uint32_t)
-  //        Total number of sampling records this function's profile.
-  //    BODY RECORDS
-  //        A list of NRECS entries. Each entry contains:
-  //          OFFSET (uint32_t)
-  //            Line offset from the start of the function.
-  //          DISCRIMINATOR (uint32_t)
-  //            Discriminator value (see description of discriminators
-  //            in the text format documentation above).
-  //          SAMPLES (uint64_t)
-  //            Number of samples collected at this location.
-  //          NUM_CALLS (uint32_t)
-  //            Number of non-inlined function calls made at this location. In
-  //            the
-  //            case of direct calls, this number will always be 1. For indirect
-  //            calls (virtual functions and function pointers) this will
-  //            represent all the actual functions called at runtime.
-  //          CALL_TARGETS
-  //            A list of NUM_CALLS entries for each called function:
-  //               NAME_IDX (uint32_t)
-  //                  Index into the name table with the callee name.
-  //               SAMPLES (uint64_t)
-  //                  Number of samples collected at the call site.
-  //    NUM_INLINED_FUNCTIONS (uint32_t)
-  //      Number of callees inlined into this function.
-  //    INLINED FUNCTION RECORDS
-  //      A list of NUM_INLINED_FUNCTIONS entries describing each of the inlined
-  //      callees.
-  //        OFFSET (uint32_t)
-  //          Line offset from the start of the function.
-  //        DISCRIMINATOR (uint32_t)
-  //          Discriminator value (see description of discriminators
-  //          in the text format documentation above).
-  //        FUNCTION BODY
-  //          A FUNCTION BODY entry describing the inlined function.
-  void WriteProfile();
-
-  // Close the profile file and flush out any trailing data.
-  void WriteFinish();
-
-  FILE *outf_;
+  llvm::sampleprof::SampleProfileFormat format_;
 
   DISALLOW_COPY_AND_ASSIGN(LLVMProfileWriter);
 };
+
+#endif
+
 }  // namespace autofdo
 
 #endif  // AUTOFDO_PROFILE_WRITER_H_

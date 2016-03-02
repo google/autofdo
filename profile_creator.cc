@@ -16,8 +16,8 @@
 
 #include <memory>
 
+#include "config.h"
 #include "profile_creator.h"
-
 #include "gflags/gflags.h"
 #include "base/common.h"
 #include "addr2line.h"
@@ -28,6 +28,10 @@
 #include "symbol_map.h"
 #include "symbolize/elf_reader.h"
 #include "module_grouper.h"
+
+#if defined(HAVE_LLVM)
+#include "llvm/ProfileData/SampleProfWriter.h"
+#endif
 
 namespace autofdo {
 uint64 ProfileCreator::GetTotalCountFromTextProfile(
@@ -82,34 +86,53 @@ bool ProfileCreator::ReadSample(const string &input_profile_name,
   return true;
 }
 
-bool ProfileCreator::CreateProfileFromSample(const string &output_profile_name,
-                                             const string &output_format) {
-  SymbolMap symbol_map(binary_);
-  set<uint64> sampled_addrs = sample_reader_->GetSampledAddresses();;
+bool ProfileCreator::ComputeProfile(SymbolMap *symbol_map,
+                                    Addr2line **addr2line) {
+  set<uint64> sampled_addrs = sample_reader_->GetSampledAddresses();
   map<uint64, uint64> sampled_functions =
-      symbol_map.GetSampledSymbolStartAddressSizeMap(sampled_addrs);
-  Addr2line *addr2line =Addr2line::CreateWithSampledFunctions(
-      binary_, &sampled_functions);
+      symbol_map->GetSampledSymbolStartAddressSizeMap(sampled_addrs);
+  *addr2line =
+      Addr2line::CreateWithSampledFunctions(binary_, &sampled_functions);
 
-  if (addr2line == NULL) {
+  if (*addr2line == nullptr) {
     LOG(ERROR) << "Error reading binary " << binary_;
     return false;
   }
 
-  Profile profile(sample_reader_, binary_, addr2line, &symbol_map);
+  Profile profile(sample_reader_, binary_, *addr2line, symbol_map);
   profile.ComputeProfile();
+
+  return true;
+}
+
+bool ProfileCreator::CreateProfileFromSample(const string &output_profile_name,
+                                             const string &output_format) {
+  SymbolMap symbol_map(binary_);
+  Addr2line *addr2line = nullptr;
+  if (!ComputeProfile(&symbol_map, &addr2line))
+    return false;
 
   ModuleGrouper *grouper = ModuleGrouper::GroupModule(
       binary_, GCOV_ELF_SECTION_NAME, &symbol_map);
 
-  ProfileWriter *writer = 0;
-  if (output_format == "gcov")
+  ProfileWriter *writer = nullptr;
+  if (output_format == "gcov") {
     writer = new AutoFDOProfileWriter(symbol_map, grouper->module_map(),
                                       FLAGS_gcov_version);
-  else if (output_format == "llvm")
-    writer = new LLVMProfileWriter(symbol_map, grouper->module_map());
-  else
+  }
+#if defined(HAVE_LLVM)
+  else if (output_format == "llvm-text") {
+    writer = new LLVMProfileWriter(symbol_map, grouper->module_map(),
+                                   llvm::sampleprof::SPF_Text);
+  } else if (output_format == "llvm-binary") {
+    writer = new LLVMProfileWriter(symbol_map, grouper->module_map(),
+                                   llvm::sampleprof::SPF_Binary);
+  }
+#endif
+  else {
     LOG(ERROR) << "Unsupported output profile format: " << output_format;
+    return false;
+  }
 
   bool ret = writer->WriteToFile(output_profile_name);
   delete addr2line;
@@ -119,7 +142,7 @@ bool ProfileCreator::CreateProfileFromSample(const string &output_profile_name,
 }
 
 uint64 ProfileCreator::TotalSamples() {
-  if (sample_reader_ == NULL) {
+  if (sample_reader_ == nullptr) {
     return 0;
   } else {
     return sample_reader_->GetTotalSampleCount();
@@ -138,7 +161,7 @@ bool MergeSample(const string &input_file, const string &input_profiler,
   ProfileCreator creator(binary);
   if (creator.ReadSample(input_file, input_profiler)) {
     writer.Merge(creator.sample_reader());
-    if (writer.Write(NULL)) {
+    if (writer.Write(nullptr)) {
       return true;
     } else {
       return false;
