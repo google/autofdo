@@ -56,6 +56,7 @@ bool LLVMProfileBuilder::Write(const string &output_filename,
                << "': " << EC.message();
     return false;
   }
+
   return true;
 }
 
@@ -79,6 +80,7 @@ void LLVMProfileBuilder::VisitTopSymbol(const string &name,
     LOG(FATAL) << "Error updating total samples for '" << name
                << "': " << EC.message();
 
+  profile.setName(name_ref);
   inline_stack_.push_back(&profile);
 }
 
@@ -89,8 +91,9 @@ void LLVMProfileBuilder::VisitCallsite(const Callsite &callsite) {
   uint32 discriminator = offset & 0xffff;
   auto &caller_profile = *(inline_stack_.back());
   auto &callee_profile =
-      caller_profile.functionSamplesAt(llvm::sampleprof::CallsiteLocation(
-          line, discriminator, GetNameRef(callsite.second)));
+      caller_profile.functionSamplesAt(llvm::sampleprof::LineLocation(
+          line, discriminator));
+  callee_profile.setName(GetNameRef(callsite.second));
   inline_stack_.push_back(&callee_profile);
 }
 
