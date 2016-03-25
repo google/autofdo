@@ -63,8 +63,8 @@ int main(int argc, char **argv) {
   ModuleGrouper *grouper = ModuleGrouper::GroupModule(
       FLAGS_binary, GCOV_ELF_SECTION_NAME, &symbol_map);
 
-  AutoFDOProfileWriter writer(symbol_map,
-      grouper->module_map(), FLAGS_gcov_version);
+  AutoFDOProfileWriter writer(&symbol_map, &grouper->module_map(),
+                              FLAGS_gcov_version);
   if (!writer.WriteToFile(FLAGS_output)) {
     LOG(FATAL) << "Error writing to " << FLAGS_output;
   }

@@ -14,6 +14,7 @@
 
 #include "gflags/gflags.h"
 #include "profile_creator.h"
+#include "gcov.h"
 
 DEFINE_string(profile, "perf.data",
               "Profile file name");
@@ -28,9 +29,10 @@ int main(int argc, char **argv) {
   google::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
 
+  autofdo::AutoFDOProfileWriter writer(FLAGS_gcov_version);
   autofdo::ProfileCreator creator(FLAGS_binary);
-  if (creator.CreateProfile(FLAGS_profile, FLAGS_profiler, FLAGS_gcov,
-                            "gcov")) {
+  if (creator.CreateProfile(FLAGS_profile, FLAGS_profiler, &writer,
+                            FLAGS_gcov)) {
     return 0;
   } else {
     return -1;

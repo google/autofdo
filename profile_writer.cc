@@ -157,7 +157,7 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
   int length_4bytes = 0, current_name_index = 0;
   string_index_map[string()] = 0;
 
-  StringTableUpdater::Update(symbol_map_, &string_index_map);
+  StringTableUpdater::Update(*symbol_map_, &string_index_map);
 
   for (auto &name_index : string_index_map) {
     name_index.second = current_name_index++;
@@ -186,11 +186,11 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
   }
 
   // Compute the length of the GCOV_TAG_AFDO_FUNCTION section.
-  SourceProfileLengther length(symbol_map_);
+  SourceProfileLengther length(*symbol_map_);
   gcov_write_unsigned(GCOV_TAG_AFDO_FUNCTION);
   gcov_write_unsigned(length.length() + 1);
   gcov_write_unsigned(length.num_functions());
-  SourceProfileWriter::Write(symbol_map_, string_index_map);
+  SourceProfileWriter::Write(*symbol_map_, string_index_map);
 }
 
 void AutoFDOProfileWriter::WriteModuleGroup() {
@@ -205,7 +205,7 @@ void AutoFDOProfileWriter::WriteModuleGroup() {
   // cpp_defines_size, cpp_includes_size,
   // cl_args_size
   static const uint32 MODULE_AUX_DATA_SIZE_IN_4BYTES = 9;
-  for (const auto &module_aux : module_map_) {
+  for (const auto &module_aux : *module_map_) {
     if (!module_aux.second.is_exported
         && module_aux.second.aux_modules.size() == 0) {
       continue;
@@ -237,7 +237,7 @@ void AutoFDOProfileWriter::WriteModuleGroup() {
   // Writes to .afdo file and .afdo.imports file.
   gcov_write_unsigned(length_4bytes);
   gcov_write_unsigned(num_modules);
-  for (const auto &module_aux : module_map_) {
+  for (const auto &module_aux : *module_map_) {
     if (!module_aux.second.is_exported
         && module_aux.second.aux_modules.size() == 0) {
       continue;
@@ -310,7 +310,7 @@ void AutoFDOProfileWriter::WriteModuleGroup() {
 void AutoFDOProfileWriter::WriteWorkingSet() {
   gcov_write_unsigned(GCOV_TAG_AFDO_WORKING_SET);
   gcov_write_unsigned(3 * NUM_GCOV_WORKING_SETS);
-  const gcov_working_set_info *working_set = symbol_map_.GetWorkingSets();
+  const gcov_working_set_info *working_set = symbol_map_->GetWorkingSets();
   for (int i = 0; i < NUM_GCOV_WORKING_SETS; i++) {
     gcov_write_unsigned(working_set[i].num_counters / WORKING_SET_INSN_PER_BB);
     gcov_write_counter(working_set[i].min_counter);
@@ -329,7 +329,6 @@ bool AutoFDOProfileWriter::WriteToFile(const string &output_filename) {
   }
   return true;
 }
-
 
 // Debugging support.  ProfileDumper emits a detailed dump of the contents
 // of the input profile.
@@ -451,11 +450,11 @@ class ProfileDumper : public SymbolTraverser {
 // Emit a dump of the input profile on stdout.
 void ProfileWriter::Dump() {
   StringIndexMap string_index_map;
-  StringTableUpdater::Update(symbol_map_, &string_index_map);
-  SourceProfileLengther length(symbol_map_);
+  StringTableUpdater::Update(*symbol_map_, &string_index_map);
+  SourceProfileLengther length(*symbol_map_);
   printf("Length of symbol map: %d\n", length.length() + 1);
   printf("Number of functions:  %d\n", length.num_functions());
-  ProfileDumper::Write(symbol_map_, string_index_map);
+  ProfileDumper::Write(*symbol_map_, string_index_map);
 }
 
 }  // namespace autofdo

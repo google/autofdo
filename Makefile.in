@@ -154,28 +154,18 @@ am_libsymbolize_a_OBJECTS = symbolize/addr2line_inlinestack.$(OBJEXT) \
 libsymbolize_a_OBJECTS = $(am_libsymbolize_a_OBJECTS)
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
-am__objects_1 = create_gcov-addr2line.$(OBJEXT) \
-	create_gcov-gcov.$(OBJEXT) \
-	create_gcov-instruction_map.$(OBJEXT) \
-	create_gcov-llvm_profile_writer.$(OBJEXT) \
-	create_gcov-module_grouper.$(OBJEXT) \
-	create_gcov-profile_creator.$(OBJEXT) \
-	create_gcov-profile_writer.$(OBJEXT) \
-	create_gcov-sample_reader.$(OBJEXT) \
-	create_gcov-source_info.$(OBJEXT) \
-	create_gcov-symbol_map.$(OBJEXT) create_gcov-profile.$(OBJEXT)
-am_create_gcov_OBJECTS = $(am__objects_1) \
-	create_gcov-create_gcov.$(OBJEXT)
+am__objects_1 = addr2line.$(OBJEXT) gcov.$(OBJEXT) \
+	instruction_map.$(OBJEXT) module_grouper.$(OBJEXT) \
+	profile_creator.$(OBJEXT) profile_writer.$(OBJEXT) \
+	sample_reader.$(OBJEXT) source_info.$(OBJEXT) \
+	symbol_map.$(OBJEXT) profile.$(OBJEXT)
+am_create_gcov_OBJECTS = $(am__objects_1) create_gcov.$(OBJEXT)
 create_gcov_OBJECTS = $(am_create_gcov_OBJECTS)
-am__DEPENDENCIES_1 =
-create_gcov_DEPENDENCIES = $(am__DEPENDENCIES_1) libquipper.a \
-	libglog.a libsymbolize.a libgflags.a
-create_gcov_LINK = $(CXXLD) $(create_gcov_CXXFLAGS) $(CXXFLAGS) \
-	$(AM_LDFLAGS) $(LDFLAGS) -o $@
+create_gcov_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+	libgflags.a
 am__objects_2 = create_llvm_prof-addr2line.$(OBJEXT) \
 	create_llvm_prof-gcov.$(OBJEXT) \
 	create_llvm_prof-instruction_map.$(OBJEXT) \
-	create_llvm_prof-llvm_profile_writer.$(OBJEXT) \
 	create_llvm_prof-module_grouper.$(OBJEXT) \
 	create_llvm_prof-profile_creator.$(OBJEXT) \
 	create_llvm_prof-profile_writer.$(OBJEXT) \
@@ -184,8 +174,10 @@ am__objects_2 = create_llvm_prof-addr2line.$(OBJEXT) \
 	create_llvm_prof-symbol_map.$(OBJEXT) \
 	create_llvm_prof-profile.$(OBJEXT)
 am_create_llvm_prof_OBJECTS = $(am__objects_2) \
+	create_llvm_prof-llvm_profile_writer.$(OBJEXT) \
 	create_llvm_prof-create_llvm_prof.$(OBJEXT)
 create_llvm_prof_OBJECTS = $(am_create_llvm_prof_OBJECTS)
+am__DEPENDENCIES_1 =
 create_llvm_prof_DEPENDENCIES = $(am__DEPENDENCIES_1) libquipper.a \
 	libglog.a libsymbolize.a libgflags.a
 create_llvm_prof_LINK = $(CXXLD) $(create_llvm_prof_CXXFLAGS) \
@@ -194,81 +186,25 @@ am_dump_gcov_OBJECTS = profile_reader.$(OBJEXT) symbol_map.$(OBJEXT) \
 	module_grouper.$(OBJEXT) gcov.$(OBJEXT) dump_gcov.$(OBJEXT)
 dump_gcov_OBJECTS = $(am_dump_gcov_OBJECTS)
 dump_gcov_DEPENDENCIES = libglog.a libgflags.a libsymbolize.a
-am__objects_3 = profile_diff-addr2line.$(OBJEXT) \
-	profile_diff-gcov.$(OBJEXT) \
-	profile_diff-instruction_map.$(OBJEXT) \
-	profile_diff-llvm_profile_writer.$(OBJEXT) \
-	profile_diff-module_grouper.$(OBJEXT) \
-	profile_diff-profile_creator.$(OBJEXT) \
-	profile_diff-profile_writer.$(OBJEXT) \
-	profile_diff-sample_reader.$(OBJEXT) \
-	profile_diff-source_info.$(OBJEXT) \
-	profile_diff-symbol_map.$(OBJEXT) \
-	profile_diff-profile.$(OBJEXT)
-am_profile_diff_OBJECTS = $(am__objects_3) \
-	profile_diff-profile_reader.$(OBJEXT) \
-	profile_diff-profile_diff.$(OBJEXT)
+am_profile_diff_OBJECTS = $(am__objects_1) profile_reader.$(OBJEXT) \
+	profile_diff.$(OBJEXT)
 profile_diff_OBJECTS = $(am_profile_diff_OBJECTS)
-profile_diff_DEPENDENCIES = $(am__DEPENDENCIES_1) libquipper.a \
-	libglog.a libsymbolize.a libgflags.a
-profile_diff_LINK = $(CXXLD) $(profile_diff_CXXFLAGS) $(CXXFLAGS) \
-	$(AM_LDFLAGS) $(LDFLAGS) -o $@
-am__objects_4 = profile_merger-addr2line.$(OBJEXT) \
-	profile_merger-gcov.$(OBJEXT) \
-	profile_merger-instruction_map.$(OBJEXT) \
-	profile_merger-llvm_profile_writer.$(OBJEXT) \
-	profile_merger-module_grouper.$(OBJEXT) \
-	profile_merger-profile_creator.$(OBJEXT) \
-	profile_merger-profile_writer.$(OBJEXT) \
-	profile_merger-sample_reader.$(OBJEXT) \
-	profile_merger-source_info.$(OBJEXT) \
-	profile_merger-symbol_map.$(OBJEXT) \
-	profile_merger-profile.$(OBJEXT)
-am_profile_merger_OBJECTS = $(am__objects_4) \
-	profile_merger-profile_reader.$(OBJEXT) \
-	profile_merger-profile_merger.$(OBJEXT)
+profile_diff_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+	libgflags.a
+am_profile_merger_OBJECTS = $(am__objects_1) profile_reader.$(OBJEXT) \
+	profile_merger.$(OBJEXT)
 profile_merger_OBJECTS = $(am_profile_merger_OBJECTS)
-profile_merger_DEPENDENCIES = $(am__DEPENDENCIES_1) libquipper.a \
-	libglog.a libsymbolize.a libgflags.a
-profile_merger_LINK = $(CXXLD) $(profile_merger_CXXFLAGS) $(CXXFLAGS) \
-	$(AM_LDFLAGS) $(LDFLAGS) -o $@
-am__objects_5 = profile_update-addr2line.$(OBJEXT) \
-	profile_update-gcov.$(OBJEXT) \
-	profile_update-instruction_map.$(OBJEXT) \
-	profile_update-llvm_profile_writer.$(OBJEXT) \
-	profile_update-module_grouper.$(OBJEXT) \
-	profile_update-profile_creator.$(OBJEXT) \
-	profile_update-profile_writer.$(OBJEXT) \
-	profile_update-sample_reader.$(OBJEXT) \
-	profile_update-source_info.$(OBJEXT) \
-	profile_update-symbol_map.$(OBJEXT) \
-	profile_update-profile.$(OBJEXT)
-am_profile_update_OBJECTS = $(am__objects_5) \
-	profile_update-profile_reader.$(OBJEXT) \
-	profile_update-profile_update.$(OBJEXT)
+profile_merger_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+	libgflags.a
+am_profile_update_OBJECTS = $(am__objects_1) profile_reader.$(OBJEXT) \
+	profile_update.$(OBJEXT)
 profile_update_OBJECTS = $(am_profile_update_OBJECTS)
-profile_update_DEPENDENCIES = $(am__DEPENDENCIES_1) libquipper.a \
-	libglog.a libsymbolize.a libgflags.a
-profile_update_LINK = $(CXXLD) $(profile_update_CXXFLAGS) $(CXXFLAGS) \
-	$(AM_LDFLAGS) $(LDFLAGS) -o $@
-am__objects_6 = sample_merger-addr2line.$(OBJEXT) \
-	sample_merger-gcov.$(OBJEXT) \
-	sample_merger-instruction_map.$(OBJEXT) \
-	sample_merger-llvm_profile_writer.$(OBJEXT) \
-	sample_merger-module_grouper.$(OBJEXT) \
-	sample_merger-profile_creator.$(OBJEXT) \
-	sample_merger-profile_writer.$(OBJEXT) \
-	sample_merger-sample_reader.$(OBJEXT) \
-	sample_merger-source_info.$(OBJEXT) \
-	sample_merger-symbol_map.$(OBJEXT) \
-	sample_merger-profile.$(OBJEXT)
-am_sample_merger_OBJECTS = $(am__objects_6) \
-	sample_merger-sample_merger.$(OBJEXT)
+profile_update_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+	libgflags.a
+am_sample_merger_OBJECTS = $(am__objects_1) sample_merger.$(OBJEXT)
 sample_merger_OBJECTS = $(am_sample_merger_OBJECTS)
-sample_merger_DEPENDENCIES = $(am__DEPENDENCIES_1) libquipper.a \
-	libglog.a libsymbolize.a libgflags.a
-sample_merger_LINK = $(CXXLD) $(sample_merger_CXXFLAGS) $(CXXFLAGS) \
-	$(AM_LDFLAGS) $(LDFLAGS) -o $@
+sample_merger_DEPENDENCIES = libquipper.a libglog.a libsymbolize.a \
+	libgflags.a
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -489,38 +425,36 @@ ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/glog/src
 AM_CXXFLAGS = -std=gnu++11
 COMMON_PROFILE_CREATOR_FILES = addr2line.cc gcov.cc instruction_map.cc \
-                               llvm_profile_writer.cc module_grouper.cc \
-                               profile_creator.cc profile_writer.cc \
-                               sample_reader.cc source_info.cc symbol_map.cc \
-                               profile.cc
+                               module_grouper.cc profile_creator.cc \
+                               profile_writer.cc sample_reader.cc \
+                               source_info.cc symbol_map.cc profile.cc
 
 create_gcov_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) create_gcov.cc
-create_gcov_LDADD = $(LLVM_LDFLAGS) libquipper.a libglog.a libsymbolize.a libgflags.a
-create_gcov_CXXFLAGS = $(LLVM_CXXFLAGS)
+create_gcov_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 dump_gcov_SOURCES = profile_reader.cc symbol_map.cc module_grouper.cc gcov.cc \
                     dump_gcov.cc
 
 dump_gcov_LDADD = libglog.a libgflags.a libsymbolize.a
 sample_merger_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) sample_merger.cc
-sample_merger_LDADD = $(LLVM_LDFLAGS) libquipper.a libglog.a libsymbolize.a libgflags.a
-sample_merger_CXXFLAGS = $(LLVM_CXXFLAGS)
+sample_merger_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 profile_merger_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
                          profile_merger.cc
 
-profile_merger_CXXFLAGS = $(LLVM_CXXFLAGS)
-profile_merger_LDADD = $(LLVM_LDFLAGS) libquipper.a libglog.a libsymbolize.a libgflags.a
+profile_merger_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 profile_diff_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
                        profile_diff.cc
 
-profile_diff_LDADD = $(LLVM_LDFLAGS) libquipper.a libglog.a libsymbolize.a libgflags.a
-profile_diff_CXXFLAGS = $(LLVM_CXXFLAGS)
+profile_diff_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
 profile_update_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
                          profile_update.cc
 
-profile_update_LDADD = $(LLVM_LDFLAGS) libquipper.a libglog.a libsymbolize.a libgflags.a
-profile_update_CXXFLAGS = $(LLVM_CXXFLAGS)
-create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) create_llvm_prof.cc
-create_llvm_prof_LDADD = $(LLVM_LDFLAGS) libquipper.a libglog.a libsymbolize.a libgflags.a
+profile_update_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) \
+                           llvm_profile_writer.cc create_llvm_prof.cc
+
+create_llvm_prof_LDADD = $(LLVM_LDFLAGS) libquipper.a libglog.a libsymbolize.a \
+                         libgflags.a
+
 create_llvm_prof_CXXFLAGS = $(LLVM_CXXFLAGS)
 noinst_LIBRARIES = libquipper.a libglog.a libgflags.a libsymbolize.a
 libquipper_a_SOURCES = chromiumos-wide-profiling/address_mapper.cc chromiumos-wide-profiling/perf_reader.cc \
@@ -773,7 +707,7 @@ clean-binPROGRAMS:
 
 create_gcov$(EXEEXT): $(create_gcov_OBJECTS) $(create_gcov_DEPENDENCIES) $(EXTRA_create_gcov_DEPENDENCIES) 
 	@rm -f create_gcov$(EXEEXT)
-	$(AM_V_CXXLD)$(create_gcov_LINK) $(create_gcov_OBJECTS) $(create_gcov_LDADD) $(LIBS)
+	$(AM_V_CXXLD)$(CXXLINK) $(create_gcov_OBJECTS) $(create_gcov_LDADD) $(LIBS)
 
 create_llvm_prof$(EXEEXT): $(create_llvm_prof_OBJECTS) $(create_llvm_prof_DEPENDENCIES) $(EXTRA_create_llvm_prof_DEPENDENCIES) 
 	@rm -f create_llvm_prof$(EXEEXT)
@@ -785,19 +719,19 @@ dump_gcov$(EXEEXT): $(dump_gcov_OBJECTS) $(dump_gcov_DEPENDENCIES) $(EXTRA_dump_
 
 profile_diff$(EXEEXT): $(profile_diff_OBJECTS) $(profile_diff_DEPENDENCIES) $(EXTRA_profile_diff_DEPENDENCIES) 
 	@rm -f profile_diff$(EXEEXT)
-	$(AM_V_CXXLD)$(profile_diff_LINK) $(profile_diff_OBJECTS) $(profile_diff_LDADD) $(LIBS)
+	$(AM_V_CXXLD)$(CXXLINK) $(profile_diff_OBJECTS) $(profile_diff_LDADD) $(LIBS)
 
 profile_merger$(EXEEXT): $(profile_merger_OBJECTS) $(profile_merger_DEPENDENCIES) $(EXTRA_profile_merger_DEPENDENCIES) 
 	@rm -f profile_merger$(EXEEXT)
-	$(AM_V_CXXLD)$(profile_merger_LINK) $(profile_merger_OBJECTS) $(profile_merger_LDADD) $(LIBS)
+	$(AM_V_CXXLD)$(CXXLINK) $(profile_merger_OBJECTS) $(profile_merger_LDADD) $(LIBS)
 
 profile_update$(EXEEXT): $(profile_update_OBJECTS) $(profile_update_DEPENDENCIES) $(EXTRA_profile_update_DEPENDENCIES) 
 	@rm -f profile_update$(EXEEXT)
-	$(AM_V_CXXLD)$(profile_update_LINK) $(profile_update_OBJECTS) $(profile_update_LDADD) $(LIBS)
+	$(AM_V_CXXLD)$(CXXLINK) $(profile_update_OBJECTS) $(profile_update_LDADD) $(LIBS)
 
 sample_merger$(EXEEXT): $(sample_merger_OBJECTS) $(sample_merger_DEPENDENCIES) $(EXTRA_sample_merger_DEPENDENCIES) 
 	@rm -f sample_merger$(EXEEXT)
-	$(AM_V_CXXLD)$(sample_merger_LINK) $(sample_merger_OBJECTS) $(sample_merger_LDADD) $(LIBS)
+	$(AM_V_CXXLD)$(CXXLINK) $(sample_merger_OBJECTS) $(sample_merger_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -809,18 +743,8 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-addr2line.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-create_gcov.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-gcov.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-instruction_map.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-llvm_profile_writer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-module_grouper.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-profile.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-profile_creator.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-profile_writer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-sample_reader.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-source_info.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov-symbol_map.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/addr2line.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_gcov.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_llvm_prof-addr2line.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_llvm_prof-create_llvm_prof.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_llvm_prof-gcov.Po@am__quote@
@@ -835,59 +759,18 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_llvm_prof-symbol_map.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dump_gcov.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gcov.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/instruction_map.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/module_grouper.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-addr2line.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-gcov.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-instruction_map.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-llvm_profile_writer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-module_grouper.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-profile.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-profile_creator.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-profile_diff.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-profile_reader.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-profile_writer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-sample_reader.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-source_info.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff-symbol_map.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-addr2line.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-gcov.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-instruction_map.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-llvm_profile_writer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-module_grouper.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-profile.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-profile_creator.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-profile_merger.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-profile_reader.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-profile_writer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-sample_reader.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-source_info.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger-symbol_map.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_creator.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_diff.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_merger.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_reader.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-addr2line.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-gcov.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-instruction_map.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-llvm_profile_writer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-module_grouper.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-profile.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-profile_creator.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-profile_reader.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-profile_update.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-profile_writer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-sample_reader.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-source_info.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update-symbol_map.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-addr2line.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-gcov.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-instruction_map.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-llvm_profile_writer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-module_grouper.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-profile.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-profile_creator.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-profile_writer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-sample_merger.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-sample_reader.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-source_info.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger-symbol_map.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_update.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/profile_writer.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_merger.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sample_reader.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/source_info.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/symbol_map.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@chromiumos-wide-profiling/$(DEPDIR)/address_mapper.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@chromiumos-wide-profiling/$(DEPDIR)/buffer_reader.Po@am__quote@
@@ -1028,174 +911,6 @@ glog/src/libglog_a-signalhandler.obj: glog/src/signalhandler.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libglog_a_CXXFLAGS) $(CXXFLAGS) -c -o glog/src/libglog_a-signalhandler.obj `if test -f 'glog/src/signalhandler.cc'; then $(CYGPATH_W) 'glog/src/signalhandler.cc'; else $(CYGPATH_W) '$(srcdir)/glog/src/signalhandler.cc'; fi`
 
-create_gcov-addr2line.o: addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-addr2line.o -MD -MP -MF $(DEPDIR)/create_gcov-addr2line.Tpo -c -o create_gcov-addr2line.o `test -f 'addr2line.cc' || echo '$(srcdir)/'`addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-addr2line.Tpo $(DEPDIR)/create_gcov-addr2line.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='addr2line.cc' object='create_gcov-addr2line.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-addr2line.o `test -f 'addr2line.cc' || echo '$(srcdir)/'`addr2line.cc
-
-create_gcov-addr2line.obj: addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-addr2line.obj -MD -MP -MF $(DEPDIR)/create_gcov-addr2line.Tpo -c -o create_gcov-addr2line.obj `if test -f 'addr2line.cc'; then $(CYGPATH_W) 'addr2line.cc'; else $(CYGPATH_W) '$(srcdir)/addr2line.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-addr2line.Tpo $(DEPDIR)/create_gcov-addr2line.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='addr2line.cc' object='create_gcov-addr2line.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-addr2line.obj `if test -f 'addr2line.cc'; then $(CYGPATH_W) 'addr2line.cc'; else $(CYGPATH_W) '$(srcdir)/addr2line.cc'; fi`
-
-create_gcov-gcov.o: gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-gcov.o -MD -MP -MF $(DEPDIR)/create_gcov-gcov.Tpo -c -o create_gcov-gcov.o `test -f 'gcov.cc' || echo '$(srcdir)/'`gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-gcov.Tpo $(DEPDIR)/create_gcov-gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='gcov.cc' object='create_gcov-gcov.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-gcov.o `test -f 'gcov.cc' || echo '$(srcdir)/'`gcov.cc
-
-create_gcov-gcov.obj: gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-gcov.obj -MD -MP -MF $(DEPDIR)/create_gcov-gcov.Tpo -c -o create_gcov-gcov.obj `if test -f 'gcov.cc'; then $(CYGPATH_W) 'gcov.cc'; else $(CYGPATH_W) '$(srcdir)/gcov.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-gcov.Tpo $(DEPDIR)/create_gcov-gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='gcov.cc' object='create_gcov-gcov.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-gcov.obj `if test -f 'gcov.cc'; then $(CYGPATH_W) 'gcov.cc'; else $(CYGPATH_W) '$(srcdir)/gcov.cc'; fi`
-
-create_gcov-instruction_map.o: instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-instruction_map.o -MD -MP -MF $(DEPDIR)/create_gcov-instruction_map.Tpo -c -o create_gcov-instruction_map.o `test -f 'instruction_map.cc' || echo '$(srcdir)/'`instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-instruction_map.Tpo $(DEPDIR)/create_gcov-instruction_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='instruction_map.cc' object='create_gcov-instruction_map.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-instruction_map.o `test -f 'instruction_map.cc' || echo '$(srcdir)/'`instruction_map.cc
-
-create_gcov-instruction_map.obj: instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-instruction_map.obj -MD -MP -MF $(DEPDIR)/create_gcov-instruction_map.Tpo -c -o create_gcov-instruction_map.obj `if test -f 'instruction_map.cc'; then $(CYGPATH_W) 'instruction_map.cc'; else $(CYGPATH_W) '$(srcdir)/instruction_map.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-instruction_map.Tpo $(DEPDIR)/create_gcov-instruction_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='instruction_map.cc' object='create_gcov-instruction_map.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-instruction_map.obj `if test -f 'instruction_map.cc'; then $(CYGPATH_W) 'instruction_map.cc'; else $(CYGPATH_W) '$(srcdir)/instruction_map.cc'; fi`
-
-create_gcov-llvm_profile_writer.o: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-llvm_profile_writer.o -MD -MP -MF $(DEPDIR)/create_gcov-llvm_profile_writer.Tpo -c -o create_gcov-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-llvm_profile_writer.Tpo $(DEPDIR)/create_gcov-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='create_gcov-llvm_profile_writer.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-
-create_gcov-llvm_profile_writer.obj: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-llvm_profile_writer.obj -MD -MP -MF $(DEPDIR)/create_gcov-llvm_profile_writer.Tpo -c -o create_gcov-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-llvm_profile_writer.Tpo $(DEPDIR)/create_gcov-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='create_gcov-llvm_profile_writer.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
-
-create_gcov-module_grouper.o: module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-module_grouper.o -MD -MP -MF $(DEPDIR)/create_gcov-module_grouper.Tpo -c -o create_gcov-module_grouper.o `test -f 'module_grouper.cc' || echo '$(srcdir)/'`module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-module_grouper.Tpo $(DEPDIR)/create_gcov-module_grouper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='module_grouper.cc' object='create_gcov-module_grouper.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-module_grouper.o `test -f 'module_grouper.cc' || echo '$(srcdir)/'`module_grouper.cc
-
-create_gcov-module_grouper.obj: module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-module_grouper.obj -MD -MP -MF $(DEPDIR)/create_gcov-module_grouper.Tpo -c -o create_gcov-module_grouper.obj `if test -f 'module_grouper.cc'; then $(CYGPATH_W) 'module_grouper.cc'; else $(CYGPATH_W) '$(srcdir)/module_grouper.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-module_grouper.Tpo $(DEPDIR)/create_gcov-module_grouper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='module_grouper.cc' object='create_gcov-module_grouper.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-module_grouper.obj `if test -f 'module_grouper.cc'; then $(CYGPATH_W) 'module_grouper.cc'; else $(CYGPATH_W) '$(srcdir)/module_grouper.cc'; fi`
-
-create_gcov-profile_creator.o: profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-profile_creator.o -MD -MP -MF $(DEPDIR)/create_gcov-profile_creator.Tpo -c -o create_gcov-profile_creator.o `test -f 'profile_creator.cc' || echo '$(srcdir)/'`profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-profile_creator.Tpo $(DEPDIR)/create_gcov-profile_creator.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_creator.cc' object='create_gcov-profile_creator.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-profile_creator.o `test -f 'profile_creator.cc' || echo '$(srcdir)/'`profile_creator.cc
-
-create_gcov-profile_creator.obj: profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-profile_creator.obj -MD -MP -MF $(DEPDIR)/create_gcov-profile_creator.Tpo -c -o create_gcov-profile_creator.obj `if test -f 'profile_creator.cc'; then $(CYGPATH_W) 'profile_creator.cc'; else $(CYGPATH_W) '$(srcdir)/profile_creator.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-profile_creator.Tpo $(DEPDIR)/create_gcov-profile_creator.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_creator.cc' object='create_gcov-profile_creator.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-profile_creator.obj `if test -f 'profile_creator.cc'; then $(CYGPATH_W) 'profile_creator.cc'; else $(CYGPATH_W) '$(srcdir)/profile_creator.cc'; fi`
-
-create_gcov-profile_writer.o: profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-profile_writer.o -MD -MP -MF $(DEPDIR)/create_gcov-profile_writer.Tpo -c -o create_gcov-profile_writer.o `test -f 'profile_writer.cc' || echo '$(srcdir)/'`profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-profile_writer.Tpo $(DEPDIR)/create_gcov-profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_writer.cc' object='create_gcov-profile_writer.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-profile_writer.o `test -f 'profile_writer.cc' || echo '$(srcdir)/'`profile_writer.cc
-
-create_gcov-profile_writer.obj: profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-profile_writer.obj -MD -MP -MF $(DEPDIR)/create_gcov-profile_writer.Tpo -c -o create_gcov-profile_writer.obj `if test -f 'profile_writer.cc'; then $(CYGPATH_W) 'profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/profile_writer.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-profile_writer.Tpo $(DEPDIR)/create_gcov-profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_writer.cc' object='create_gcov-profile_writer.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-profile_writer.obj `if test -f 'profile_writer.cc'; then $(CYGPATH_W) 'profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/profile_writer.cc'; fi`
-
-create_gcov-sample_reader.o: sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-sample_reader.o -MD -MP -MF $(DEPDIR)/create_gcov-sample_reader.Tpo -c -o create_gcov-sample_reader.o `test -f 'sample_reader.cc' || echo '$(srcdir)/'`sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-sample_reader.Tpo $(DEPDIR)/create_gcov-sample_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_reader.cc' object='create_gcov-sample_reader.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-sample_reader.o `test -f 'sample_reader.cc' || echo '$(srcdir)/'`sample_reader.cc
-
-create_gcov-sample_reader.obj: sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-sample_reader.obj -MD -MP -MF $(DEPDIR)/create_gcov-sample_reader.Tpo -c -o create_gcov-sample_reader.obj `if test -f 'sample_reader.cc'; then $(CYGPATH_W) 'sample_reader.cc'; else $(CYGPATH_W) '$(srcdir)/sample_reader.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-sample_reader.Tpo $(DEPDIR)/create_gcov-sample_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_reader.cc' object='create_gcov-sample_reader.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-sample_reader.obj `if test -f 'sample_reader.cc'; then $(CYGPATH_W) 'sample_reader.cc'; else $(CYGPATH_W) '$(srcdir)/sample_reader.cc'; fi`
-
-create_gcov-source_info.o: source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-source_info.o -MD -MP -MF $(DEPDIR)/create_gcov-source_info.Tpo -c -o create_gcov-source_info.o `test -f 'source_info.cc' || echo '$(srcdir)/'`source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-source_info.Tpo $(DEPDIR)/create_gcov-source_info.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='source_info.cc' object='create_gcov-source_info.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-source_info.o `test -f 'source_info.cc' || echo '$(srcdir)/'`source_info.cc
-
-create_gcov-source_info.obj: source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-source_info.obj -MD -MP -MF $(DEPDIR)/create_gcov-source_info.Tpo -c -o create_gcov-source_info.obj `if test -f 'source_info.cc'; then $(CYGPATH_W) 'source_info.cc'; else $(CYGPATH_W) '$(srcdir)/source_info.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-source_info.Tpo $(DEPDIR)/create_gcov-source_info.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='source_info.cc' object='create_gcov-source_info.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-source_info.obj `if test -f 'source_info.cc'; then $(CYGPATH_W) 'source_info.cc'; else $(CYGPATH_W) '$(srcdir)/source_info.cc'; fi`
-
-create_gcov-symbol_map.o: symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-symbol_map.o -MD -MP -MF $(DEPDIR)/create_gcov-symbol_map.Tpo -c -o create_gcov-symbol_map.o `test -f 'symbol_map.cc' || echo '$(srcdir)/'`symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-symbol_map.Tpo $(DEPDIR)/create_gcov-symbol_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='symbol_map.cc' object='create_gcov-symbol_map.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-symbol_map.o `test -f 'symbol_map.cc' || echo '$(srcdir)/'`symbol_map.cc
-
-create_gcov-symbol_map.obj: symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-symbol_map.obj -MD -MP -MF $(DEPDIR)/create_gcov-symbol_map.Tpo -c -o create_gcov-symbol_map.obj `if test -f 'symbol_map.cc'; then $(CYGPATH_W) 'symbol_map.cc'; else $(CYGPATH_W) '$(srcdir)/symbol_map.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-symbol_map.Tpo $(DEPDIR)/create_gcov-symbol_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='symbol_map.cc' object='create_gcov-symbol_map.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-symbol_map.obj `if test -f 'symbol_map.cc'; then $(CYGPATH_W) 'symbol_map.cc'; else $(CYGPATH_W) '$(srcdir)/symbol_map.cc'; fi`
-
-create_gcov-profile.o: profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-profile.o -MD -MP -MF $(DEPDIR)/create_gcov-profile.Tpo -c -o create_gcov-profile.o `test -f 'profile.cc' || echo '$(srcdir)/'`profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-profile.Tpo $(DEPDIR)/create_gcov-profile.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile.cc' object='create_gcov-profile.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-profile.o `test -f 'profile.cc' || echo '$(srcdir)/'`profile.cc
-
-create_gcov-profile.obj: profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-profile.obj -MD -MP -MF $(DEPDIR)/create_gcov-profile.Tpo -c -o create_gcov-profile.obj `if test -f 'profile.cc'; then $(CYGPATH_W) 'profile.cc'; else $(CYGPATH_W) '$(srcdir)/profile.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-profile.Tpo $(DEPDIR)/create_gcov-profile.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile.cc' object='create_gcov-profile.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-profile.obj `if test -f 'profile.cc'; then $(CYGPATH_W) 'profile.cc'; else $(CYGPATH_W) '$(srcdir)/profile.cc'; fi`
-
-create_gcov-create_gcov.o: create_gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-create_gcov.o -MD -MP -MF $(DEPDIR)/create_gcov-create_gcov.Tpo -c -o create_gcov-create_gcov.o `test -f 'create_gcov.cc' || echo '$(srcdir)/'`create_gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-create_gcov.Tpo $(DEPDIR)/create_gcov-create_gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='create_gcov.cc' object='create_gcov-create_gcov.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-create_gcov.o `test -f 'create_gcov.cc' || echo '$(srcdir)/'`create_gcov.cc
-
-create_gcov-create_gcov.obj: create_gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -MT create_gcov-create_gcov.obj -MD -MP -MF $(DEPDIR)/create_gcov-create_gcov.Tpo -c -o create_gcov-create_gcov.obj `if test -f 'create_gcov.cc'; then $(CYGPATH_W) 'create_gcov.cc'; else $(CYGPATH_W) '$(srcdir)/create_gcov.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_gcov-create_gcov.Tpo $(DEPDIR)/create_gcov-create_gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='create_gcov.cc' object='create_gcov-create_gcov.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_gcov_CXXFLAGS) $(CXXFLAGS) -c -o create_gcov-create_gcov.obj `if test -f 'create_gcov.cc'; then $(CYGPATH_W) 'create_gcov.cc'; else $(CYGPATH_W) '$(srcdir)/create_gcov.cc'; fi`
-
 create_llvm_prof-addr2line.o: addr2line.cc
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -MT create_llvm_prof-addr2line.o -MD -MP -MF $(DEPDIR)/create_llvm_prof-addr2line.Tpo -c -o create_llvm_prof-addr2line.o `test -f 'addr2line.cc' || echo '$(srcdir)/'`addr2line.cc
 @am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_llvm_prof-addr2line.Tpo $(DEPDIR)/create_llvm_prof-addr2line.Po
@@ -1237,20 +952,6 @@ create_llvm_prof-instruction_map.obj: instruction_map.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='instruction_map.cc' object='create_llvm_prof-instruction_map.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -c -o create_llvm_prof-instruction_map.obj `if test -f 'instruction_map.cc'; then $(CYGPATH_W) 'instruction_map.cc'; else $(CYGPATH_W) '$(srcdir)/instruction_map.cc'; fi`
-
-create_llvm_prof-llvm_profile_writer.o: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -MT create_llvm_prof-llvm_profile_writer.o -MD -MP -MF $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Tpo -c -o create_llvm_prof-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Tpo $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='create_llvm_prof-llvm_profile_writer.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -c -o create_llvm_prof-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-
-create_llvm_prof-llvm_profile_writer.obj: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -MT create_llvm_prof-llvm_profile_writer.obj -MD -MP -MF $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Tpo -c -o create_llvm_prof-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Tpo $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='create_llvm_prof-llvm_profile_writer.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -c -o create_llvm_prof-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
 
 create_llvm_prof-module_grouper.o: module_grouper.cc
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -MT create_llvm_prof-module_grouper.o -MD -MP -MF $(DEPDIR)/create_llvm_prof-module_grouper.Tpo -c -o create_llvm_prof-module_grouper.o `test -f 'module_grouper.cc' || echo '$(srcdir)/'`module_grouper.cc
@@ -1350,6 +1051,20 @@ create_llvm_prof-profile.obj: profile.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -c -o create_llvm_prof-profile.obj `if test -f 'profile.cc'; then $(CYGPATH_W) 'profile.cc'; else $(CYGPATH_W) '$(srcdir)/profile.cc'; fi`
 
+create_llvm_prof-llvm_profile_writer.o: llvm_profile_writer.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -MT create_llvm_prof-llvm_profile_writer.o -MD -MP -MF $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Tpo -c -o create_llvm_prof-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Tpo $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='create_llvm_prof-llvm_profile_writer.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -c -o create_llvm_prof-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
+
+create_llvm_prof-llvm_profile_writer.obj: llvm_profile_writer.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -MT create_llvm_prof-llvm_profile_writer.obj -MD -MP -MF $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Tpo -c -o create_llvm_prof-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Tpo $(DEPDIR)/create_llvm_prof-llvm_profile_writer.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='create_llvm_prof-llvm_profile_writer.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -c -o create_llvm_prof-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
+
 create_llvm_prof-create_llvm_prof.o: create_llvm_prof.cc
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -MT create_llvm_prof-create_llvm_prof.o -MD -MP -MF $(DEPDIR)/create_llvm_prof-create_llvm_prof.Tpo -c -o create_llvm_prof-create_llvm_prof.o `test -f 'create_llvm_prof.cc' || echo '$(srcdir)/'`create_llvm_prof.cc
 @am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/create_llvm_prof-create_llvm_prof.Tpo $(DEPDIR)/create_llvm_prof-create_llvm_prof.Po
@@ -1363,720 +1078,6 @@ create_llvm_prof-create_llvm_prof.obj: create_llvm_prof.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='create_llvm_prof.cc' object='create_llvm_prof-create_llvm_prof.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(create_llvm_prof_CXXFLAGS) $(CXXFLAGS) -c -o create_llvm_prof-create_llvm_prof.obj `if test -f 'create_llvm_prof.cc'; then $(CYGPATH_W) 'create_llvm_prof.cc'; else $(CYGPATH_W) '$(srcdir)/create_llvm_prof.cc'; fi`
-
-profile_diff-addr2line.o: addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-addr2line.o -MD -MP -MF $(DEPDIR)/profile_diff-addr2line.Tpo -c -o profile_diff-addr2line.o `test -f 'addr2line.cc' || echo '$(srcdir)/'`addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-addr2line.Tpo $(DEPDIR)/profile_diff-addr2line.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='addr2line.cc' object='profile_diff-addr2line.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-addr2line.o `test -f 'addr2line.cc' || echo '$(srcdir)/'`addr2line.cc
-
-profile_diff-addr2line.obj: addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-addr2line.obj -MD -MP -MF $(DEPDIR)/profile_diff-addr2line.Tpo -c -o profile_diff-addr2line.obj `if test -f 'addr2line.cc'; then $(CYGPATH_W) 'addr2line.cc'; else $(CYGPATH_W) '$(srcdir)/addr2line.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-addr2line.Tpo $(DEPDIR)/profile_diff-addr2line.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='addr2line.cc' object='profile_diff-addr2line.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-addr2line.obj `if test -f 'addr2line.cc'; then $(CYGPATH_W) 'addr2line.cc'; else $(CYGPATH_W) '$(srcdir)/addr2line.cc'; fi`
-
-profile_diff-gcov.o: gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-gcov.o -MD -MP -MF $(DEPDIR)/profile_diff-gcov.Tpo -c -o profile_diff-gcov.o `test -f 'gcov.cc' || echo '$(srcdir)/'`gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-gcov.Tpo $(DEPDIR)/profile_diff-gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='gcov.cc' object='profile_diff-gcov.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-gcov.o `test -f 'gcov.cc' || echo '$(srcdir)/'`gcov.cc
-
-profile_diff-gcov.obj: gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-gcov.obj -MD -MP -MF $(DEPDIR)/profile_diff-gcov.Tpo -c -o profile_diff-gcov.obj `if test -f 'gcov.cc'; then $(CYGPATH_W) 'gcov.cc'; else $(CYGPATH_W) '$(srcdir)/gcov.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-gcov.Tpo $(DEPDIR)/profile_diff-gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='gcov.cc' object='profile_diff-gcov.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-gcov.obj `if test -f 'gcov.cc'; then $(CYGPATH_W) 'gcov.cc'; else $(CYGPATH_W) '$(srcdir)/gcov.cc'; fi`
-
-profile_diff-instruction_map.o: instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-instruction_map.o -MD -MP -MF $(DEPDIR)/profile_diff-instruction_map.Tpo -c -o profile_diff-instruction_map.o `test -f 'instruction_map.cc' || echo '$(srcdir)/'`instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-instruction_map.Tpo $(DEPDIR)/profile_diff-instruction_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='instruction_map.cc' object='profile_diff-instruction_map.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-instruction_map.o `test -f 'instruction_map.cc' || echo '$(srcdir)/'`instruction_map.cc
-
-profile_diff-instruction_map.obj: instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-instruction_map.obj -MD -MP -MF $(DEPDIR)/profile_diff-instruction_map.Tpo -c -o profile_diff-instruction_map.obj `if test -f 'instruction_map.cc'; then $(CYGPATH_W) 'instruction_map.cc'; else $(CYGPATH_W) '$(srcdir)/instruction_map.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-instruction_map.Tpo $(DEPDIR)/profile_diff-instruction_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='instruction_map.cc' object='profile_diff-instruction_map.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-instruction_map.obj `if test -f 'instruction_map.cc'; then $(CYGPATH_W) 'instruction_map.cc'; else $(CYGPATH_W) '$(srcdir)/instruction_map.cc'; fi`
-
-profile_diff-llvm_profile_writer.o: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-llvm_profile_writer.o -MD -MP -MF $(DEPDIR)/profile_diff-llvm_profile_writer.Tpo -c -o profile_diff-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-llvm_profile_writer.Tpo $(DEPDIR)/profile_diff-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='profile_diff-llvm_profile_writer.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-
-profile_diff-llvm_profile_writer.obj: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-llvm_profile_writer.obj -MD -MP -MF $(DEPDIR)/profile_diff-llvm_profile_writer.Tpo -c -o profile_diff-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-llvm_profile_writer.Tpo $(DEPDIR)/profile_diff-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='profile_diff-llvm_profile_writer.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
-
-profile_diff-module_grouper.o: module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-module_grouper.o -MD -MP -MF $(DEPDIR)/profile_diff-module_grouper.Tpo -c -o profile_diff-module_grouper.o `test -f 'module_grouper.cc' || echo '$(srcdir)/'`module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-module_grouper.Tpo $(DEPDIR)/profile_diff-module_grouper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='module_grouper.cc' object='profile_diff-module_grouper.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-module_grouper.o `test -f 'module_grouper.cc' || echo '$(srcdir)/'`module_grouper.cc
-
-profile_diff-module_grouper.obj: module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-module_grouper.obj -MD -MP -MF $(DEPDIR)/profile_diff-module_grouper.Tpo -c -o profile_diff-module_grouper.obj `if test -f 'module_grouper.cc'; then $(CYGPATH_W) 'module_grouper.cc'; else $(CYGPATH_W) '$(srcdir)/module_grouper.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-module_grouper.Tpo $(DEPDIR)/profile_diff-module_grouper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='module_grouper.cc' object='profile_diff-module_grouper.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-module_grouper.obj `if test -f 'module_grouper.cc'; then $(CYGPATH_W) 'module_grouper.cc'; else $(CYGPATH_W) '$(srcdir)/module_grouper.cc'; fi`
-
-profile_diff-profile_creator.o: profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-profile_creator.o -MD -MP -MF $(DEPDIR)/profile_diff-profile_creator.Tpo -c -o profile_diff-profile_creator.o `test -f 'profile_creator.cc' || echo '$(srcdir)/'`profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-profile_creator.Tpo $(DEPDIR)/profile_diff-profile_creator.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_creator.cc' object='profile_diff-profile_creator.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-profile_creator.o `test -f 'profile_creator.cc' || echo '$(srcdir)/'`profile_creator.cc
-
-profile_diff-profile_creator.obj: profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-profile_creator.obj -MD -MP -MF $(DEPDIR)/profile_diff-profile_creator.Tpo -c -o profile_diff-profile_creator.obj `if test -f 'profile_creator.cc'; then $(CYGPATH_W) 'profile_creator.cc'; else $(CYGPATH_W) '$(srcdir)/profile_creator.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-profile_creator.Tpo $(DEPDIR)/profile_diff-profile_creator.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_creator.cc' object='profile_diff-profile_creator.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-profile_creator.obj `if test -f 'profile_creator.cc'; then $(CYGPATH_W) 'profile_creator.cc'; else $(CYGPATH_W) '$(srcdir)/profile_creator.cc'; fi`
-
-profile_diff-profile_writer.o: profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-profile_writer.o -MD -MP -MF $(DEPDIR)/profile_diff-profile_writer.Tpo -c -o profile_diff-profile_writer.o `test -f 'profile_writer.cc' || echo '$(srcdir)/'`profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-profile_writer.Tpo $(DEPDIR)/profile_diff-profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_writer.cc' object='profile_diff-profile_writer.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-profile_writer.o `test -f 'profile_writer.cc' || echo '$(srcdir)/'`profile_writer.cc
-
-profile_diff-profile_writer.obj: profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-profile_writer.obj -MD -MP -MF $(DEPDIR)/profile_diff-profile_writer.Tpo -c -o profile_diff-profile_writer.obj `if test -f 'profile_writer.cc'; then $(CYGPATH_W) 'profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/profile_writer.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-profile_writer.Tpo $(DEPDIR)/profile_diff-profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_writer.cc' object='profile_diff-profile_writer.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-profile_writer.obj `if test -f 'profile_writer.cc'; then $(CYGPATH_W) 'profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/profile_writer.cc'; fi`
-
-profile_diff-sample_reader.o: sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-sample_reader.o -MD -MP -MF $(DEPDIR)/profile_diff-sample_reader.Tpo -c -o profile_diff-sample_reader.o `test -f 'sample_reader.cc' || echo '$(srcdir)/'`sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-sample_reader.Tpo $(DEPDIR)/profile_diff-sample_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_reader.cc' object='profile_diff-sample_reader.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-sample_reader.o `test -f 'sample_reader.cc' || echo '$(srcdir)/'`sample_reader.cc
-
-profile_diff-sample_reader.obj: sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-sample_reader.obj -MD -MP -MF $(DEPDIR)/profile_diff-sample_reader.Tpo -c -o profile_diff-sample_reader.obj `if test -f 'sample_reader.cc'; then $(CYGPATH_W) 'sample_reader.cc'; else $(CYGPATH_W) '$(srcdir)/sample_reader.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-sample_reader.Tpo $(DEPDIR)/profile_diff-sample_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_reader.cc' object='profile_diff-sample_reader.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-sample_reader.obj `if test -f 'sample_reader.cc'; then $(CYGPATH_W) 'sample_reader.cc'; else $(CYGPATH_W) '$(srcdir)/sample_reader.cc'; fi`
-
-profile_diff-source_info.o: source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-source_info.o -MD -MP -MF $(DEPDIR)/profile_diff-source_info.Tpo -c -o profile_diff-source_info.o `test -f 'source_info.cc' || echo '$(srcdir)/'`source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-source_info.Tpo $(DEPDIR)/profile_diff-source_info.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='source_info.cc' object='profile_diff-source_info.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-source_info.o `test -f 'source_info.cc' || echo '$(srcdir)/'`source_info.cc
-
-profile_diff-source_info.obj: source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-source_info.obj -MD -MP -MF $(DEPDIR)/profile_diff-source_info.Tpo -c -o profile_diff-source_info.obj `if test -f 'source_info.cc'; then $(CYGPATH_W) 'source_info.cc'; else $(CYGPATH_W) '$(srcdir)/source_info.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-source_info.Tpo $(DEPDIR)/profile_diff-source_info.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='source_info.cc' object='profile_diff-source_info.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-source_info.obj `if test -f 'source_info.cc'; then $(CYGPATH_W) 'source_info.cc'; else $(CYGPATH_W) '$(srcdir)/source_info.cc'; fi`
-
-profile_diff-symbol_map.o: symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-symbol_map.o -MD -MP -MF $(DEPDIR)/profile_diff-symbol_map.Tpo -c -o profile_diff-symbol_map.o `test -f 'symbol_map.cc' || echo '$(srcdir)/'`symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-symbol_map.Tpo $(DEPDIR)/profile_diff-symbol_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='symbol_map.cc' object='profile_diff-symbol_map.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-symbol_map.o `test -f 'symbol_map.cc' || echo '$(srcdir)/'`symbol_map.cc
-
-profile_diff-symbol_map.obj: symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-symbol_map.obj -MD -MP -MF $(DEPDIR)/profile_diff-symbol_map.Tpo -c -o profile_diff-symbol_map.obj `if test -f 'symbol_map.cc'; then $(CYGPATH_W) 'symbol_map.cc'; else $(CYGPATH_W) '$(srcdir)/symbol_map.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-symbol_map.Tpo $(DEPDIR)/profile_diff-symbol_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='symbol_map.cc' object='profile_diff-symbol_map.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-symbol_map.obj `if test -f 'symbol_map.cc'; then $(CYGPATH_W) 'symbol_map.cc'; else $(CYGPATH_W) '$(srcdir)/symbol_map.cc'; fi`
-
-profile_diff-profile.o: profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-profile.o -MD -MP -MF $(DEPDIR)/profile_diff-profile.Tpo -c -o profile_diff-profile.o `test -f 'profile.cc' || echo '$(srcdir)/'`profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-profile.Tpo $(DEPDIR)/profile_diff-profile.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile.cc' object='profile_diff-profile.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-profile.o `test -f 'profile.cc' || echo '$(srcdir)/'`profile.cc
-
-profile_diff-profile.obj: profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-profile.obj -MD -MP -MF $(DEPDIR)/profile_diff-profile.Tpo -c -o profile_diff-profile.obj `if test -f 'profile.cc'; then $(CYGPATH_W) 'profile.cc'; else $(CYGPATH_W) '$(srcdir)/profile.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-profile.Tpo $(DEPDIR)/profile_diff-profile.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile.cc' object='profile_diff-profile.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-profile.obj `if test -f 'profile.cc'; then $(CYGPATH_W) 'profile.cc'; else $(CYGPATH_W) '$(srcdir)/profile.cc'; fi`
-
-profile_diff-profile_reader.o: profile_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-profile_reader.o -MD -MP -MF $(DEPDIR)/profile_diff-profile_reader.Tpo -c -o profile_diff-profile_reader.o `test -f 'profile_reader.cc' || echo '$(srcdir)/'`profile_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-profile_reader.Tpo $(DEPDIR)/profile_diff-profile_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_reader.cc' object='profile_diff-profile_reader.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-profile_reader.o `test -f 'profile_reader.cc' || echo '$(srcdir)/'`profile_reader.cc
-
-profile_diff-profile_reader.obj: profile_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-profile_reader.obj -MD -MP -MF $(DEPDIR)/profile_diff-profile_reader.Tpo -c -o profile_diff-profile_reader.obj `if test -f 'profile_reader.cc'; then $(CYGPATH_W) 'profile_reader.cc'; else $(CYGPATH_W) '$(srcdir)/profile_reader.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-profile_reader.Tpo $(DEPDIR)/profile_diff-profile_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_reader.cc' object='profile_diff-profile_reader.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-profile_reader.obj `if test -f 'profile_reader.cc'; then $(CYGPATH_W) 'profile_reader.cc'; else $(CYGPATH_W) '$(srcdir)/profile_reader.cc'; fi`
-
-profile_diff-profile_diff.o: profile_diff.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-profile_diff.o -MD -MP -MF $(DEPDIR)/profile_diff-profile_diff.Tpo -c -o profile_diff-profile_diff.o `test -f 'profile_diff.cc' || echo '$(srcdir)/'`profile_diff.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-profile_diff.Tpo $(DEPDIR)/profile_diff-profile_diff.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_diff.cc' object='profile_diff-profile_diff.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-profile_diff.o `test -f 'profile_diff.cc' || echo '$(srcdir)/'`profile_diff.cc
-
-profile_diff-profile_diff.obj: profile_diff.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -MT profile_diff-profile_diff.obj -MD -MP -MF $(DEPDIR)/profile_diff-profile_diff.Tpo -c -o profile_diff-profile_diff.obj `if test -f 'profile_diff.cc'; then $(CYGPATH_W) 'profile_diff.cc'; else $(CYGPATH_W) '$(srcdir)/profile_diff.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_diff-profile_diff.Tpo $(DEPDIR)/profile_diff-profile_diff.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_diff.cc' object='profile_diff-profile_diff.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_diff_CXXFLAGS) $(CXXFLAGS) -c -o profile_diff-profile_diff.obj `if test -f 'profile_diff.cc'; then $(CYGPATH_W) 'profile_diff.cc'; else $(CYGPATH_W) '$(srcdir)/profile_diff.cc'; fi`
-
-profile_merger-addr2line.o: addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-addr2line.o -MD -MP -MF $(DEPDIR)/profile_merger-addr2line.Tpo -c -o profile_merger-addr2line.o `test -f 'addr2line.cc' || echo '$(srcdir)/'`addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-addr2line.Tpo $(DEPDIR)/profile_merger-addr2line.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='addr2line.cc' object='profile_merger-addr2line.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-addr2line.o `test -f 'addr2line.cc' || echo '$(srcdir)/'`addr2line.cc
-
-profile_merger-addr2line.obj: addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-addr2line.obj -MD -MP -MF $(DEPDIR)/profile_merger-addr2line.Tpo -c -o profile_merger-addr2line.obj `if test -f 'addr2line.cc'; then $(CYGPATH_W) 'addr2line.cc'; else $(CYGPATH_W) '$(srcdir)/addr2line.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-addr2line.Tpo $(DEPDIR)/profile_merger-addr2line.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='addr2line.cc' object='profile_merger-addr2line.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-addr2line.obj `if test -f 'addr2line.cc'; then $(CYGPATH_W) 'addr2line.cc'; else $(CYGPATH_W) '$(srcdir)/addr2line.cc'; fi`
-
-profile_merger-gcov.o: gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-gcov.o -MD -MP -MF $(DEPDIR)/profile_merger-gcov.Tpo -c -o profile_merger-gcov.o `test -f 'gcov.cc' || echo '$(srcdir)/'`gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-gcov.Tpo $(DEPDIR)/profile_merger-gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='gcov.cc' object='profile_merger-gcov.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-gcov.o `test -f 'gcov.cc' || echo '$(srcdir)/'`gcov.cc
-
-profile_merger-gcov.obj: gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-gcov.obj -MD -MP -MF $(DEPDIR)/profile_merger-gcov.Tpo -c -o profile_merger-gcov.obj `if test -f 'gcov.cc'; then $(CYGPATH_W) 'gcov.cc'; else $(CYGPATH_W) '$(srcdir)/gcov.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-gcov.Tpo $(DEPDIR)/profile_merger-gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='gcov.cc' object='profile_merger-gcov.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-gcov.obj `if test -f 'gcov.cc'; then $(CYGPATH_W) 'gcov.cc'; else $(CYGPATH_W) '$(srcdir)/gcov.cc'; fi`
-
-profile_merger-instruction_map.o: instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-instruction_map.o -MD -MP -MF $(DEPDIR)/profile_merger-instruction_map.Tpo -c -o profile_merger-instruction_map.o `test -f 'instruction_map.cc' || echo '$(srcdir)/'`instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-instruction_map.Tpo $(DEPDIR)/profile_merger-instruction_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='instruction_map.cc' object='profile_merger-instruction_map.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-instruction_map.o `test -f 'instruction_map.cc' || echo '$(srcdir)/'`instruction_map.cc
-
-profile_merger-instruction_map.obj: instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-instruction_map.obj -MD -MP -MF $(DEPDIR)/profile_merger-instruction_map.Tpo -c -o profile_merger-instruction_map.obj `if test -f 'instruction_map.cc'; then $(CYGPATH_W) 'instruction_map.cc'; else $(CYGPATH_W) '$(srcdir)/instruction_map.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-instruction_map.Tpo $(DEPDIR)/profile_merger-instruction_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='instruction_map.cc' object='profile_merger-instruction_map.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-instruction_map.obj `if test -f 'instruction_map.cc'; then $(CYGPATH_W) 'instruction_map.cc'; else $(CYGPATH_W) '$(srcdir)/instruction_map.cc'; fi`
-
-profile_merger-llvm_profile_writer.o: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-llvm_profile_writer.o -MD -MP -MF $(DEPDIR)/profile_merger-llvm_profile_writer.Tpo -c -o profile_merger-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-llvm_profile_writer.Tpo $(DEPDIR)/profile_merger-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='profile_merger-llvm_profile_writer.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-
-profile_merger-llvm_profile_writer.obj: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-llvm_profile_writer.obj -MD -MP -MF $(DEPDIR)/profile_merger-llvm_profile_writer.Tpo -c -o profile_merger-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-llvm_profile_writer.Tpo $(DEPDIR)/profile_merger-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='profile_merger-llvm_profile_writer.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
-
-profile_merger-module_grouper.o: module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-module_grouper.o -MD -MP -MF $(DEPDIR)/profile_merger-module_grouper.Tpo -c -o profile_merger-module_grouper.o `test -f 'module_grouper.cc' || echo '$(srcdir)/'`module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-module_grouper.Tpo $(DEPDIR)/profile_merger-module_grouper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='module_grouper.cc' object='profile_merger-module_grouper.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-module_grouper.o `test -f 'module_grouper.cc' || echo '$(srcdir)/'`module_grouper.cc
-
-profile_merger-module_grouper.obj: module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-module_grouper.obj -MD -MP -MF $(DEPDIR)/profile_merger-module_grouper.Tpo -c -o profile_merger-module_grouper.obj `if test -f 'module_grouper.cc'; then $(CYGPATH_W) 'module_grouper.cc'; else $(CYGPATH_W) '$(srcdir)/module_grouper.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-module_grouper.Tpo $(DEPDIR)/profile_merger-module_grouper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='module_grouper.cc' object='profile_merger-module_grouper.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-module_grouper.obj `if test -f 'module_grouper.cc'; then $(CYGPATH_W) 'module_grouper.cc'; else $(CYGPATH_W) '$(srcdir)/module_grouper.cc'; fi`
-
-profile_merger-profile_creator.o: profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-profile_creator.o -MD -MP -MF $(DEPDIR)/profile_merger-profile_creator.Tpo -c -o profile_merger-profile_creator.o `test -f 'profile_creator.cc' || echo '$(srcdir)/'`profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-profile_creator.Tpo $(DEPDIR)/profile_merger-profile_creator.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_creator.cc' object='profile_merger-profile_creator.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-profile_creator.o `test -f 'profile_creator.cc' || echo '$(srcdir)/'`profile_creator.cc
-
-profile_merger-profile_creator.obj: profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-profile_creator.obj -MD -MP -MF $(DEPDIR)/profile_merger-profile_creator.Tpo -c -o profile_merger-profile_creator.obj `if test -f 'profile_creator.cc'; then $(CYGPATH_W) 'profile_creator.cc'; else $(CYGPATH_W) '$(srcdir)/profile_creator.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-profile_creator.Tpo $(DEPDIR)/profile_merger-profile_creator.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_creator.cc' object='profile_merger-profile_creator.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-profile_creator.obj `if test -f 'profile_creator.cc'; then $(CYGPATH_W) 'profile_creator.cc'; else $(CYGPATH_W) '$(srcdir)/profile_creator.cc'; fi`
-
-profile_merger-profile_writer.o: profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-profile_writer.o -MD -MP -MF $(DEPDIR)/profile_merger-profile_writer.Tpo -c -o profile_merger-profile_writer.o `test -f 'profile_writer.cc' || echo '$(srcdir)/'`profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-profile_writer.Tpo $(DEPDIR)/profile_merger-profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_writer.cc' object='profile_merger-profile_writer.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-profile_writer.o `test -f 'profile_writer.cc' || echo '$(srcdir)/'`profile_writer.cc
-
-profile_merger-profile_writer.obj: profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-profile_writer.obj -MD -MP -MF $(DEPDIR)/profile_merger-profile_writer.Tpo -c -o profile_merger-profile_writer.obj `if test -f 'profile_writer.cc'; then $(CYGPATH_W) 'profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/profile_writer.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-profile_writer.Tpo $(DEPDIR)/profile_merger-profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_writer.cc' object='profile_merger-profile_writer.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-profile_writer.obj `if test -f 'profile_writer.cc'; then $(CYGPATH_W) 'profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/profile_writer.cc'; fi`
-
-profile_merger-sample_reader.o: sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-sample_reader.o -MD -MP -MF $(DEPDIR)/profile_merger-sample_reader.Tpo -c -o profile_merger-sample_reader.o `test -f 'sample_reader.cc' || echo '$(srcdir)/'`sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-sample_reader.Tpo $(DEPDIR)/profile_merger-sample_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_reader.cc' object='profile_merger-sample_reader.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-sample_reader.o `test -f 'sample_reader.cc' || echo '$(srcdir)/'`sample_reader.cc
-
-profile_merger-sample_reader.obj: sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-sample_reader.obj -MD -MP -MF $(DEPDIR)/profile_merger-sample_reader.Tpo -c -o profile_merger-sample_reader.obj `if test -f 'sample_reader.cc'; then $(CYGPATH_W) 'sample_reader.cc'; else $(CYGPATH_W) '$(srcdir)/sample_reader.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-sample_reader.Tpo $(DEPDIR)/profile_merger-sample_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_reader.cc' object='profile_merger-sample_reader.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-sample_reader.obj `if test -f 'sample_reader.cc'; then $(CYGPATH_W) 'sample_reader.cc'; else $(CYGPATH_W) '$(srcdir)/sample_reader.cc'; fi`
-
-profile_merger-source_info.o: source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-source_info.o -MD -MP -MF $(DEPDIR)/profile_merger-source_info.Tpo -c -o profile_merger-source_info.o `test -f 'source_info.cc' || echo '$(srcdir)/'`source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-source_info.Tpo $(DEPDIR)/profile_merger-source_info.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='source_info.cc' object='profile_merger-source_info.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-source_info.o `test -f 'source_info.cc' || echo '$(srcdir)/'`source_info.cc
-
-profile_merger-source_info.obj: source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-source_info.obj -MD -MP -MF $(DEPDIR)/profile_merger-source_info.Tpo -c -o profile_merger-source_info.obj `if test -f 'source_info.cc'; then $(CYGPATH_W) 'source_info.cc'; else $(CYGPATH_W) '$(srcdir)/source_info.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-source_info.Tpo $(DEPDIR)/profile_merger-source_info.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='source_info.cc' object='profile_merger-source_info.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-source_info.obj `if test -f 'source_info.cc'; then $(CYGPATH_W) 'source_info.cc'; else $(CYGPATH_W) '$(srcdir)/source_info.cc'; fi`
-
-profile_merger-symbol_map.o: symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-symbol_map.o -MD -MP -MF $(DEPDIR)/profile_merger-symbol_map.Tpo -c -o profile_merger-symbol_map.o `test -f 'symbol_map.cc' || echo '$(srcdir)/'`symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-symbol_map.Tpo $(DEPDIR)/profile_merger-symbol_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='symbol_map.cc' object='profile_merger-symbol_map.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-symbol_map.o `test -f 'symbol_map.cc' || echo '$(srcdir)/'`symbol_map.cc
-
-profile_merger-symbol_map.obj: symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-symbol_map.obj -MD -MP -MF $(DEPDIR)/profile_merger-symbol_map.Tpo -c -o profile_merger-symbol_map.obj `if test -f 'symbol_map.cc'; then $(CYGPATH_W) 'symbol_map.cc'; else $(CYGPATH_W) '$(srcdir)/symbol_map.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-symbol_map.Tpo $(DEPDIR)/profile_merger-symbol_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='symbol_map.cc' object='profile_merger-symbol_map.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-symbol_map.obj `if test -f 'symbol_map.cc'; then $(CYGPATH_W) 'symbol_map.cc'; else $(CYGPATH_W) '$(srcdir)/symbol_map.cc'; fi`
-
-profile_merger-profile.o: profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-profile.o -MD -MP -MF $(DEPDIR)/profile_merger-profile.Tpo -c -o profile_merger-profile.o `test -f 'profile.cc' || echo '$(srcdir)/'`profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-profile.Tpo $(DEPDIR)/profile_merger-profile.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile.cc' object='profile_merger-profile.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-profile.o `test -f 'profile.cc' || echo '$(srcdir)/'`profile.cc
-
-profile_merger-profile.obj: profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-profile.obj -MD -MP -MF $(DEPDIR)/profile_merger-profile.Tpo -c -o profile_merger-profile.obj `if test -f 'profile.cc'; then $(CYGPATH_W) 'profile.cc'; else $(CYGPATH_W) '$(srcdir)/profile.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-profile.Tpo $(DEPDIR)/profile_merger-profile.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile.cc' object='profile_merger-profile.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-profile.obj `if test -f 'profile.cc'; then $(CYGPATH_W) 'profile.cc'; else $(CYGPATH_W) '$(srcdir)/profile.cc'; fi`
-
-profile_merger-profile_reader.o: profile_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-profile_reader.o -MD -MP -MF $(DEPDIR)/profile_merger-profile_reader.Tpo -c -o profile_merger-profile_reader.o `test -f 'profile_reader.cc' || echo '$(srcdir)/'`profile_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-profile_reader.Tpo $(DEPDIR)/profile_merger-profile_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_reader.cc' object='profile_merger-profile_reader.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-profile_reader.o `test -f 'profile_reader.cc' || echo '$(srcdir)/'`profile_reader.cc
-
-profile_merger-profile_reader.obj: profile_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-profile_reader.obj -MD -MP -MF $(DEPDIR)/profile_merger-profile_reader.Tpo -c -o profile_merger-profile_reader.obj `if test -f 'profile_reader.cc'; then $(CYGPATH_W) 'profile_reader.cc'; else $(CYGPATH_W) '$(srcdir)/profile_reader.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-profile_reader.Tpo $(DEPDIR)/profile_merger-profile_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_reader.cc' object='profile_merger-profile_reader.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-profile_reader.obj `if test -f 'profile_reader.cc'; then $(CYGPATH_W) 'profile_reader.cc'; else $(CYGPATH_W) '$(srcdir)/profile_reader.cc'; fi`
-
-profile_merger-profile_merger.o: profile_merger.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-profile_merger.o -MD -MP -MF $(DEPDIR)/profile_merger-profile_merger.Tpo -c -o profile_merger-profile_merger.o `test -f 'profile_merger.cc' || echo '$(srcdir)/'`profile_merger.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-profile_merger.Tpo $(DEPDIR)/profile_merger-profile_merger.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_merger.cc' object='profile_merger-profile_merger.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-profile_merger.o `test -f 'profile_merger.cc' || echo '$(srcdir)/'`profile_merger.cc
-
-profile_merger-profile_merger.obj: profile_merger.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -MT profile_merger-profile_merger.obj -MD -MP -MF $(DEPDIR)/profile_merger-profile_merger.Tpo -c -o profile_merger-profile_merger.obj `if test -f 'profile_merger.cc'; then $(CYGPATH_W) 'profile_merger.cc'; else $(CYGPATH_W) '$(srcdir)/profile_merger.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_merger-profile_merger.Tpo $(DEPDIR)/profile_merger-profile_merger.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_merger.cc' object='profile_merger-profile_merger.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_merger_CXXFLAGS) $(CXXFLAGS) -c -o profile_merger-profile_merger.obj `if test -f 'profile_merger.cc'; then $(CYGPATH_W) 'profile_merger.cc'; else $(CYGPATH_W) '$(srcdir)/profile_merger.cc'; fi`
-
-profile_update-addr2line.o: addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-addr2line.o -MD -MP -MF $(DEPDIR)/profile_update-addr2line.Tpo -c -o profile_update-addr2line.o `test -f 'addr2line.cc' || echo '$(srcdir)/'`addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-addr2line.Tpo $(DEPDIR)/profile_update-addr2line.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='addr2line.cc' object='profile_update-addr2line.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-addr2line.o `test -f 'addr2line.cc' || echo '$(srcdir)/'`addr2line.cc
-
-profile_update-addr2line.obj: addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-addr2line.obj -MD -MP -MF $(DEPDIR)/profile_update-addr2line.Tpo -c -o profile_update-addr2line.obj `if test -f 'addr2line.cc'; then $(CYGPATH_W) 'addr2line.cc'; else $(CYGPATH_W) '$(srcdir)/addr2line.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-addr2line.Tpo $(DEPDIR)/profile_update-addr2line.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='addr2line.cc' object='profile_update-addr2line.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-addr2line.obj `if test -f 'addr2line.cc'; then $(CYGPATH_W) 'addr2line.cc'; else $(CYGPATH_W) '$(srcdir)/addr2line.cc'; fi`
-
-profile_update-gcov.o: gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-gcov.o -MD -MP -MF $(DEPDIR)/profile_update-gcov.Tpo -c -o profile_update-gcov.o `test -f 'gcov.cc' || echo '$(srcdir)/'`gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-gcov.Tpo $(DEPDIR)/profile_update-gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='gcov.cc' object='profile_update-gcov.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-gcov.o `test -f 'gcov.cc' || echo '$(srcdir)/'`gcov.cc
-
-profile_update-gcov.obj: gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-gcov.obj -MD -MP -MF $(DEPDIR)/profile_update-gcov.Tpo -c -o profile_update-gcov.obj `if test -f 'gcov.cc'; then $(CYGPATH_W) 'gcov.cc'; else $(CYGPATH_W) '$(srcdir)/gcov.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-gcov.Tpo $(DEPDIR)/profile_update-gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='gcov.cc' object='profile_update-gcov.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-gcov.obj `if test -f 'gcov.cc'; then $(CYGPATH_W) 'gcov.cc'; else $(CYGPATH_W) '$(srcdir)/gcov.cc'; fi`
-
-profile_update-instruction_map.o: instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-instruction_map.o -MD -MP -MF $(DEPDIR)/profile_update-instruction_map.Tpo -c -o profile_update-instruction_map.o `test -f 'instruction_map.cc' || echo '$(srcdir)/'`instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-instruction_map.Tpo $(DEPDIR)/profile_update-instruction_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='instruction_map.cc' object='profile_update-instruction_map.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-instruction_map.o `test -f 'instruction_map.cc' || echo '$(srcdir)/'`instruction_map.cc
-
-profile_update-instruction_map.obj: instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-instruction_map.obj -MD -MP -MF $(DEPDIR)/profile_update-instruction_map.Tpo -c -o profile_update-instruction_map.obj `if test -f 'instruction_map.cc'; then $(CYGPATH_W) 'instruction_map.cc'; else $(CYGPATH_W) '$(srcdir)/instruction_map.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-instruction_map.Tpo $(DEPDIR)/profile_update-instruction_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='instruction_map.cc' object='profile_update-instruction_map.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-instruction_map.obj `if test -f 'instruction_map.cc'; then $(CYGPATH_W) 'instruction_map.cc'; else $(CYGPATH_W) '$(srcdir)/instruction_map.cc'; fi`
-
-profile_update-llvm_profile_writer.o: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-llvm_profile_writer.o -MD -MP -MF $(DEPDIR)/profile_update-llvm_profile_writer.Tpo -c -o profile_update-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-llvm_profile_writer.Tpo $(DEPDIR)/profile_update-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='profile_update-llvm_profile_writer.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-
-profile_update-llvm_profile_writer.obj: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-llvm_profile_writer.obj -MD -MP -MF $(DEPDIR)/profile_update-llvm_profile_writer.Tpo -c -o profile_update-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-llvm_profile_writer.Tpo $(DEPDIR)/profile_update-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='profile_update-llvm_profile_writer.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
-
-profile_update-module_grouper.o: module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-module_grouper.o -MD -MP -MF $(DEPDIR)/profile_update-module_grouper.Tpo -c -o profile_update-module_grouper.o `test -f 'module_grouper.cc' || echo '$(srcdir)/'`module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-module_grouper.Tpo $(DEPDIR)/profile_update-module_grouper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='module_grouper.cc' object='profile_update-module_grouper.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-module_grouper.o `test -f 'module_grouper.cc' || echo '$(srcdir)/'`module_grouper.cc
-
-profile_update-module_grouper.obj: module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-module_grouper.obj -MD -MP -MF $(DEPDIR)/profile_update-module_grouper.Tpo -c -o profile_update-module_grouper.obj `if test -f 'module_grouper.cc'; then $(CYGPATH_W) 'module_grouper.cc'; else $(CYGPATH_W) '$(srcdir)/module_grouper.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-module_grouper.Tpo $(DEPDIR)/profile_update-module_grouper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='module_grouper.cc' object='profile_update-module_grouper.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-module_grouper.obj `if test -f 'module_grouper.cc'; then $(CYGPATH_W) 'module_grouper.cc'; else $(CYGPATH_W) '$(srcdir)/module_grouper.cc'; fi`
-
-profile_update-profile_creator.o: profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-profile_creator.o -MD -MP -MF $(DEPDIR)/profile_update-profile_creator.Tpo -c -o profile_update-profile_creator.o `test -f 'profile_creator.cc' || echo '$(srcdir)/'`profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-profile_creator.Tpo $(DEPDIR)/profile_update-profile_creator.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_creator.cc' object='profile_update-profile_creator.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-profile_creator.o `test -f 'profile_creator.cc' || echo '$(srcdir)/'`profile_creator.cc
-
-profile_update-profile_creator.obj: profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-profile_creator.obj -MD -MP -MF $(DEPDIR)/profile_update-profile_creator.Tpo -c -o profile_update-profile_creator.obj `if test -f 'profile_creator.cc'; then $(CYGPATH_W) 'profile_creator.cc'; else $(CYGPATH_W) '$(srcdir)/profile_creator.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-profile_creator.Tpo $(DEPDIR)/profile_update-profile_creator.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_creator.cc' object='profile_update-profile_creator.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-profile_creator.obj `if test -f 'profile_creator.cc'; then $(CYGPATH_W) 'profile_creator.cc'; else $(CYGPATH_W) '$(srcdir)/profile_creator.cc'; fi`
-
-profile_update-profile_writer.o: profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-profile_writer.o -MD -MP -MF $(DEPDIR)/profile_update-profile_writer.Tpo -c -o profile_update-profile_writer.o `test -f 'profile_writer.cc' || echo '$(srcdir)/'`profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-profile_writer.Tpo $(DEPDIR)/profile_update-profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_writer.cc' object='profile_update-profile_writer.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-profile_writer.o `test -f 'profile_writer.cc' || echo '$(srcdir)/'`profile_writer.cc
-
-profile_update-profile_writer.obj: profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-profile_writer.obj -MD -MP -MF $(DEPDIR)/profile_update-profile_writer.Tpo -c -o profile_update-profile_writer.obj `if test -f 'profile_writer.cc'; then $(CYGPATH_W) 'profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/profile_writer.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-profile_writer.Tpo $(DEPDIR)/profile_update-profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_writer.cc' object='profile_update-profile_writer.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-profile_writer.obj `if test -f 'profile_writer.cc'; then $(CYGPATH_W) 'profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/profile_writer.cc'; fi`
-
-profile_update-sample_reader.o: sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-sample_reader.o -MD -MP -MF $(DEPDIR)/profile_update-sample_reader.Tpo -c -o profile_update-sample_reader.o `test -f 'sample_reader.cc' || echo '$(srcdir)/'`sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-sample_reader.Tpo $(DEPDIR)/profile_update-sample_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_reader.cc' object='profile_update-sample_reader.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-sample_reader.o `test -f 'sample_reader.cc' || echo '$(srcdir)/'`sample_reader.cc
-
-profile_update-sample_reader.obj: sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-sample_reader.obj -MD -MP -MF $(DEPDIR)/profile_update-sample_reader.Tpo -c -o profile_update-sample_reader.obj `if test -f 'sample_reader.cc'; then $(CYGPATH_W) 'sample_reader.cc'; else $(CYGPATH_W) '$(srcdir)/sample_reader.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-sample_reader.Tpo $(DEPDIR)/profile_update-sample_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_reader.cc' object='profile_update-sample_reader.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-sample_reader.obj `if test -f 'sample_reader.cc'; then $(CYGPATH_W) 'sample_reader.cc'; else $(CYGPATH_W) '$(srcdir)/sample_reader.cc'; fi`
-
-profile_update-source_info.o: source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-source_info.o -MD -MP -MF $(DEPDIR)/profile_update-source_info.Tpo -c -o profile_update-source_info.o `test -f 'source_info.cc' || echo '$(srcdir)/'`source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-source_info.Tpo $(DEPDIR)/profile_update-source_info.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='source_info.cc' object='profile_update-source_info.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-source_info.o `test -f 'source_info.cc' || echo '$(srcdir)/'`source_info.cc
-
-profile_update-source_info.obj: source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-source_info.obj -MD -MP -MF $(DEPDIR)/profile_update-source_info.Tpo -c -o profile_update-source_info.obj `if test -f 'source_info.cc'; then $(CYGPATH_W) 'source_info.cc'; else $(CYGPATH_W) '$(srcdir)/source_info.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-source_info.Tpo $(DEPDIR)/profile_update-source_info.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='source_info.cc' object='profile_update-source_info.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-source_info.obj `if test -f 'source_info.cc'; then $(CYGPATH_W) 'source_info.cc'; else $(CYGPATH_W) '$(srcdir)/source_info.cc'; fi`
-
-profile_update-symbol_map.o: symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-symbol_map.o -MD -MP -MF $(DEPDIR)/profile_update-symbol_map.Tpo -c -o profile_update-symbol_map.o `test -f 'symbol_map.cc' || echo '$(srcdir)/'`symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-symbol_map.Tpo $(DEPDIR)/profile_update-symbol_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='symbol_map.cc' object='profile_update-symbol_map.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-symbol_map.o `test -f 'symbol_map.cc' || echo '$(srcdir)/'`symbol_map.cc
-
-profile_update-symbol_map.obj: symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-symbol_map.obj -MD -MP -MF $(DEPDIR)/profile_update-symbol_map.Tpo -c -o profile_update-symbol_map.obj `if test -f 'symbol_map.cc'; then $(CYGPATH_W) 'symbol_map.cc'; else $(CYGPATH_W) '$(srcdir)/symbol_map.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-symbol_map.Tpo $(DEPDIR)/profile_update-symbol_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='symbol_map.cc' object='profile_update-symbol_map.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-symbol_map.obj `if test -f 'symbol_map.cc'; then $(CYGPATH_W) 'symbol_map.cc'; else $(CYGPATH_W) '$(srcdir)/symbol_map.cc'; fi`
-
-profile_update-profile.o: profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-profile.o -MD -MP -MF $(DEPDIR)/profile_update-profile.Tpo -c -o profile_update-profile.o `test -f 'profile.cc' || echo '$(srcdir)/'`profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-profile.Tpo $(DEPDIR)/profile_update-profile.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile.cc' object='profile_update-profile.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-profile.o `test -f 'profile.cc' || echo '$(srcdir)/'`profile.cc
-
-profile_update-profile.obj: profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-profile.obj -MD -MP -MF $(DEPDIR)/profile_update-profile.Tpo -c -o profile_update-profile.obj `if test -f 'profile.cc'; then $(CYGPATH_W) 'profile.cc'; else $(CYGPATH_W) '$(srcdir)/profile.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-profile.Tpo $(DEPDIR)/profile_update-profile.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile.cc' object='profile_update-profile.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-profile.obj `if test -f 'profile.cc'; then $(CYGPATH_W) 'profile.cc'; else $(CYGPATH_W) '$(srcdir)/profile.cc'; fi`
-
-profile_update-profile_reader.o: profile_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-profile_reader.o -MD -MP -MF $(DEPDIR)/profile_update-profile_reader.Tpo -c -o profile_update-profile_reader.o `test -f 'profile_reader.cc' || echo '$(srcdir)/'`profile_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-profile_reader.Tpo $(DEPDIR)/profile_update-profile_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_reader.cc' object='profile_update-profile_reader.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-profile_reader.o `test -f 'profile_reader.cc' || echo '$(srcdir)/'`profile_reader.cc
-
-profile_update-profile_reader.obj: profile_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-profile_reader.obj -MD -MP -MF $(DEPDIR)/profile_update-profile_reader.Tpo -c -o profile_update-profile_reader.obj `if test -f 'profile_reader.cc'; then $(CYGPATH_W) 'profile_reader.cc'; else $(CYGPATH_W) '$(srcdir)/profile_reader.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-profile_reader.Tpo $(DEPDIR)/profile_update-profile_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_reader.cc' object='profile_update-profile_reader.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-profile_reader.obj `if test -f 'profile_reader.cc'; then $(CYGPATH_W) 'profile_reader.cc'; else $(CYGPATH_W) '$(srcdir)/profile_reader.cc'; fi`
-
-profile_update-profile_update.o: profile_update.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-profile_update.o -MD -MP -MF $(DEPDIR)/profile_update-profile_update.Tpo -c -o profile_update-profile_update.o `test -f 'profile_update.cc' || echo '$(srcdir)/'`profile_update.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-profile_update.Tpo $(DEPDIR)/profile_update-profile_update.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_update.cc' object='profile_update-profile_update.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-profile_update.o `test -f 'profile_update.cc' || echo '$(srcdir)/'`profile_update.cc
-
-profile_update-profile_update.obj: profile_update.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -MT profile_update-profile_update.obj -MD -MP -MF $(DEPDIR)/profile_update-profile_update.Tpo -c -o profile_update-profile_update.obj `if test -f 'profile_update.cc'; then $(CYGPATH_W) 'profile_update.cc'; else $(CYGPATH_W) '$(srcdir)/profile_update.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/profile_update-profile_update.Tpo $(DEPDIR)/profile_update-profile_update.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_update.cc' object='profile_update-profile_update.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(profile_update_CXXFLAGS) $(CXXFLAGS) -c -o profile_update-profile_update.obj `if test -f 'profile_update.cc'; then $(CYGPATH_W) 'profile_update.cc'; else $(CYGPATH_W) '$(srcdir)/profile_update.cc'; fi`
-
-sample_merger-addr2line.o: addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-addr2line.o -MD -MP -MF $(DEPDIR)/sample_merger-addr2line.Tpo -c -o sample_merger-addr2line.o `test -f 'addr2line.cc' || echo '$(srcdir)/'`addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-addr2line.Tpo $(DEPDIR)/sample_merger-addr2line.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='addr2line.cc' object='sample_merger-addr2line.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-addr2line.o `test -f 'addr2line.cc' || echo '$(srcdir)/'`addr2line.cc
-
-sample_merger-addr2line.obj: addr2line.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-addr2line.obj -MD -MP -MF $(DEPDIR)/sample_merger-addr2line.Tpo -c -o sample_merger-addr2line.obj `if test -f 'addr2line.cc'; then $(CYGPATH_W) 'addr2line.cc'; else $(CYGPATH_W) '$(srcdir)/addr2line.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-addr2line.Tpo $(DEPDIR)/sample_merger-addr2line.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='addr2line.cc' object='sample_merger-addr2line.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-addr2line.obj `if test -f 'addr2line.cc'; then $(CYGPATH_W) 'addr2line.cc'; else $(CYGPATH_W) '$(srcdir)/addr2line.cc'; fi`
-
-sample_merger-gcov.o: gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-gcov.o -MD -MP -MF $(DEPDIR)/sample_merger-gcov.Tpo -c -o sample_merger-gcov.o `test -f 'gcov.cc' || echo '$(srcdir)/'`gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-gcov.Tpo $(DEPDIR)/sample_merger-gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='gcov.cc' object='sample_merger-gcov.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-gcov.o `test -f 'gcov.cc' || echo '$(srcdir)/'`gcov.cc
-
-sample_merger-gcov.obj: gcov.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-gcov.obj -MD -MP -MF $(DEPDIR)/sample_merger-gcov.Tpo -c -o sample_merger-gcov.obj `if test -f 'gcov.cc'; then $(CYGPATH_W) 'gcov.cc'; else $(CYGPATH_W) '$(srcdir)/gcov.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-gcov.Tpo $(DEPDIR)/sample_merger-gcov.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='gcov.cc' object='sample_merger-gcov.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-gcov.obj `if test -f 'gcov.cc'; then $(CYGPATH_W) 'gcov.cc'; else $(CYGPATH_W) '$(srcdir)/gcov.cc'; fi`
-
-sample_merger-instruction_map.o: instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-instruction_map.o -MD -MP -MF $(DEPDIR)/sample_merger-instruction_map.Tpo -c -o sample_merger-instruction_map.o `test -f 'instruction_map.cc' || echo '$(srcdir)/'`instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-instruction_map.Tpo $(DEPDIR)/sample_merger-instruction_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='instruction_map.cc' object='sample_merger-instruction_map.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-instruction_map.o `test -f 'instruction_map.cc' || echo '$(srcdir)/'`instruction_map.cc
-
-sample_merger-instruction_map.obj: instruction_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-instruction_map.obj -MD -MP -MF $(DEPDIR)/sample_merger-instruction_map.Tpo -c -o sample_merger-instruction_map.obj `if test -f 'instruction_map.cc'; then $(CYGPATH_W) 'instruction_map.cc'; else $(CYGPATH_W) '$(srcdir)/instruction_map.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-instruction_map.Tpo $(DEPDIR)/sample_merger-instruction_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='instruction_map.cc' object='sample_merger-instruction_map.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-instruction_map.obj `if test -f 'instruction_map.cc'; then $(CYGPATH_W) 'instruction_map.cc'; else $(CYGPATH_W) '$(srcdir)/instruction_map.cc'; fi`
-
-sample_merger-llvm_profile_writer.o: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-llvm_profile_writer.o -MD -MP -MF $(DEPDIR)/sample_merger-llvm_profile_writer.Tpo -c -o sample_merger-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-llvm_profile_writer.Tpo $(DEPDIR)/sample_merger-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='sample_merger-llvm_profile_writer.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-llvm_profile_writer.o `test -f 'llvm_profile_writer.cc' || echo '$(srcdir)/'`llvm_profile_writer.cc
-
-sample_merger-llvm_profile_writer.obj: llvm_profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-llvm_profile_writer.obj -MD -MP -MF $(DEPDIR)/sample_merger-llvm_profile_writer.Tpo -c -o sample_merger-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-llvm_profile_writer.Tpo $(DEPDIR)/sample_merger-llvm_profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='llvm_profile_writer.cc' object='sample_merger-llvm_profile_writer.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-llvm_profile_writer.obj `if test -f 'llvm_profile_writer.cc'; then $(CYGPATH_W) 'llvm_profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/llvm_profile_writer.cc'; fi`
-
-sample_merger-module_grouper.o: module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-module_grouper.o -MD -MP -MF $(DEPDIR)/sample_merger-module_grouper.Tpo -c -o sample_merger-module_grouper.o `test -f 'module_grouper.cc' || echo '$(srcdir)/'`module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-module_grouper.Tpo $(DEPDIR)/sample_merger-module_grouper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='module_grouper.cc' object='sample_merger-module_grouper.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-module_grouper.o `test -f 'module_grouper.cc' || echo '$(srcdir)/'`module_grouper.cc
-
-sample_merger-module_grouper.obj: module_grouper.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-module_grouper.obj -MD -MP -MF $(DEPDIR)/sample_merger-module_grouper.Tpo -c -o sample_merger-module_grouper.obj `if test -f 'module_grouper.cc'; then $(CYGPATH_W) 'module_grouper.cc'; else $(CYGPATH_W) '$(srcdir)/module_grouper.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-module_grouper.Tpo $(DEPDIR)/sample_merger-module_grouper.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='module_grouper.cc' object='sample_merger-module_grouper.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-module_grouper.obj `if test -f 'module_grouper.cc'; then $(CYGPATH_W) 'module_grouper.cc'; else $(CYGPATH_W) '$(srcdir)/module_grouper.cc'; fi`
-
-sample_merger-profile_creator.o: profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-profile_creator.o -MD -MP -MF $(DEPDIR)/sample_merger-profile_creator.Tpo -c -o sample_merger-profile_creator.o `test -f 'profile_creator.cc' || echo '$(srcdir)/'`profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-profile_creator.Tpo $(DEPDIR)/sample_merger-profile_creator.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_creator.cc' object='sample_merger-profile_creator.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-profile_creator.o `test -f 'profile_creator.cc' || echo '$(srcdir)/'`profile_creator.cc
-
-sample_merger-profile_creator.obj: profile_creator.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-profile_creator.obj -MD -MP -MF $(DEPDIR)/sample_merger-profile_creator.Tpo -c -o sample_merger-profile_creator.obj `if test -f 'profile_creator.cc'; then $(CYGPATH_W) 'profile_creator.cc'; else $(CYGPATH_W) '$(srcdir)/profile_creator.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-profile_creator.Tpo $(DEPDIR)/sample_merger-profile_creator.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_creator.cc' object='sample_merger-profile_creator.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-profile_creator.obj `if test -f 'profile_creator.cc'; then $(CYGPATH_W) 'profile_creator.cc'; else $(CYGPATH_W) '$(srcdir)/profile_creator.cc'; fi`
-
-sample_merger-profile_writer.o: profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-profile_writer.o -MD -MP -MF $(DEPDIR)/sample_merger-profile_writer.Tpo -c -o sample_merger-profile_writer.o `test -f 'profile_writer.cc' || echo '$(srcdir)/'`profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-profile_writer.Tpo $(DEPDIR)/sample_merger-profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_writer.cc' object='sample_merger-profile_writer.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-profile_writer.o `test -f 'profile_writer.cc' || echo '$(srcdir)/'`profile_writer.cc
-
-sample_merger-profile_writer.obj: profile_writer.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-profile_writer.obj -MD -MP -MF $(DEPDIR)/sample_merger-profile_writer.Tpo -c -o sample_merger-profile_writer.obj `if test -f 'profile_writer.cc'; then $(CYGPATH_W) 'profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/profile_writer.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-profile_writer.Tpo $(DEPDIR)/sample_merger-profile_writer.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile_writer.cc' object='sample_merger-profile_writer.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-profile_writer.obj `if test -f 'profile_writer.cc'; then $(CYGPATH_W) 'profile_writer.cc'; else $(CYGPATH_W) '$(srcdir)/profile_writer.cc'; fi`
-
-sample_merger-sample_reader.o: sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-sample_reader.o -MD -MP -MF $(DEPDIR)/sample_merger-sample_reader.Tpo -c -o sample_merger-sample_reader.o `test -f 'sample_reader.cc' || echo '$(srcdir)/'`sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-sample_reader.Tpo $(DEPDIR)/sample_merger-sample_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_reader.cc' object='sample_merger-sample_reader.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-sample_reader.o `test -f 'sample_reader.cc' || echo '$(srcdir)/'`sample_reader.cc
-
-sample_merger-sample_reader.obj: sample_reader.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-sample_reader.obj -MD -MP -MF $(DEPDIR)/sample_merger-sample_reader.Tpo -c -o sample_merger-sample_reader.obj `if test -f 'sample_reader.cc'; then $(CYGPATH_W) 'sample_reader.cc'; else $(CYGPATH_W) '$(srcdir)/sample_reader.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-sample_reader.Tpo $(DEPDIR)/sample_merger-sample_reader.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_reader.cc' object='sample_merger-sample_reader.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-sample_reader.obj `if test -f 'sample_reader.cc'; then $(CYGPATH_W) 'sample_reader.cc'; else $(CYGPATH_W) '$(srcdir)/sample_reader.cc'; fi`
-
-sample_merger-source_info.o: source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-source_info.o -MD -MP -MF $(DEPDIR)/sample_merger-source_info.Tpo -c -o sample_merger-source_info.o `test -f 'source_info.cc' || echo '$(srcdir)/'`source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-source_info.Tpo $(DEPDIR)/sample_merger-source_info.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='source_info.cc' object='sample_merger-source_info.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-source_info.o `test -f 'source_info.cc' || echo '$(srcdir)/'`source_info.cc
-
-sample_merger-source_info.obj: source_info.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-source_info.obj -MD -MP -MF $(DEPDIR)/sample_merger-source_info.Tpo -c -o sample_merger-source_info.obj `if test -f 'source_info.cc'; then $(CYGPATH_W) 'source_info.cc'; else $(CYGPATH_W) '$(srcdir)/source_info.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-source_info.Tpo $(DEPDIR)/sample_merger-source_info.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='source_info.cc' object='sample_merger-source_info.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-source_info.obj `if test -f 'source_info.cc'; then $(CYGPATH_W) 'source_info.cc'; else $(CYGPATH_W) '$(srcdir)/source_info.cc'; fi`
-
-sample_merger-symbol_map.o: symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-symbol_map.o -MD -MP -MF $(DEPDIR)/sample_merger-symbol_map.Tpo -c -o sample_merger-symbol_map.o `test -f 'symbol_map.cc' || echo '$(srcdir)/'`symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-symbol_map.Tpo $(DEPDIR)/sample_merger-symbol_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='symbol_map.cc' object='sample_merger-symbol_map.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-symbol_map.o `test -f 'symbol_map.cc' || echo '$(srcdir)/'`symbol_map.cc
-
-sample_merger-symbol_map.obj: symbol_map.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-symbol_map.obj -MD -MP -MF $(DEPDIR)/sample_merger-symbol_map.Tpo -c -o sample_merger-symbol_map.obj `if test -f 'symbol_map.cc'; then $(CYGPATH_W) 'symbol_map.cc'; else $(CYGPATH_W) '$(srcdir)/symbol_map.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-symbol_map.Tpo $(DEPDIR)/sample_merger-symbol_map.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='symbol_map.cc' object='sample_merger-symbol_map.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-symbol_map.obj `if test -f 'symbol_map.cc'; then $(CYGPATH_W) 'symbol_map.cc'; else $(CYGPATH_W) '$(srcdir)/symbol_map.cc'; fi`
-
-sample_merger-profile.o: profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-profile.o -MD -MP -MF $(DEPDIR)/sample_merger-profile.Tpo -c -o sample_merger-profile.o `test -f 'profile.cc' || echo '$(srcdir)/'`profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-profile.Tpo $(DEPDIR)/sample_merger-profile.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile.cc' object='sample_merger-profile.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-profile.o `test -f 'profile.cc' || echo '$(srcdir)/'`profile.cc
-
-sample_merger-profile.obj: profile.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-profile.obj -MD -MP -MF $(DEPDIR)/sample_merger-profile.Tpo -c -o sample_merger-profile.obj `if test -f 'profile.cc'; then $(CYGPATH_W) 'profile.cc'; else $(CYGPATH_W) '$(srcdir)/profile.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-profile.Tpo $(DEPDIR)/sample_merger-profile.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='profile.cc' object='sample_merger-profile.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-profile.obj `if test -f 'profile.cc'; then $(CYGPATH_W) 'profile.cc'; else $(CYGPATH_W) '$(srcdir)/profile.cc'; fi`
-
-sample_merger-sample_merger.o: sample_merger.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-sample_merger.o -MD -MP -MF $(DEPDIR)/sample_merger-sample_merger.Tpo -c -o sample_merger-sample_merger.o `test -f 'sample_merger.cc' || echo '$(srcdir)/'`sample_merger.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-sample_merger.Tpo $(DEPDIR)/sample_merger-sample_merger.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_merger.cc' object='sample_merger-sample_merger.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-sample_merger.o `test -f 'sample_merger.cc' || echo '$(srcdir)/'`sample_merger.cc
-
-sample_merger-sample_merger.obj: sample_merger.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -MT sample_merger-sample_merger.obj -MD -MP -MF $(DEPDIR)/sample_merger-sample_merger.Tpo -c -o sample_merger-sample_merger.obj `if test -f 'sample_merger.cc'; then $(CYGPATH_W) 'sample_merger.cc'; else $(CYGPATH_W) '$(srcdir)/sample_merger.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/sample_merger-sample_merger.Tpo $(DEPDIR)/sample_merger-sample_merger.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='sample_merger.cc' object='sample_merger-sample_merger.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sample_merger_CXXFLAGS) $(CXXFLAGS) -c -o sample_merger-sample_merger.obj `if test -f 'sample_merger.cc'; then $(CYGPATH_W) 'sample_merger.cc'; else $(CYGPATH_W) '$(srcdir)/sample_merger.cc'; fi`
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique

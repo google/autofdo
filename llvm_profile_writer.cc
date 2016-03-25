@@ -31,6 +31,7 @@
 #include "profile_writer.h"
 
 DECLARE_bool(debug_dump);
+DECLARE_string(format);
 
 namespace autofdo {
 
@@ -81,6 +82,7 @@ void LLVMProfileBuilder::VisitTopSymbol(const string &name,
                << "': " << EC.message();
 
   profile.setName(name_ref);
+  inline_stack_.clear();
   inline_stack_.push_back(&profile);
 }
 
@@ -89,6 +91,9 @@ void LLVMProfileBuilder::VisitCallsite(const Callsite &callsite) {
   uint32 offset = callsite.first;
   uint32 line = offset >> 16;
   uint32 discriminator = offset & 0xffff;
+  while (inline_stack_.size() > level_) {
+    inline_stack_.pop_back();
+  }
   auto &caller_profile = *(inline_stack_.back());
   auto &callee_profile =
       caller_profile.functionSamplesAt(llvm::sampleprof::LineLocation(
@@ -148,10 +153,10 @@ bool LLVMProfileWriter::WriteToFile(const string &output_filename) {
   // Populate the symbol table. This table contains all the symbols
   // for functions found in the binary.
   StringIndexMap name_table;
-  StringTableUpdater::Update(symbol_map_, &name_table);
+  StringTableUpdater::Update(*symbol_map_, &name_table);
 
   // Gather profiles for all the symbols.
-  return LLVMProfileBuilder::Write(output_filename, format_, symbol_map_,
+  return LLVMProfileBuilder::Write(output_filename, format_, *symbol_map_,
                                    name_table);
 }
 

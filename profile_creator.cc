@@ -16,7 +16,6 @@
 
 #include <memory>
 
-#include "config.h"
 #include "profile_creator.h"
 #include "gflags/gflags.h"
 #include "base/common.h"
@@ -28,10 +27,6 @@
 #include "symbol_map.h"
 #include "symbolize/elf_reader.h"
 #include "module_grouper.h"
-
-#if defined(HAVE_LLVM)
-#include "llvm/ProfileData/SampleProfWriter.h"
-#endif
 
 namespace autofdo {
 uint64 ProfileCreator::GetTotalCountFromTextProfile(
@@ -45,12 +40,12 @@ uint64 ProfileCreator::GetTotalCountFromTextProfile(
 
 bool ProfileCreator::CreateProfile(const string &input_profile_name,
                                    const string &profiler,
-                                   const string &output_profile_name,
-                                   const string &output_format) {
+                                   ProfileWriter *writer,
+                                   const string &output_profile_name) {
   if (!ReadSample(input_profile_name, profiler)) {
     return false;
   }
-  if (!CreateProfileFromSample(output_profile_name, output_format)) {
+  if (!CreateProfileFromSample(writer, output_profile_name)) {
     return false;
   }
   return true;
@@ -105,39 +100,21 @@ bool ProfileCreator::ComputeProfile(SymbolMap *symbol_map,
   return true;
 }
 
-bool ProfileCreator::CreateProfileFromSample(const string &output_profile_name,
-                                             const string &output_format) {
+bool ProfileCreator::CreateProfileFromSample(ProfileWriter *writer,
+                                             const string &output_name) {
   SymbolMap symbol_map(binary_);
   Addr2line *addr2line = nullptr;
-  if (!ComputeProfile(&symbol_map, &addr2line))
-    return false;
+  if (!ComputeProfile(&symbol_map, &addr2line)) return false;
 
-  ModuleGrouper *grouper = ModuleGrouper::GroupModule(
-      binary_, GCOV_ELF_SECTION_NAME, &symbol_map);
+  ModuleGrouper *grouper =
+      ModuleGrouper::GroupModule(binary_, GCOV_ELF_SECTION_NAME, &symbol_map);
 
-  ProfileWriter *writer = nullptr;
-  if (output_format == "gcov") {
-    writer = new AutoFDOProfileWriter(symbol_map, grouper->module_map(),
-                                      FLAGS_gcov_version);
-  }
-#if defined(HAVE_LLVM)
-  else if (output_format == "llvm-text") {
-    writer = new LLVMProfileWriter(symbol_map, grouper->module_map(),
-                                   llvm::sampleprof::SPF_Text);
-  } else if (output_format == "llvm-binary") {
-    writer = new LLVMProfileWriter(symbol_map, grouper->module_map(),
-                                   llvm::sampleprof::SPF_Binary);
-  }
-#endif
-  else {
-    LOG(ERROR) << "Unsupported output profile format: " << output_format;
-    return false;
-  }
+  writer->setSymbolMap(&symbol_map);
+  writer->setModuleMap(&grouper->module_map());
+  bool ret = writer->WriteToFile(output_name);
 
-  bool ret = writer->WriteToFile(output_profile_name);
   delete addr2line;
   delete grouper;
-  delete writer;
   return ret;
 }
 

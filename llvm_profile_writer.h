@@ -6,8 +6,24 @@
 #if defined(HAVE_LLVM)
 #include "profile_writer.h"
 #include "llvm/ProfileData/SampleProf.h"
+#include "llvm/ProfileData/SampleProfWriter.h"
 
 namespace autofdo {
+
+// Writer class for LLVM profiles.
+class LLVMProfileWriter : public ProfileWriter {
+ public:
+  explicit LLVMProfileWriter(
+      llvm::sampleprof::SampleProfileFormat output_format)
+      : format_(output_format) {}
+
+  bool WriteToFile(const string &output_filename) override;
+
+ private:
+  llvm::sampleprof::SampleProfileFormat format_;
+
+  DISALLOW_COPY_AND_ASSIGN(LLVMProfileWriter);
+};
 
 class LLVMProfileBuilder : public SymbolTraverser {
  public:
