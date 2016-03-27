@@ -20,6 +20,7 @@
 #include "addr2line.h"
 #include "sample_reader.h"
 #include "symbol_map.h"
+#include "profile_writer.h"
 
 namespace autofdo {
 
@@ -36,18 +37,17 @@ class ProfileCreator {
   static uint64 GetTotalCountFromTextProfile(const string &input_profile_name);
 
   // Creates AutoFDO profile, returns true if success, false otherwise.
-  bool CreateProfile(const string &input_profile_name,
-                     const string &profiler,
-                     const string &output_profile_name,
-                     const string &output_format);
+  bool CreateProfile(const string &input_profile_name, const string &profiler,
+                     autofdo::ProfileWriter *writer,
+                     const string &output_profile_name);
 
   // Reads samples from the input profile.
   bool ReadSample(const string &input_profile_name,
                   const string &profiler);
 
   // Creates output profile after reading from the input profile.
-  bool CreateProfileFromSample(const string &output_profile_name,
-                               const string &output_format);
+  bool CreateProfileFromSample(autofdo::ProfileWriter *writer,
+                               const string &output_name);
 
   // Returns total number of samples collected.
   uint64 TotalSamples();

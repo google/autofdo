@@ -52,8 +52,8 @@ int main(int argc, char **argv) {
   }
 
   symbol_map.CalculateThreshold();
-  autofdo::AutoFDOProfileWriter writer(symbol_map,
-      module_map, FLAGS_gcov_version);
+  autofdo::AutoFDOProfileWriter writer(&symbol_map, &module_map,
+                                       FLAGS_gcov_version);
   if (!writer.WriteToFile(FLAGS_output_file)) {
     LOG(FATAL) << "Error writing to " << FLAGS_output_file;
   }

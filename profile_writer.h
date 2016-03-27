@@ -17,13 +17,8 @@
 #ifndef AUTOFDO_PROFILE_WRITER_H_
 #define AUTOFDO_PROFILE_WRITER_H_
 
-#include "config.h"
 #include "module_grouper.h"
 #include "symbol_map.h"
-
-#if defined(HAVE_LLVM)
-#include "llvm/ProfileData/SampleProfWriter.h"
-#endif
 
 namespace autofdo {
 
@@ -31,26 +26,31 @@ class SymbolMap;
 
 class ProfileWriter {
  public:
-  explicit ProfileWriter(const SymbolMap &symbol_map,
-                         const ModuleMap &module_map)
+  explicit ProfileWriter(const SymbolMap *symbol_map,
+                         const ModuleMap *module_map)
       : symbol_map_(symbol_map), module_map_(module_map) {}
+  explicit ProfileWriter() : symbol_map_(nullptr), module_map_(nullptr) {}
   virtual ~ProfileWriter() {}
 
   virtual bool WriteToFile(const string &output_file) = 0;
+  void setSymbolMap(const SymbolMap *symbol_map) { symbol_map_ = symbol_map; }
+  void setModuleMap(const ModuleMap *module_map) { module_map_ = module_map; }
   void Dump();
 
  protected:
-  const SymbolMap &symbol_map_;
-  const ModuleMap &module_map_;
+  const SymbolMap *symbol_map_;
+  const ModuleMap *module_map_;
 };
 
 class AutoFDOProfileWriter : public ProfileWriter {
  public:
-  explicit AutoFDOProfileWriter(const SymbolMap &symbol_map,
-                                const ModuleMap &module_map,
+  explicit AutoFDOProfileWriter(const SymbolMap *symbol_map,
+                                const ModuleMap *module_map,
                                 uint32 gcov_version)
       : ProfileWriter(symbol_map, module_map),
         gcov_version_(gcov_version) {}
+  explicit AutoFDOProfileWriter(uint32 gcov_version)
+      : gcov_version_(gcov_version) {}
 
   bool WriteToFile(const string &output_file) override;
 
@@ -193,26 +193,6 @@ class StringTableUpdater: public SymbolTraverser {
   StringIndexMap *map_;
   DISALLOW_COPY_AND_ASSIGN(StringTableUpdater);
 };
-
-#if defined(HAVE_LLVM)
-
-// Writer class for LLVM profiles.
-class LLVMProfileWriter : public ProfileWriter {
- public:
-  explicit LLVMProfileWriter(
-      const SymbolMap &symbol_map, const ModuleMap &module_map,
-      llvm::sampleprof::SampleProfileFormat output_format)
-      : ProfileWriter(symbol_map, module_map), format_(output_format) {}
-
-  bool WriteToFile(const string &output_filename) override;
-
- private:
-  llvm::sampleprof::SampleProfileFormat format_;
-
-  DISALLOW_COPY_AND_ASSIGN(LLVMProfileWriter);
-};
-
-#endif
 
 }  // namespace autofdo
 
