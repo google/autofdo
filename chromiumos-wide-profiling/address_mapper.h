@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-#include <list>
+#include <map>
 
 namespace quipper {
 
@@ -108,19 +108,32 @@ class AddressMapper {
     inline bool ContainsAddress(uint64_t addr) const {
       return (addr >= real_addr && addr <= real_addr + size - 1);
     }
-  };
 
-  // TODO(sque): implement with set or map to improve searching.
-  typedef std::list<MappedRange> MappingList;
+    inline bool Matches(const MappedRange &range) const {
+      return real_addr == range.real_addr && size == range.size;
+    }
+
+    bool operator<(const MappedRange &Other) {
+      return real_addr < Other.real_addr;
+    }
+  };
 
   // Removes an existing address mapping.
   // Returns true if successful, false if no mapped address range was found.
   bool Unmap(const MappedRange& range);
 
+private:
   // Container for all the existing mappings.
+  typedef std::map<uint64_t, MappedRange> MappingList;
+  // Map of real address to range
   MappingList mappings_;
-
-  bool CheckMappings() const;
+  // Map of start of mapped intervals to real address start
+  std::map<uint64_t, uint64_t> real_address_map_;
+  
+  // Insert a mapping
+  void insert(const MappedRange &range);
+  MappingList::iterator find(uint64_t addr);
+  MappingList::const_iterator find(uint64_t addr) const;
 };
 
 }  // namespace quipper
