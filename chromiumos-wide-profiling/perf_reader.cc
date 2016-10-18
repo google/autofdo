@@ -982,6 +982,7 @@ bool PerfReader::IsSupportedEventType(uint32_t type) {
   case PERF_RECORD_LOST:
   case PERF_RECORD_THROTTLE:
   case PERF_RECORD_UNTHROTTLE:
+  case PERF_RECORD_LOST_SAMPLES:
     return true;
   case PERF_RECORD_READ:
   case PERF_RECORD_MAX:
@@ -2156,6 +2157,8 @@ void PerfReader::MaybeSwapEventFields(event_t* event) {
       ByteSwap(&event->read.time_enabled);
       ByteSwap(&event->read.time_running);
       ByteSwap(&event->read.id);
+      break;
+    case PERF_RECORD_LOST_SAMPLES:
       break;
     default:
       LOG(FATAL) << "Unknown event type: " << type;
