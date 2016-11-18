@@ -170,7 +170,8 @@ bool AddressMapper::GetMappedAddress(const uint64_t real_addr,
                                      uint64_t* mapped_addr) const {
   CHECK(mapped_addr);
   MappingList::const_iterator iter = find(real_addr);
-  if (!iter->second.ContainsAddress(real_addr))
+  if (iter == mappings_.end() ||
+      !iter->second.ContainsAddress(real_addr))
     return false;
   *mapped_addr = iter->second.mapped_addr + real_addr - iter->second.real_addr;
   return true;
@@ -182,7 +183,8 @@ bool AddressMapper::GetMappedIDAndOffset(const uint64_t real_addr,
   CHECK(id);
   CHECK(offset);
   MappingList::const_iterator iter = find(real_addr);
-  if (!iter->second.ContainsAddress(real_addr))
+  if (iter == mappings_.end() ||
+      !iter->second.ContainsAddress(real_addr))
     return false;
 
   *id = iter->second.id;
