@@ -67,7 +67,7 @@ AC_DEFUN([AX_LLVM],
                       -ldl -lpthread -ltinfo"
       elif test "x$shared_mode" = "xshared"; then
         rpath="$($ac_llvm_config_path --libdir)"
-        LLVM_LDFLAGS="-rpath $rpath \
+        LLVM_LDFLAGS="-Wl,-rpath $rpath \
                       $($ac_llvm_config_path --ldflags) \
                       $($ac_llvm_config_path --libs $1)"
       fi
