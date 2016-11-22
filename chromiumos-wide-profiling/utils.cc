@@ -163,6 +163,7 @@ uint64_t GetSampleFieldsForEventType(uint32_t event_type,
   case PERF_RECORD_FORK:
   case PERF_RECORD_READ:
   case PERF_RECORD_MMAP2:
+  case PERF_RECORD_LOST_SAMPLES:
     // See perf_event.h "struct" sample_id and sample_id_all.
     mask = PERF_SAMPLE_TID | PERF_SAMPLE_TIME | PERF_SAMPLE_ID |
            PERF_SAMPLE_STREAM_ID | PERF_SAMPLE_CPU | PERF_SAMPLE_IDENTIFIER;
@@ -206,6 +207,9 @@ uint64_t GetPerfSampleDataOffset(const event_t& event) {
   case PERF_RECORD_MMAP2:
     offset = sizeof(event.mmap2) - sizeof(event.mmap2.filename) +
              GetUint64AlignedStringLength(event.mmap2.filename);
+    break;
+  case PERF_RECORD_LOST_SAMPLES:
+    offset = sizeof(event.lost_samples);
     break;
   default:
     LOG(FATAL) << "Unknown event type " << event.header.type;
