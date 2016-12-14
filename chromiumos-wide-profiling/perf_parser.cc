@@ -182,6 +182,7 @@ bool PerfParser::ProcessEvents() {
       case PERF_RECORD_UNTHROTTLE:
       case PERF_RECORD_READ:
       case PERF_RECORD_MAX:
+      case PERF_RECORD_FINISHED_ROUND:
         VLOG(1) << "Parsed event type: " << event.header.type
                 << ". Doing nothing.";
         break;
