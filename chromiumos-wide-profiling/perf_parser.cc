@@ -400,11 +400,7 @@ bool PerfParser::MapBranchStack(const uint32_t pid,
     parsed_entry.predicted = entry.flags.predicted;
     // Either predicted or mispredicted, not both. But don't use a CHECK here,
     // just exit gracefully because it's a minor issue.
-    if (entry.flags.predicted == entry.flags.mispred) {
-      LOG(ERROR) << "Branch stack entry predicted and mispred flags "
-                 << "both have value " << entry.flags.mispred;
-      return false;
-    }
+    // We can't check this because Atom doesn't have predicted/mispredicted flags
   }
 
   return true;
