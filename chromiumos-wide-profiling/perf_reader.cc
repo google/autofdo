@@ -983,11 +983,7 @@ bool PerfReader::IsSupportedEventType(uint32_t type) {
   case PERF_RECORD_THROTTLE:
   case PERF_RECORD_UNTHROTTLE:
     return true;
-  case PERF_RECORD_READ:
-  case PERF_RECORD_MAX:
-    return false;
   default:
-    LOG(FATAL) << "Unknown event type " << type;
     return false;
   }
 }
@@ -1740,7 +1736,12 @@ bool PerfReader::ReadPipedData(DataReader* data) {
                                         size_without_header);
       break;
     default:
-      LOG(WARNING) << "Event type " << header.type << " is not yet supported!";
+      // For unsupported event types, log a warning only if the type is an
+      // unknown type.
+      if (header.type < PERF_RECORD_USER_TYPE_START ||
+          header.type >= PERF_RECORD_HEADER_MAX) {
+        LOG(WARNING) << "Unknown event type: " << header.type;
+      }
       // Skip over the data in this event.
       data->SeekSet(data->Tell() + size_without_header);
       break;
