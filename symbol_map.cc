@@ -128,7 +128,7 @@ void Symbol::Merge(const Symbol *other) {
     pos_counts[pos_count.first] += pos_count.second;
   // Traverses all callsite, recursively Merge the callee symbol.
   for (const auto &callsite_symbol : other->callsites) {
-    pair<CallsiteMap::iterator, bool> ret = callsites.insert(
+    std::pair<CallsiteMap::iterator, bool> ret = callsites.insert(
         CallsiteMap::value_type(callsite_symbol.first, NULL));
     // If the callsite does not exist in the current symbol, create a
     // new callee symbol with the clone's function name.
@@ -143,7 +143,7 @@ void Symbol::Merge(const Symbol *other) {
 void SymbolMap::Merge() {
   for (auto &name_symbol : map_) {
     string name = GetOriginalName(name_symbol.first.c_str());
-    pair<NameSymbolMap::iterator, bool> ret =
+    std::pair<NameSymbolMap::iterator, bool> ret =
         map_.insert(NameSymbolMap::value_type(name, NULL));
     if (ret.second ||
         (name_symbol.first != name &&
@@ -166,7 +166,7 @@ void SymbolMap::Merge() {
 }
 
 void SymbolMap::AddSymbol(const string &name) {
-  pair<NameSymbolMap::iterator, bool> ret = map_.insert(
+  std::pair<NameSymbolMap::iterator, bool> ret = map_.insert(
       NameSymbolMap::value_type(name, NULL));
   if (ret.second) {
     ret.first->second = new Symbol(ret.first->first.c_str(), NULL, NULL, 0);
@@ -192,17 +192,12 @@ void SymbolMap::CalculateThreshold() {
   // If count_threshold_ is pre-calculated, use pre-caculated value.
   CHECK_EQ(count_threshold_, 0);
   int64 total_count = 0;
-  set<string> visited;
+  std::set<string> visited;
   for (const auto &name_symbol : map_) {
-    if (visited.find(name_symbol.first) != visited.end()) {
-      // Don't double-count aliases.
-      continue;
+    if (!visited.count(name_symbol.second->name())) {
+      visited.insert(name_symbol.second->name());
+      total_count += name_symbol.second->total_count;
     }
-    visited.insert(name_symbol.first);
-    for (const auto& alias : name_alias_map_[name_symbol.first]) {
-      visited.insert(alias);
-    }
-    total_count += name_symbol.second->total_count;
   }
   count_threshold_ = total_count * FLAGS_sample_threshold_frac;
   if (count_threshold_ < kMinSamples) {
@@ -252,8 +247,9 @@ class SymbolReader : public ElfReader::SymbolSink {
     if (size == 0) {
       return;
     }
-    pair<AddressSymbolMap::iterator, bool> ret = address_symbol_map_->insert(
-        std::make_pair(address, std::make_pair(string(name), size)));
+    std::pair<AddressSymbolMap::iterator, bool> ret =
+        address_symbol_map_->insert(
+            std::make_pair(address, std::make_pair(string(name), size)));
     if (!ret.second) {
       (*name_alias_map_)[ret.first->second.first].insert(name);
     }
@@ -276,20 +272,21 @@ void SymbolMap::BuildSymbolMap() {
   elf_reader.VisitSymbols(&symbol_reader);
 }
 
-void SymbolMap::UpdateSymbolMap(const string &binary,
-                                const Addr2line *addr2line) {
-  SymbolMap new_map(binary);
-
-  for (auto iter = map_.begin(); iter != map_.end(); ++iter) {
-    uint64 addr = new_map.GetSymbolStartAddr(iter->first);
-    if (addr == 0) {
-      continue;
-    }
+void SymbolMap::UpdateSymbolMap(
+    const Addr2line *addr2line,
+    const std::map<uint64, uint64> &sampled_functions) {
+  for (const auto &addr_size : sampled_functions) {
+    string name = address_symbol_map_.find(addr_size.first)->second.first;
     SourceStack stack;
-    addr2line->GetInlineStack(addr, &stack);
-    if (stack.size() != 0) {
-      iter->second->info.file_name = stack[stack.size() - 1].file_name;
-      iter->second->info.dir_name = stack[stack.size() - 1].dir_name;
+    addr2line->GetInlineStack(addr_size.first, &stack);
+    if (!stack.empty()) {
+      // Map from symbol name to "Symbol *".
+      auto ret = map_.insert(std::make_pair(
+          address_symbol_map_.find(addr_size.first)->second.first, nullptr));
+      if (ret.second) {
+        ret.first->second = new Symbol();
+      }
+      ret.first->second->info = stack[stack.size() - 1];
     }
   }
 }
@@ -324,7 +321,7 @@ bool Symbol::IsFromHeader() const {
 
 void SymbolMap::AddSymbolEntryCount(const string &symbol_name, uint64 count) {
   Symbol *symbol = map_.find(symbol_name)->second;
-  symbol->head_count = max(symbol->head_count, count);
+  symbol->head_count += count;
 }
 
 Symbol *SymbolMap::TraverseInlineStack(const string &symbol_name,
@@ -338,9 +335,11 @@ Symbol *SymbolMap::TraverseInlineStack(const string &symbol_name,
     symbol->info.dir_name = info.dir_name;
   }
   for (int i = src.size() - 1; i > 0; i--) {
-    pair<CallsiteMap::iterator, bool> ret = symbol->callsites.insert(
-        CallsiteMap::value_type(Callsite(src[i].Offset(), src[i - 1].func_name),
-                                NULL));
+    std::pair<CallsiteMap::iterator, bool> ret =
+        symbol->callsites.insert(CallsiteMap::value_type(
+            Callsite(src[i].Offset(use_discriminator_encoding_),
+                     src[i - 1].func_name),
+            NULL));
     if (ret.second) {
       ret.first->second = new Symbol(src[i - 1].func_name,
                                      src[i - 1].dir_name,
@@ -357,31 +356,32 @@ void SymbolMap::AddSourceCount(const string &symbol_name,
                                const SourceStack &src,
                                uint64 count, uint64 num_inst,
                                Operation op) {
-  if (src.size() == 0 || src[0].Malformed()) {
+  if (src.size() == 0) {
     return;
   }
+  uint32 offset = src[0].Offset(use_discriminator_encoding_);
   Symbol *symbol = TraverseInlineStack(symbol_name, src, count);
   if (op == MAX) {
-    if (count > symbol->pos_counts[src[0].Offset()].count) {
-      symbol->pos_counts[src[0].Offset()].count = count;
+    if (count > symbol->pos_counts[offset].count) {
+      symbol->pos_counts[offset].count = count;
     }
   } else if (op == SUM) {
-    symbol->pos_counts[src[0].Offset()].count += count;
+    symbol->pos_counts[offset].count += count;
   } else {
     LOG(FATAL) << "op not supported.";
   }
-  symbol->pos_counts[src[0].Offset()].num_inst += num_inst;
+  symbol->pos_counts[offset].num_inst += num_inst;
 }
 
 void SymbolMap::AddIndirectCallTarget(const string &symbol_name,
                                       const SourceStack &src,
                                       const string &target,
                                       uint64 count) {
-  if (src.size() == 0 || src[0].Malformed()) {
+  if (src.size() == 0) {
     return;
   }
   Symbol *symbol = TraverseInlineStack(symbol_name, src, 0);
-  symbol->pos_counts[src[0].Offset()].target_map[
+  symbol->pos_counts[src[0].Offset(use_discriminator_encoding_)].target_map[
       GetOriginalName(target.c_str())] = count;
 }
 
@@ -402,7 +402,7 @@ void Symbol::Dump(int ident) const {
   } else {
     printf("%s total:%llu\n", info.func_name, total_count);
   }
-  vector<uint32> positions;
+  std::vector<uint32> positions;
   for (const auto &pos_count : pos_counts)
     positions.push_back(pos_count.first);
   std::sort(positions.begin(), positions.end());
@@ -419,7 +419,7 @@ void Symbol::Dump(int ident) const {
     }
     printf("\n");
   }
-  vector<Callsite> calls;
+  std::vector<Callsite> calls;
   for (const auto &pos_symbol : callsites) {
     calls.push_back(pos_symbol.first);
   }
@@ -430,11 +430,25 @@ void Symbol::Dump(int ident) const {
   }
 }
 
+uint64 Symbol::MaxPosCallsiteCount() const {
+  uint64 max_count = 0;
+
+  for (const auto& pos_count : pos_counts) {
+    max_count = std::max(max_count, pos_count.second.count);
+  }
+
+  for (const auto& callsite : callsites) {
+    max_count = std::max(max_count, callsite.second->MaxPosCallsiteCount());
+  }
+
+  return max_count;
+}
+
 void SymbolMap::Dump() const {
-  std::map<uint64, vector<string> > count_names_map;
+  std::map<uint64, std::set<string> > count_names_map;
   for (const auto &name_symbol : map_) {
     if (name_symbol.second->total_count > 0) {
-      count_names_map[~name_symbol.second->total_count].push_back(
+      count_names_map[~name_symbol.second->total_count].insert(
           name_symbol.first);
     }
   }
@@ -447,7 +461,7 @@ void SymbolMap::Dump() const {
 }
 
 float SymbolMap::Overlap(const SymbolMap &map) const {
-  std::map<string, pair<uint64, uint64> > overlap_map;
+  std::map<string, std::pair<uint64, uint64> > overlap_map;
 
   // Prepare for overlap_map
   uint64 total_1 = 0;
@@ -492,7 +506,7 @@ void SymbolMap::DumpFuncLevelProfileCompare(const SymbolMap &map) const {
   }
 
   // Sort map_1
-  std::map<uint64, vector<string> > count_names_map;
+  std::map<uint64, std::vector<string> > count_names_map;
   for (const auto &name_symbol : map_) {
     if (name_symbol.second->total_count > 0) {
       count_names_map[name_symbol.second->total_count].push_back(
@@ -553,13 +567,13 @@ void SymbolMap::DumpFuncLevelProfileCompare(const SymbolMap &map) const {
   }
 }
 
-typedef map<uint64, uint64> Histogram;
+typedef std::map<uint64, uint64> Histogram;
 
 static uint64 AddSymbolProfileToHistogram(const Symbol *symbol,
                                           Histogram *histogram) {
   uint64 total_count = 0;
   for (const auto &pos_count : symbol->pos_counts) {
-    pair<Histogram::iterator, bool> ret =
+    std::pair<Histogram::iterator, bool> ret =
         histogram->insert(Histogram::value_type(pos_count.second.count, 0));
     ret.first->second += pos_count.second.num_inst;
     total_count += pos_count.second.count * pos_count.second.num_inst;
@@ -606,10 +620,10 @@ void SymbolMap::ComputeWorkingSets() {
   }
 }
 
-::map<uint64, uint64> SymbolMap::GetSampledSymbolStartAddressSizeMap(
-    const set<uint64> &sampled_addrs) const {
+std::map<uint64, uint64> SymbolMap::GetSampledSymbolStartAddressSizeMap(
+    const std::set<uint64> &sampled_addrs) const {
   // We depend on the fact that sampled_addrs is an ordered set.
-  ::map<uint64, uint64> ret;
+  std::map<uint64, uint64> ret;
   uint64 next_start_addr = 0;
   for (const auto &addr : sampled_addrs) {
     uint64 adjusted_addr = addr + base_addr_;
@@ -639,6 +653,45 @@ void SymbolMap::ComputeWorkingSets() {
   return ret;
 }
 
+// SymbolMap has already be read from old profile. This function traverses
+// symbol map to calculated the functions that have samples.
+std::map<uint64, uint64> SymbolMap::GetLegacySymbolStartAddressSizeMap() const {
+  std::set<string> names;
+  // Traverse all symbols in symbol map including all inlined symbols. If the
+  // symbol's total count is non-zero, it has samples and should be included
+  // in the return value.
+  for (const auto &name_symbol : map_) {
+    const Symbol *s = name_symbol.second;
+    if (s->total_count == 0) {
+      continue;
+    }
+    std::vector<const Symbol *> queue;
+    queue.push_back(s);
+    while (!queue.empty()) {
+      const Symbol *s = queue.back();
+      queue.pop_back();
+      if (s->total_count == 0) {
+        continue;
+      }
+      names.insert(s->info.func_name);
+      for (const auto &pos_symbol : s->callsites) {
+        queue.push_back(pos_symbol.second);
+      }
+    }
+  }
+  std::map<uint64, uint64> ret;
+  for (const string &name : names) {
+    const auto &iter = name_addr_map_.find(name);
+    if (iter == name_addr_map_.end()) {
+      continue;
+    }
+    const auto &a_s_iter = address_symbol_map_.find(iter->second);
+    CHECK(a_s_iter != address_symbol_map_.end());
+    ret[a_s_iter->first] = a_s_iter->second.second;
+  }
+  return ret;
+}
+
 void SymbolMap::AddAlias(const string& sym, const string& alias) {
   name_alias_map_[sym].insert(alias);
 }
@@ -659,7 +712,7 @@ bool SymbolMap::Validate() const {
   bool has_inline_stack = false;
   bool has_call = false;
   bool has_discriminator = false;
-  vector<const Symbol *> symbols;
+  std::vector<const Symbol *> symbols;
   for (const auto &name_symbol : map_) {
     total_count += name_symbol.second->total_count;
     symbols.push_back(name_symbol.second);

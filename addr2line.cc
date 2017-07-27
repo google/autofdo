@@ -174,6 +174,7 @@ bool Google3Addr2line::Prepare() {
       }
     }
   }
+  inline_stack_handler_->PopulateSubprogramsByAddress();
   return true;
 }
 

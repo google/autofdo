@@ -48,19 +48,27 @@ using autofdo::AutoFDOProfileWriter;
 int main(int argc, char **argv) {
   google::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
+  // Step 1. Read the binary to build top-level symbol map to include symbol's
+  //         start address and size.
   SymbolMap symbol_map(FLAGS_binary);
 
-  AutoFDOProfileReader reader(&symbol_map, NULL);
+  // Step 2. Read in profile to annotate on symbol map and add inlined symbols
+  AutoFDOProfileReader reader(&symbol_map, NULL, false);
   reader.ReadFromFile(FLAGS_input);
-  set<uint64> empty_sampled_addrs;
-  map<uint64, uint64> sampled_functions =
-      symbol_map.GetSampledSymbolStartAddressSizeMap(empty_sampled_addrs);
+
+  // Step 3. Traverse the symbol map to get sampled symbols
+  std::map<uint64, uint64> sampled_functions =
+     symbol_map.GetLegacySymbolStartAddressSizeMap();
+
+  // Step 4. Read debug info in binary for the sampled symbols
   std::unique_ptr<Addr2line> addr2line(Addr2line::CreateWithSampledFunctions(
       FLAGS_binary, &sampled_functions));
-  symbol_map.UpdateSymbolMap(FLAGS_binary, addr2line.get());
+
+  // Step 5. Use the debug info to update the symbol map (add module info)
+  symbol_map.UpdateSymbolMap(addr2line.get(), sampled_functions);
   symbol_map.CalculateThreshold();
 
-  ModuleGrouper *grouper = ModuleGrouper::GroupModule(
+  auto grouper = ModuleGrouper::GroupModule(
       FLAGS_binary, GCOV_ELF_SECTION_NAME, &symbol_map);
 
   AutoFDOProfileWriter writer(&symbol_map, &grouper->module_map(),

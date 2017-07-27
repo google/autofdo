@@ -21,6 +21,7 @@
 
 #include <string>
 #include <map>
+#include <memory>
 #include <set>
 #include <vector>
 
@@ -43,22 +44,20 @@ enum OptionType {
 class Function;
 class SymbolMap;
 class Symbol;
-typedef pair<OptionType, string> Option;
-typedef map<Function *, int64> EdgeCount;
+typedef std::pair<OptionType, string> Option;
+typedef std::map<Function *, int64> EdgeCount;
 
 // The structure to store the auxilary information for each module.
 class Module {
  public:
   explicit Module() :
       num_quote_paths(0), num_bracket_paths(0), num_system_paths(0),
-      num_cpp_defines(0), num_cpp_includes(0), num_cl_args(0),
-      has_system_paths_field(false),
+      num_cpp_defines(0), num_cpp_includes(0), num_cl_args(0), id(0),
       is_exported(false), is_fake(false),
       is_valid(true), lang(0), ggc_memory_in_kb(0) {}
   explicit Module(bool is_fake) :
       num_quote_paths(0), num_bracket_paths(0), num_system_paths(0),
-      num_cpp_defines(0), num_cpp_includes(0), num_cl_args(0),
-      has_system_paths_field(false),
+      num_cpp_defines(0), num_cpp_includes(0), num_cl_args(0), id(0),
       is_exported(false), is_fake(is_fake),
       is_valid(true), lang(0), ggc_memory_in_kb(0) {}
 
@@ -68,9 +67,7 @@ class Module {
   int num_cpp_defines;
   int num_cpp_includes;
   int num_cl_args;
-  // Binary compatibility flag -- crosstool v17 introduces
-  // a new field in GCDA file to record system include paths.
-  bool has_system_paths_field;
+  int id;
   // If the module is the auxilary module of other modules.
   bool is_exported;
   // If the module is a fake module.
@@ -85,9 +82,11 @@ class Module {
   // Total GC memory consumed by compiler in KiB.
   uint32 ggc_memory_in_kb;
   // The module option information originally designed in LIPO.
-  vector<Option> options;
+  std::vector<Option> options;
   // Paths of the auxilary modules.
-  set<string> aux_modules;
+  std::set<string> aux_modules;
+  // Paths of modules that this module has been included as auxilary module.
+  std::set<string> parent_modules;
   // Map from compiler commandline flag to value;
   map<string, bool> flag_values;
 };
@@ -139,7 +138,7 @@ typedef map<string, Module> ModuleMap;
 class ModuleGrouper {
   friend class ModuleGrouperTest;
  public:
-  static ModuleGrouper *GroupModule(
+  static std::unique_ptr<ModuleGrouper> GroupModule(
       const string &binary,
       const string &section_prefix,
       const SymbolMap *symbol_map);
@@ -150,8 +149,7 @@ class ModuleGrouper {
   }
 
  private:
-  explicit ModuleGrouper(const SymbolMap *symbol_map)
-      : total_count_(0), symbol_map_(symbol_map) {}
+  explicit ModuleGrouper(const SymbolMap *symbol_map);
 
   // Adds auxilary modules for each primary module.
   void Group();
@@ -195,6 +193,7 @@ class ModuleGrouper {
   FunctionMap function_map_;
   EdgeMap edge_map_;
   const SymbolMap *symbol_map_;
+  set<string> skipped_modules_;
   DISALLOW_COPY_AND_ASSIGN(ModuleGrouper);
 };
 }  // namespace autofdo

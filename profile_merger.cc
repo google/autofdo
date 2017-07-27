@@ -47,7 +47,8 @@ int main(int argc, char **argv) {
       new AutoFDOProfileReaderPtr[argc - 1]);
   // TODO(dehao): merge profile reader/writer into a single class
   for (int i = 1; i < argc; i++) {
-    readers[i - 1].reset(new AutoFDOProfileReader(&symbol_map, &module_map));
+    readers[i - 1].reset(
+        new AutoFDOProfileReader(&symbol_map, &module_map, true));
     readers[i - 1]->ReadFromFile(argv[i]);
   }
 

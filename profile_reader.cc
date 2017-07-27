@@ -40,6 +40,7 @@ void AutoFDOProfileReader::ReadModuleGroup() {
     module.num_cpp_defines = gcov_read_unsigned();
     module.num_cpp_includes = gcov_read_unsigned();
     module.num_cl_args = gcov_read_unsigned();
+    module.id = i + 1;
     for (uint32 j = 0; j < size; j++) {
       module.aux_modules.insert(gcov_read_string());
     }
@@ -90,9 +91,11 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
   uint32 num_callsites = gcov_read_unsigned();
   if (stack.size() == 0) {
     symbol_map_->AddSymbol(name);
-    symbol_map_->AddSymbolEntryCount(name, head_count);
-    if (symbol_map_->GetSymbolByName(name)->total_count > 0) {
+    if (!force_update_ && symbol_map_->GetSymbolByName(name)->total_count > 0) {
       update = false;
+    }
+    if (force_update_ || update) {
+      symbol_map_->AddSymbolEntryCount(name, head_count);
     }
   }
   for (int i = 0; i < num_pos_counts; i++) {
@@ -103,7 +106,7 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
     SourceStack new_stack;
     new_stack.push_back(info);
     new_stack.insert(new_stack.end(), stack.begin(), stack.end());
-    if (update) {
+    if (force_update_ || update) {
       symbol_map_->AddSourceCount(new_stack[new_stack.size() - 1].func_name,
                                   new_stack, count, 1, SymbolMap::SUM);
     }
@@ -112,7 +115,7 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
       CHECK_EQ(gcov_read_unsigned(), HIST_TYPE_INDIR_CALL_TOPN);
       const string &target_name = names_.at(gcov_read_counter());
       uint64 target_count = gcov_read_counter();
-      if (update) {
+      if (force_update_ || update) {
         symbol_map_->AddIndirectCallTarget(
             new_stack[new_stack.size() - 1].func_name,
             new_stack, target_name, target_count);

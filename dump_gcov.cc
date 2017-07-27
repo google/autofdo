@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
   autofdo::SymbolMap symbol_map;
   autofdo::ModuleMap module_map;
   autofdo::AutoFDOProfileReader reader(
-      &symbol_map, &module_map);
+      &symbol_map, &module_map, true);
   reader.ReadFromFile(argv[1]);
   symbol_map.Dump();
   PrintModuleProfiles(module_map);

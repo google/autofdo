@@ -19,18 +19,25 @@
 
 #include <vector>
 
+#if defined(HAVE_LLVM)
+#include "llvm/IR/DebugInfoMetadata.h"
+#endif
+
 namespace autofdo {
 
 // Represents the source position.
 struct SourceInfo {
-  SourceInfo()
-      : func_name(NULL), dir_name(NULL), file_name(NULL), start_line(0),
-        line(0), discriminator(0) {}
+  SourceInfo() : func_name(NULL), start_line(0), line(0), discriminator(0) {}
 
-  SourceInfo(const char *func_name, const char *dir_name, const char *file_name,
-           uint32 start_line, uint32 line, uint32 discriminator)
-      : func_name(func_name), dir_name(dir_name), file_name(file_name),
-        start_line(start_line), line(line), discriminator(discriminator) {}
+  SourceInfo(const char *func_name, const char *dir_name,
+             const char *file_name, uint32 start_line, uint32 line,
+             uint32 discriminator)
+      : func_name(func_name),
+        dir_name(dir_name),
+        file_name(file_name),
+        start_line(start_line),
+        line(line),
+        discriminator(discriminator) {}
 
   bool operator<(const SourceInfo &p) const;
 
@@ -42,12 +49,25 @@ struct SourceInfo {
     return string();
   }
 
-  uint32 Offset() const {
+  uint32 Offset(bool use_discriminator_encoding) const {
+#if defined(HAVE_LLVM)
+    return ((line - start_line) << 16) |
+           (use_discriminator_encoding
+                ? llvm::DILocation::getBaseDiscriminatorFromDiscriminator(
+                      discriminator)
+                : discriminator);
+#else
     return ((line - start_line) << 16) | discriminator;
+#endif
   }
 
-  bool Malformed() const {
-    return line < start_line;
+  uint32 DuplicationFactor() const {
+#if defined(HAVE_LLVM)
+    return llvm::DILocation::getDuplicationFactorFromDiscriminator(
+        discriminator);
+#else
+    return 1;
+#endif
   }
 
   const char *func_name;

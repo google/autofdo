@@ -127,13 +127,12 @@ class SourceProfileWriter: public SymbolTraverser {
 
   virtual void VisitTopSymbol(const string &name, const Symbol *node) {
     gcov_write_counter(node->head_count);
-    gcov_write_unsigned(GetStringIndex(name));
+    gcov_write_unsigned(GetStringIndex(Symbol::Name(name.c_str())));
   }
 
   virtual void VisitCallsite(const Callsite &callsite) {
     gcov_write_unsigned(callsite.first);
-    gcov_write_unsigned(GetStringIndex(
-        callsite.second ? callsite.second : string()));
+    gcov_write_unsigned(GetStringIndex(Symbol::Name(callsite.second)));
   }
 
  private:
@@ -150,7 +149,7 @@ class SourceProfileWriter: public SymbolTraverser {
 };
 
 void AutoFDOProfileWriter::WriteFunctionProfile() {
-  typedef map<string, int> StringIndexMap;
+  typedef std::map<string, int> StringIndexMap;
   // Map from a string to its index in this map. Providing a partial
   // ordering of all output strings.
   StringIndexMap string_index_map;
@@ -180,6 +179,10 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
     if (len > 5 &&
         (!strcmp(c + len - 4, "D4Ev") || !strcmp(c + len - 4, "C4Ev"))) {
       c[len - 3] = '2';
+    } else if (len > 7 && !strcmp(c + len - 6, "C4EPKc")) {
+      c[len - 5] = '2';
+    } else if (len > 12 && !strcmp(c + len - 11, "C4EPKcRKS2_")) {
+      c[len - 10] = '2';
     }
     gcov_write_string(c);
     free(c);
@@ -205,31 +208,36 @@ void AutoFDOProfileWriter::WriteModuleGroup() {
   // cpp_defines_size, cpp_includes_size,
   // cl_args_size
   static const uint32 MODULE_AUX_DATA_SIZE_IN_4BYTES = 9;
+  std::set<string> names;
   for (const auto &module_aux : *module_map_) {
-    if (!module_aux.second.is_exported
-        && module_aux.second.aux_modules.size() == 0) {
+    names.insert(module_aux.first);
+  }
+  for (const string &name : names) {
+    const Module &module = module_map_->find(name)->second;
+    if (!module.is_exported
+        && module.aux_modules.size() == 0) {
       continue;
     }
-    if (module_aux.second.is_fake) {
+    if (module.is_fake) {
       continue;
     }
     num_modules++;
-    length_4bytes += (module_aux.first.size() + SIZEOF_UNSIGNED)
+    length_4bytes += (name.size() + SIZEOF_UNSIGNED)
                      / SIZEOF_UNSIGNED;
     length_4bytes += MODULE_AUX_DATA_SIZE_IN_4BYTES;
-    length_4bytes += module_aux.second.aux_modules.size();
-    for (const auto &aux : module_aux.second.aux_modules) {
+    length_4bytes += module.aux_modules.size();
+    for (const auto &aux : module.aux_modules) {
       length_4bytes += (aux.size() + SIZEOF_UNSIGNED) / SIZEOF_UNSIGNED;
     }
-    int num_string = module_aux.second.num_quote_paths
-                   + module_aux.second.num_bracket_paths
-                   + module_aux.second.num_system_paths
-                   + module_aux.second.num_cpp_defines
-                   + module_aux.second.num_cpp_includes
-                   + module_aux.second.num_cl_args;
+    int num_string = module.num_quote_paths
+                   + module.num_bracket_paths
+                   + module.num_system_paths
+                   + module.num_cpp_defines
+                   + module.num_cpp_includes
+                   + module.num_cl_args;
     length_4bytes += num_string;
     for (int i = 0; i < num_string; i++) {
-      length_4bytes += (module_aux.second.options[i].second.size()
+      length_4bytes += (module.options[i].second.size()
                         + SIZEOF_UNSIGNED) / SIZEOF_UNSIGNED;
     }
   }
@@ -237,42 +245,44 @@ void AutoFDOProfileWriter::WriteModuleGroup() {
   // Writes to .afdo file and .afdo.imports file.
   gcov_write_unsigned(length_4bytes);
   gcov_write_unsigned(num_modules);
-  for (const auto &module_aux : *module_map_) {
-    if (!module_aux.second.is_exported
-        && module_aux.second.aux_modules.size() == 0) {
+  for (const string &name : names) {
+    const Module &module = module_map_->find(name)->second;
+    if (!module.is_exported
+        && module.aux_modules.size() == 0) {
       continue;
     }
-    if (module_aux.second.is_fake) {
+    if (module.is_fake) {
       continue;
     }
 
     // Writes the name of the module.
-    gcov_write_string(module_aux.first.c_str());
-    if (module_aux.second.aux_modules.size() > 0) {
-      fprintf(imports_file_, "%s:", module_aux.first.c_str());
+    gcov_write_string(name.c_str());
+    if (module.aux_modules.size() > 0) {
+      fprintf(imports_file_, "%s:", name.c_str());
     }
 
     // Writes the "is_exported" flag.
-    if (module_aux.second.is_exported) {
+    if (module.is_exported) {
       gcov_write_unsigned(1);
     } else {
       gcov_write_unsigned(0);
     }
 
-    gcov_write_unsigned(module_aux.second.lang);
-    gcov_write_unsigned(module_aux.second.ggc_memory_in_kb);
+    gcov_write_unsigned(module.lang);
+    gcov_write_unsigned(module.ggc_memory_in_kb);
 
     // Writes the aux module info.
-    gcov_write_unsigned(module_aux.second.aux_modules.size());
-    gcov_write_unsigned(module_aux.second.num_quote_paths);
-    gcov_write_unsigned(module_aux.second.num_bracket_paths);
-    if (module_aux.second.has_system_paths_field)
-      gcov_write_unsigned(module_aux.second.num_system_paths);
-    gcov_write_unsigned(module_aux.second.num_cpp_defines);
-    gcov_write_unsigned(module_aux.second.num_cpp_includes);
-    gcov_write_unsigned(module_aux.second.num_cl_args);
+    gcov_write_unsigned(module.aux_modules.size());
+    gcov_write_unsigned(module.num_quote_paths);
+    gcov_write_unsigned(module.num_bracket_paths);
+    gcov_write_unsigned(module.num_system_paths);
+    gcov_write_unsigned(module.num_cpp_defines);
+    gcov_write_unsigned(module.num_cpp_includes);
+    gcov_write_unsigned(module.num_cl_args);
 
-    for (const auto &aux : module_aux.second.aux_modules) {
+    std::set<string> aux_modules(module.aux_modules.begin(),
+                                 module.aux_modules.end());
+    for (const auto &aux : module.aux_modules) {
       gcov_write_string(aux.c_str());
       fprintf(imports_file_, " %s", aux.c_str());
     }
@@ -280,29 +290,29 @@ void AutoFDOProfileWriter::WriteModuleGroup() {
 
     // Writes the options recorded in the elf section of the original binary.
     int option_offset = 0;
-    for (int i = 0; i < module_aux.second.num_quote_paths; i++) {
+    for (int i = 0; i < module.num_quote_paths; i++) {
       gcov_write_string(
-          module_aux.second.options[option_offset++].second.c_str());
+          module.options[option_offset++].second.c_str());
     }
-    for (int i = 0; i < module_aux.second.num_bracket_paths; i++) {
+    for (int i = 0; i < module.num_bracket_paths; i++) {
       gcov_write_string(
-          module_aux.second.options[option_offset++].second.c_str());
+          module.options[option_offset++].second.c_str());
     }
-    for (int i = 0; i < module_aux.second.num_system_paths; i++) {
+    for (int i = 0; i < module.num_system_paths; i++) {
       gcov_write_string(
-          module_aux.second.options[option_offset++].second.c_str());
+          module.options[option_offset++].second.c_str());
     }
-    for (int i = 0; i < module_aux.second.num_cpp_defines; i++) {
+    for (int i = 0; i < module.num_cpp_defines; i++) {
       gcov_write_string(
-          module_aux.second.options[option_offset++].second.c_str());
+          module.options[option_offset++].second.c_str());
     }
-    for (int i = 0; i < module_aux.second.num_cpp_includes; i++) {
+    for (int i = 0; i < module.num_cpp_includes; i++) {
       gcov_write_string(
-          module_aux.second.options[option_offset++].second.c_str());
+          module.options[option_offset++].second.c_str());
     }
-    for (int i = 0; i < module_aux.second.num_cl_args; i++) {
+    for (int i = 0; i < module.num_cl_args; i++) {
       gcov_write_string(
-          module_aux.second.options[option_offset++].second.c_str());
+          module.options[option_offset++].second.c_str());
     }
   }
 }
@@ -387,7 +397,7 @@ class ProfileDumper : public SymbolTraverser {
            static_cast<uint64>(node->pos_counts.size()));
     printf("node->callsites.size() = %llu\n",
            static_cast<uint64>(node->callsites.size()));
-    vector<uint32> positions;
+    std::vector<uint32> positions;
     for (const auto &pos_count : node->pos_counts)
       positions.push_back(pos_count.first);
     std::sort(positions.begin(), positions.end());

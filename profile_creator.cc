@@ -83,8 +83,8 @@ bool ProfileCreator::ReadSample(const string &input_profile_name,
 
 bool ProfileCreator::ComputeProfile(SymbolMap *symbol_map,
                                     Addr2line **addr2line) {
-  set<uint64> sampled_addrs = sample_reader_->GetSampledAddresses();
-  map<uint64, uint64> sampled_functions =
+  std::set<uint64> sampled_addrs = sample_reader_->GetSampledAddresses();
+  std::map<uint64, uint64> sampled_functions =
       symbol_map->GetSampledSymbolStartAddressSizeMap(sampled_addrs);
   *addr2line =
       Addr2line::CreateWithSampledFunctions(binary_, &sampled_functions);
@@ -103,10 +103,11 @@ bool ProfileCreator::ComputeProfile(SymbolMap *symbol_map,
 bool ProfileCreator::CreateProfileFromSample(ProfileWriter *writer,
                                              const string &output_name) {
   SymbolMap symbol_map(binary_);
+  symbol_map.set_use_discriminator_encoding(use_discriminator_encoding_);
   Addr2line *addr2line = nullptr;
   if (!ComputeProfile(&symbol_map, &addr2line)) return false;
 
-  ModuleGrouper *grouper =
+  auto grouper =
       ModuleGrouper::GroupModule(binary_, GCOV_ELF_SECTION_NAME, &symbol_map);
 
   writer->setSymbolMap(&symbol_map);
@@ -114,7 +115,6 @@ bool ProfileCreator::CreateProfileFromSample(ProfileWriter *writer,
   bool ret = writer->WriteToFile(output_name);
 
   delete addr2line;
-  delete grouper;
   return ret;
 }
 

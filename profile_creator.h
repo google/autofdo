@@ -26,11 +26,17 @@ namespace autofdo {
 
 class ProfileCreator {
  public:
-  explicit ProfileCreator(const string &binary) : sample_reader_(nullptr),
-                                                  binary_(binary) {}
+  explicit ProfileCreator(const string &binary)
+      : sample_reader_(nullptr),
+        binary_(binary),
+        use_discriminator_encoding_(false) {}
 
   ~ProfileCreator() {
     delete sample_reader_;
+  }
+
+  void set_use_discriminator_encoding(bool use_discriminator_encoding) {
+    use_discriminator_encoding_ = use_discriminator_encoding;
   }
 
   // Returns the total sample counts from a text profile.
@@ -65,6 +71,7 @@ class ProfileCreator {
  private:
   SampleReader *sample_reader_;
   string binary_;
+  bool use_discriminator_encoding_;
 };
 
 bool MergeSample(const string &input_file, const string &input_profiler,

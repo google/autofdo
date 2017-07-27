@@ -31,7 +31,6 @@
 #include "profile_writer.h"
 
 DECLARE_bool(debug_dump);
-DECLARE_string(format);
 
 namespace autofdo {
 
@@ -95,10 +94,11 @@ void LLVMProfileBuilder::VisitCallsite(const Callsite &callsite) {
     inline_stack_.pop_back();
   }
   auto &caller_profile = *(inline_stack_.back());
+  auto CalleeName = GetNameRef(Symbol::Name(callsite.second));
   auto &callee_profile =
       caller_profile.functionSamplesAt(llvm::sampleprof::LineLocation(
-          line, discriminator));
-  callee_profile.setName(GetNameRef(callsite.second));
+          line, discriminator))[CalleeName];
+  callee_profile.setName(CalleeName);
   inline_stack_.push_back(&callee_profile);
 }
 
@@ -142,7 +142,8 @@ void LLVMProfileBuilder::Visit(const Symbol *node) {
 }
 
 llvm::StringRef LLVMProfileBuilder::GetNameRef(const string &str) {
-  StringIndexMap::const_iterator ret = name_table_.find(str);
+  StringIndexMap::const_iterator ret =
+      name_table_.find(Symbol::Name(str.c_str()));
   CHECK(ret != name_table_.end());
   return llvm::StringRef(ret->first.c_str());
 }
