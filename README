@@ -25,7 +25,8 @@ architectures, BR_INST_EXEC:TAKEN also works.
 --binary: BINARY with debug info. You need to make sure the binary name is
 the same as the binary you run during profiling. Additionally, you will need
 to have debug info (i.e. line table) availabe in the binary. This means that
-you need to compile the binary with "-gmlt"
+you need to compile the binary with "-gmlt" or "-g1". For LLVM, you alse need
+to have -fdebug-info-for-profiling.
 
 Output:
 
