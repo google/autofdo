@@ -33,7 +33,7 @@ DEFINE_int32(max_ggc_memory, 3 << 20,
 namespace autofdo {
 // in_func is not a const pointer, but it's not modified in the function.
 void Function::AddInEdgeCount(int64 count, Function *in_func) {
-  pair<EdgeCount::iterator, bool> ret = in_edge_count.insert(
+  std::pair<EdgeCount::iterator, bool> ret = in_edge_count.insert(
       EdgeCount::value_type(in_func, 0));
   ret.first->second += count;
   total_in_count += count;
@@ -41,17 +41,20 @@ void Function::AddInEdgeCount(int64 count, Function *in_func) {
 
 // out_func is not a const pointer, but it's not modified in the function.
 void Function::AddOutEdgeCount(int64 count, Function *out_func) {
-  pair<EdgeCount::iterator, bool> ret = out_edge_count.insert(
+  std::pair<EdgeCount::iterator, bool> ret = out_edge_count.insert(
       EdgeCount::value_type(out_func, 0));
   ret.first->second += count;
   total_out_count += count;
 }
 
-ModuleGrouper *ModuleGrouper::GroupModule(
+ModuleGrouper::ModuleGrouper(const SymbolMap *symbol_map)
+      : total_count_(0), symbol_map_(symbol_map) {}
+
+std::unique_ptr<ModuleGrouper> ModuleGrouper::GroupModule(
       const string &binary,
       const string &section_prefix,
       const SymbolMap *symbol_map) {
-  ModuleGrouper *grouper = new ModuleGrouper(symbol_map);
+  std::unique_ptr<ModuleGrouper> grouper(new ModuleGrouper(symbol_map));
   grouper->ReadModuleOptions(binary, section_prefix);
   if (grouper->module_map().size() == 0) {
     LOG(WARNING) << "Cannot read compilation info from binary. "
@@ -76,16 +79,26 @@ void ModuleGrouper::Group() {
       continue;
     }
     const string base_module_name = symbol->ModuleName();
-    vector<const Symbol *> queue;
+    std::vector<const Symbol *> queue;
     queue.push_back(symbol);
     while (!queue.empty()) {
       const Symbol *s = queue.back();
       queue.pop_back();
+      if (s->total_count == 0) {
+        continue;
+      }
       for (const auto &pos_symbol : s->callsites) {
         queue.push_back(pos_symbol.second);
       }
-      if (s->IsFromHeader() || s->ModuleName() == base_module_name ||
-          s->total_count == 0) {
+      // If we don't have module info for the symbol, try to find it from
+      // top level symbol map.
+      if (s->ModuleName().empty()) {
+        s = symbol_map_->GetSymbolByName(s->info.func_name);
+        if (s == nullptr) {
+          continue;
+        }
+      }
+      if (s->IsFromHeader() || s->ModuleName() == base_module_name) {
         continue;
       }
       legacy_group[base_module_name].insert(s->ModuleName());
@@ -100,15 +113,11 @@ void ModuleGrouper::Group() {
       continue;
     }
     for (const auto &name : name_modules.second) {
-      if (module_map_.find(name) == module_map_.end()) {
-        LOG(ERROR) << "Module " << name.c_str()
-                   << " is not found in the profile binary";
-        continue;
+      if (module_map_.find(name) != module_map_.end()) {
+        module_map_[name].is_exported = true;
+        module_map_[name_modules.first].aux_modules.insert(name);
       }
-      module_map_[name].is_exported = true;
     }
-    module_map_[name_modules.first].aux_modules.insert(
-        name_modules.second.begin(), name_modules.second.end());
   }
 
   for (int64 accumulate_count = GetMaxEdge(&max_edge);
@@ -164,10 +173,10 @@ void ModuleGrouper::RecursiveBuildGraph(const string &caller_name,
       total_count_ += target_count.second;
       string caller_module_name = UpdateModuleMap(caller->ModuleName());
       string callee_module_name = UpdateModuleMap(callee->ModuleName());
-      pair<FunctionMap::iterator, bool> caller_ret =
+      std::pair<FunctionMap::iterator, bool> caller_ret =
           function_map_.insert(FunctionMap::value_type(
           caller_name, Function(caller_name, caller_module_name)));
-      pair<FunctionMap::iterator, bool> callee_ret =
+      std::pair<FunctionMap::iterator, bool> callee_ret =
           function_map_.insert(FunctionMap::value_type(
           callee_name, Function(callee_name, callee_module_name)));
       AddEdgeCount(
@@ -191,7 +200,7 @@ void ModuleGrouper::BuildGraph() {
 void ModuleGrouper::AddEdgeCount(const CallEdge &edge, int64 count) {
   edge.from->AddOutEdgeCount(count, edge.to);
   edge.to->AddInEdgeCount(count, edge.from);
-  pair<EdgeMap::iterator, bool> ret = edge_map_.insert(
+  std::pair<EdgeMap::iterator, bool> ret = edge_map_.insert(
       EdgeMap::value_type(edge, 0));
   ret.first->second += count;
 }
@@ -221,17 +230,30 @@ void ModuleGrouper::IntegrateEdge(const CallEdge &edge) {
       AddEdgeCount(CallEdge(edge.to, callee_count.first), scaled_count * -1);
     }
   }
-  // Add the callee's module as the caller's module's aux-module.
+
+  // Add the callee's module as the caller and parent module's aux-module.
   ModuleMap::iterator from_module_iter = module_map_.find(edge.from->module);
   ModuleMap::iterator to_module_iter = module_map_.find(edge.to->module);
-  if (from_module_iter->first != to_module_iter->first) {
-    if (!to_module_iter->second.is_fake) {
-      from_module_iter->second.aux_modules.insert(to_module_iter->first);
+  if (from_module_iter->first == to_module_iter->first) {
+    return;
+  }
+  to_module_iter->second.is_exported = true;
+  std::set<string> primary_modules = from_module_iter->second.parent_modules;
+  primary_modules.insert(from_module_iter->first);
+  for (const auto &primary_module : primary_modules) {
+    if (to_module_iter->first == primary_module) {
+      continue;
     }
-    from_module_iter->second.aux_modules.insert(
-        to_module_iter->second.aux_modules.begin(),
-        to_module_iter->second.aux_modules.end());
-    to_module_iter->second.is_exported = true;
+    if (!to_module_iter->second.is_fake) {
+      module_map_[primary_module].aux_modules.insert(to_module_iter->first);
+      to_module_iter->second.parent_modules.insert(primary_module);
+    }
+    for (const auto &aux_module : to_module_iter->second.aux_modules) {
+      if (aux_module != primary_module) {
+        module_map_[primary_module].aux_modules.insert(aux_module);
+        module_map_[aux_module].parent_modules.insert(primary_module);
+      }
+    }
   }
 }
 
@@ -274,13 +296,11 @@ bool ModuleGrouper::ShouldIntegrate(const string &from_module,
       || !module_map_[to_module].is_valid) {
     return false;
   }
+  if (skipped_modules_.find(to_module) != skipped_modules_.end()) {
+    return false;
+  }
   if (from_module == to_module) {
     return true;
-  }
-  // Never integrate tcmalloc as auxilary module.
-  if (to_module == "tcmalloc/tcmalloc_or_debug.cc"
-      || to_module == "tcmalloc/tcmalloc.cc") {
-    return false;
   }
   // We preprocess faked module first because it does not have lang field and
   // flag_values fields.
@@ -293,14 +313,21 @@ bool ModuleGrouper::ShouldIntegrate(const string &from_module,
       return false;
     }
   }
-  set<string> modules;
-  modules.insert(from_module);
-  modules.insert(to_module);
-  modules.insert(module_map_[from_module].aux_modules.begin(),
-                 module_map_[from_module].aux_modules.end());
-  modules.insert(module_map_[to_module].aux_modules.begin(),
-                 module_map_[to_module].aux_modules.end());
-  return GetTotalMemory(modules) < FLAGS_max_ggc_memory;
+  std::set<string> from_modules = module_map_[from_module].parent_modules;
+  from_modules.insert(from_module);
+  for (const auto &module : from_modules) {
+    std::set<string> modules;
+    modules.insert(module);
+    modules.insert(to_module);
+    modules.insert(module_map_[module].aux_modules.begin(),
+                   module_map_[module].aux_modules.end());
+    modules.insert(module_map_[to_module].aux_modules.begin(),
+                   module_map_[to_module].aux_modules.end());
+    if (GetTotalMemory(modules) > FLAGS_max_ggc_memory) {
+      return false;
+    }
+  }
+  return true;
 }
 
 int64 ModuleGrouper::GetMaxEdge(CallEdge *edge) {
@@ -392,7 +419,6 @@ void ModuleGrouper::ReadOptionsByType(const string &binary,
       }
       break;
     case SYSTEM_PATHS:
-      module->has_system_paths_field = true;
       if (!sect_data || section_size == 0)
         return;
 
@@ -463,10 +489,13 @@ void ModuleGrouper::ReadOptionsByType(const string &binary,
       } else if (module->options[module->options.size() - option_num + j].second
                  != curr) {
         module->is_valid = false;
-        LOG(ERROR) << "Duplicated module entry for " << module_name;
-        break;
       }
       curr += strlen(curr) + 1;
+    }
+    if (!module->is_valid) {
+      LOG(ERROR) << "Duplicated module(" << module_name
+                 << ") has inconsistent option data, it will not be included "
+                 << "in module grouping";
     }
   }
 }

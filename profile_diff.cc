@@ -39,9 +39,9 @@ int main(int argc, char **argv) {
   }
 
   autofdo::AutoFDOProfileReader reader_1(
-      &symbol_map_1, &module_map);
+      &symbol_map_1, &module_map, true);
   autofdo::AutoFDOProfileReader reader_2(
-      &symbol_map_2, &module_map);
+      &symbol_map_2, &module_map, true);
   reader_1.ReadFromFile(argv[1]);
   reader_2.ReadFromFile(argv[2]);
 

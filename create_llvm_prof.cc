@@ -75,6 +75,7 @@ int main(int argc, char **argv) {
   }
 
   autofdo::ProfileCreator creator(FLAGS_binary);
+  creator.set_use_discriminator_encoding(true);
   if (creator.CreateProfile(FLAGS_profile, FLAGS_profiler, writer.get(),
                             FLAGS_out))
     return 0;

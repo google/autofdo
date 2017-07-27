@@ -35,9 +35,9 @@
 
 namespace autofdo {
 
-typedef map<string, uint64> CallTargetCountMap;
-typedef pair<string, uint64> TargetCountPair;
-typedef vector<TargetCountPair> TargetCountPairs;
+typedef std::map<string, uint64> CallTargetCountMap;
+typedef std::pair<string, uint64> TargetCountPair;
+typedef std::vector<TargetCountPair> TargetCountPairs;
 
 class Addr2line;
 
@@ -72,13 +72,13 @@ class ProfileInfo {
 
 // Map from source stack to profile,
 // TODO(dehao): deprecate this when old profile format is deprecated.
-typedef map<const SourceStack, ProfileInfo> SourceStackCountMap;
+typedef std::map<const SourceStack, ProfileInfo> SourceStackCountMap;
 
 // Map from a source location (represented by offset+discriminator) to profile.
-typedef map<uint32, ProfileInfo> PositionCountMap;
+typedef std::map<uint32, ProfileInfo> PositionCountMap;
 
 // callsite_location, callee_name
-typedef pair<uint32, const char *> Callsite;
+typedef std::pair<uint32, const char *> Callsite;
 
 struct CallsiteLess {
   bool operator()(const Callsite& c1, const Callsite& c2) const {
@@ -91,7 +91,7 @@ struct CallsiteLess {
 };
 class Symbol;
 // Map from a callsite to the callee symbol.
-typedef map<Callsite, Symbol *, CallsiteLess> CallsiteMap;
+typedef std::map<Callsite, Symbol *, CallsiteLess> CallsiteMap;
 
 // Contains information about a specific symbol.
 // There are two types of symbols:
@@ -108,9 +108,24 @@ class Symbol {
       : info(SourceInfo(name, dir, file, start, 0, 0)),
         total_count(0), head_count(0) {}
 
+  // This constructor is used to create aliased symbol.
+  Symbol(const Symbol *src, const char *new_func_name)
+      : info(src->info), total_count(src->total_count),
+        head_count(src->head_count) {
+    info.func_name = new_func_name;
+  }
+
   Symbol() : total_count(0), head_count(0) {}
 
   ~Symbol();
+
+  static string Name(const char *name) {
+    return (name && strlen(name) > 0) ? name : "noname";
+  }
+
+  string name() const {
+    return Name(info.func_name);
+  }
 
   // Merges profile stored in src symbol with this symbol.
   void Merge(const Symbol *src);
@@ -124,6 +139,9 @@ class Symbol {
 
   // Dumps content of the symbol with a give indentation.
   void Dump(int indent) const;
+
+  // Returns the max of pos_counts and callsites' pos_counts.
+  uint64 MaxPosCallsiteCount() const;
 
   // Source information about the the symbol (func_name, file_name, etc.)
   SourceInfo info;
@@ -140,9 +158,9 @@ class Symbol {
 // Maps function name to actual symbol. (Top level map).
 typedef map<string, Symbol *> NameSymbolMap;
 // Maps symbol's start address to its name and size.
-typedef map<uint64, pair<string, uint64> > AddressSymbolMap;
+typedef std::map<uint64, std::pair<string, uint64> > AddressSymbolMap;
 // Maps from symbol's name to its start address.
-typedef map<string, uint64> NameAddressMap;
+typedef std::map<string, uint64> NameAddressMap;
 // Maps function name to alias names.
 typedef map<string, set<string> > NameAliasMap;
 
@@ -151,12 +169,20 @@ typedef map<string, set<string> > NameAliasMap;
 class SymbolMap {
  public:
   explicit SymbolMap(const string &binary)
-      : binary_(binary), base_addr_(0), count_threshold_(0) {
-    BuildSymbolMap();
-    BuildNameAddressMap();
+      : binary_(binary),
+        base_addr_(0),
+        count_threshold_(0),
+        use_discriminator_encoding_(false) {
+    if (!binary.empty()) {
+      BuildSymbolMap();
+      BuildNameAddressMap();
+    }
   }
 
-  SymbolMap() : base_addr_(0), count_threshold_(0) {}
+  SymbolMap()
+      : base_addr_(0),
+        count_threshold_(0),
+        use_discriminator_encoding_(false) {}
 
   ~SymbolMap();
 
@@ -185,10 +211,18 @@ class SymbolMap {
     return base_addr_;
   }
 
+  void set_use_discriminator_encoding(bool v) {
+    use_discriminator_encoding_ = v;
+  }
+
   // Adds an empty named symbol.
   void AddSymbol(const string &name);
 
   const NameSymbolMap &map() const {
+    return map_;
+  }
+
+  NameSymbolMap &map() {
     return map_;
   }
 
@@ -287,17 +321,23 @@ class SymbolMap {
   //         number.
   void ComputeWorkingSets();
 
-  // Updates the symbol from new binary.
-  //   * reads the module info stored by "-frecord-compilation-info-in-elf".
-  //   * updates each symbol's module info from the debug info stored in
-  //     addr2line.
-  //   * re-groups the module from the updated module info.
-  void UpdateSymbolMap(const string &binary, const Addr2line *addr2line);
+  // Traverses all symbols that has been sampled (appears in sampled_functions).
+  // Uses addr2line to derive  symbol's source info and update the symbol.
+  void UpdateSymbolMap(const Addr2line *addr2line,
+                       const std::map<uint64, uint64> &sampled_functions);
 
   // Returns a map from start addresses of functions that have been sampled to
   // the size of the function.
-  ::map<uint64, uint64> GetSampledSymbolStartAddressSizeMap(
-      const set<uint64> &sampled_addrs) const;
+  std::map<uint64, uint64> GetSampledSymbolStartAddressSizeMap(
+      const std::set<uint64> &sampled_addrs) const;
+
+  // Returns a map from start addresses of functions that have been sampled in
+  // the old profile that has already been loaded, to the size of the function.
+  // This function is used by profile_update, which takes the old profile as
+  // input, and use the debug/module info in the new binary to update the old
+  // profile's module info. For the efficiency consideration, we only need to
+  // read debug info for the symbols that has been sampled in the old profile.
+  std::map<uint64, uint64> GetLegacySymbolStartAddressSizeMap() const;
 
   void Dump() const;
   void DumpFuncLevelProfileCompare(const SymbolMap &map) const;
@@ -325,6 +365,7 @@ class SymbolMap {
   const string binary_;
   uint64 base_addr_;
   int64 count_threshold_;
+  bool use_discriminator_encoding_;
   /* working_set_[i] stores # of instructions that consumes
      i/NUM_GCOV_WORKING_SETS of total instruction counts.  */
   gcov_working_set_info working_set_[NUM_GCOV_WORKING_SETS];

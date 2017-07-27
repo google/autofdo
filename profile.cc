@@ -35,8 +35,8 @@ Profile::ProfileMaps *Profile::GetProfileMaps(uint64 addr) {
   uint64 start_addr, end_addr;
   if (symbol_map_->GetSymbolInfoByAddr(addr, &name,
                                        &start_addr, &end_addr)) {
-    pair<SymbolProfileMaps::iterator, bool> ret = symbol_profile_maps_.insert(
-        SymbolProfileMaps::value_type(*name, NULL));
+    std::pair<SymbolProfileMaps::iterator, bool> ret =
+        symbol_profile_maps_.insert(SymbolProfileMaps::value_type(*name, NULL));
     if (ret.second) {
       ret.first->second = new ProfileMaps(start_addr, end_addr);
     }
@@ -93,12 +93,6 @@ uint64 Profile::ProfileMaps::GetAggregatedCount() const {
 
 void Profile::ProcessPerFunctionProfile(string func_name,
                                         const ProfileMaps &maps) {
-  if (!symbol_map_->ShouldEmit(maps.GetAggregatedCount())) {
-    return;
-  }
-
-  symbol_map_->AddSymbol(func_name);
-
   InstructionMap inst_map(addr2line_, symbol_map_);
   inst_map.BuildPerFunctionInstructionMap(func_name, maps.start_addr,
                                           maps.end_addr);
@@ -133,14 +127,11 @@ void Profile::ProcessPerFunctionProfile(string func_name,
     if (info == NULL) {
       continue;
     }
-    bool is_in_head = symbol_map_->GetSymbolNameByStartAddr(
-        address_count.first) != NULL;
-    if (is_in_head) {
-      symbol_map_->AddSymbolEntryCount(func_name, address_count.second);
-    }
     if (info->source_stack.size() > 0) {
-      symbol_map_->AddSourceCount(func_name, info->source_stack,
-                                  address_count.second, 0, SymbolMap::MAX);
+      symbol_map_->AddSourceCount(
+          func_name, info->source_stack,
+          address_count.second * info->source_stack[0].DuplicationFactor(), 0,
+          SymbolMap::MAX);
     }
   }
 
@@ -159,8 +150,11 @@ void Profile::ProcessPerFunctionProfile(string func_name,
     if (!callee) {
       continue;
     }
-    symbol_map_->AddIndirectCallTarget(func_name, info->source_stack,
-                                       *callee, branch_count.second);
+    if (symbol_map_->map().count(*callee)) {
+      symbol_map_->AddSymbolEntryCount(*callee, branch_count.second);
+      symbol_map_->AddIndirectCallTarget(func_name, info->source_stack,
+                                         *callee, branch_count.second);
+    }
   }
 
   for (const auto &addr_count : *map_ptr) {
@@ -172,9 +166,20 @@ void Profile::ComputeProfile() {
   symbol_map_->CalculateThresholdFromTotalCount(
       sample_reader_->GetTotalCount());
   AggregatePerFunctionProfile();
+
+  // First add all symbols that needs to be outputted to the symbol_map_. We
+  // need to do this before hand because ProcessPerFunctionProfile will call
+  // AddSymbolEntryCount for other symbols, which may or may not had been
+  // processed by ProcessPerFunctionProfile.
+  for (const auto &symbol_profile : symbol_profile_maps_) {
+    if (symbol_map_->ShouldEmit(symbol_profile.second->GetAggregatedCount()))
+      symbol_map_->AddSymbol(symbol_profile.first);
+  }
+
   // Traverse the symbol map to process the profiles.
   for (const auto &symbol_profile : symbol_profile_maps_) {
-    ProcessPerFunctionProfile(symbol_profile.first, *symbol_profile.second);
+    if (symbol_map_->ShouldEmit(symbol_profile.second->GetAggregatedCount()))
+      ProcessPerFunctionProfile(symbol_profile.first, *symbol_profile.second);
   }
   symbol_map_->Merge();
   symbol_map_->ComputeWorkingSets();

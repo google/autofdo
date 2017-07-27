@@ -165,7 +165,7 @@ class SymbolTraverser {
   DISALLOW_COPY_AND_ASSIGN(SymbolTraverser);
 };
 
-typedef map<string, int> StringIndexMap;
+typedef std::map<string, int> StringIndexMap;
 
 class StringTableUpdater: public SymbolTraverser {
  public:
@@ -176,7 +176,6 @@ class StringTableUpdater: public SymbolTraverser {
 
  protected:
   void Visit(const Symbol *node) override {
-    (*map_)[node->info.func_name ? node->info.func_name : string()] = 0;
     for (const auto &pos_count : node->pos_counts) {
       for (const auto &name_count : pos_count.second.target_map) {
         (*map_)[name_count.first] = 0;
@@ -184,8 +183,12 @@ class StringTableUpdater: public SymbolTraverser {
     }
   }
 
+  void VisitCallsite(const Callsite &callsite) {
+    (*map_)[Symbol::Name(callsite.second)] = 0;
+  }
+
   void VisitTopSymbol(const string &name, const Symbol *node) override {
-    (*map_)[name] = 0;
+    (*map_)[Symbol::Name(name.c_str())] = 0;
   }
 
  private:
