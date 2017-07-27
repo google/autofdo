@@ -230,12 +230,13 @@ class InlineStackHandler: public Dwarf2Handler {
   // Cleans up memory consumed by subprograms that are not used.
   void CleanupUnusedSubprograms();
 
+  void PopulateSubprogramsByAddress();
+
   ~InlineStackHandler();
 
  private:
   typedef std::map<uint64, SubprogramInfo*> SubprogramsByOffsetMap;
 
-  void PopulateSubprogramsByAddress();
   void FindBadSubprograms(std::set<const SubprogramInfo *> *bad_subprograms);
   static void InitSubprograms(InlineStackHandler *handler) {
     handler->PopulateSubprogramsByAddress();
