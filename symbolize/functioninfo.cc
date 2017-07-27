@@ -29,6 +29,7 @@
 
 #include "base/common.h"
 #include "symbolize/dwarf2enums.h"
+#include "symbolize/line_state_machine.h"
 
 namespace autofdo {
 
@@ -44,7 +45,7 @@ CULineInfoHandler::CULineInfoHandler(
     FileVector* files,
     DirectoryVector* dirs,
     AddressToLineMap* linemap,
-    const map<uint64, uint64> *sampled_functions)
+    const std::map<uint64, uint64> *sampled_functions)
     : linemap_(linemap), files_(files), dirs_(dirs),
       sampled_functions_(sampled_functions) {
   Init();
@@ -55,17 +56,27 @@ void CULineInfoHandler::Init() {
   CHECK_EQ(dirs_->size(), 0);
   CHECK_EQ(files_->size(), 0);
   dirs_->push_back("");
-  files_->push_back(make_pair(0, ""));
+  files_->push_back(std::make_pair(0, ""));
+}
+
+void CULineInfoHandler::StartCU() {
+  linemap_->StartCU();
 }
 
 bool CULineInfoHandler::ShouldAddAddress(uint64 address) const {
+  // If the address is below the vaddr of the first load segment,
+  // it must belong to a function that has been deleted.
+  if (address < GetVaddrOfFirstLoadSegment()) {
+    return false;
+  }
+
   // Looks for the first entry above the given address, then decrement the
   // iterator, then check that it's within the range [start, start + len).
   if (sampled_functions_ == NULL) {
     return true;
   }
-  map<uint64, uint64>::const_iterator iter = sampled_functions_->upper_bound(
-      address);
+  std::map<uint64, uint64>::const_iterator iter =
+      sampled_functions_->upper_bound(address);
   if (iter == sampled_functions_->begin()) {
     return false;
   }
@@ -86,34 +97,94 @@ void CULineInfoHandler::DefineFile(const char *name,
   CHECK_GE(dir_num, 0);
   CHECK_LT(dir_num, dirs_->size());
   if (file_num == files_->size() || file_num == -1) {
-    files_->push_back(make_pair(dir_num, name));
+    files_->push_back(std::make_pair(dir_num, name));
   } else {
     LOG(INFO) << "error in DefineFile";
   }
 }
 
-void CULineInfoHandler::AddLine(uint64 address, uint32 file_num,
-                                uint32 line_num, uint32 column_num,
-                                uint32 discriminator) {
-  if (!ShouldAddAddress(address)) {
-    return;
-  }
+void CULineInfoHandler::DefineSubprog(const char *name,
+                                      uint32 subprog_num, uint32 file_num,
+                                      uint32 line_num) {
   if (file_num < files_->size()) {
-    const pair<int, const char *>& file = (*files_)[file_num];
+    const std::pair<int, const char *>& file = (*files_)[file_num];
     if (file.first < dirs_->size()) {
-      DirectoryFilePair file_and_dir = make_pair((*dirs_)[file.first],
-                                                 file.second);
-      LineIdentifier line_id(file_and_dir, line_num, discriminator);
-      (*linemap_)[address] = line_id;
+      DirectoryFilePair file_and_dir =
+          std::make_pair((*dirs_)[file.first], file.second);
+      linemap_->AddSubprog(subprog_num, name, file_and_dir, line_num);
     } else {
-      LOG(INFO) << "error in AddLine (bad dir_num " << file.first << ")";
+      LOG(INFO) << "error in DefineSubprog (bad dir_num " << file.first << ")";
     }
   } else {
-    LOG(INFO) << "error in AddLine (bad file_num " << file_num << ")";
+    LOG(INFO) << "error in DefineSubprog (bad file_num " << file_num << ")";
   }
 }
 
-string CULineInfoHandler::MergedFilename(const pair<const char *,
+void CULineInfoHandler::StartActuals() {
+  linemap_->InitializeLogicalMap(GetLogicals()->size());
+}
+
+uint32 CULineInfoHandler::AddLogicalStack(uint32 logical_num) {
+  const LogicalsVector* logicals = GetLogicals();
+  uint32 new_logical_num = linemap_->MapLogical(logical_num);
+  if (new_logical_num > 0) {
+    return new_logical_num;
+  }
+  const struct LineStateMachine* logical = &(*logicals)[logical_num - 1];
+  if (logical->file_num < files_->size()) {
+    const std::pair<int, const char *>& file = (*files_)[logical->file_num];
+    if (file.first < dirs_->size()) {
+      DirectoryFilePair file_and_dir =
+          std::make_pair((*dirs_)[file.first], file.second);
+      LineIdentifier line_id(file_and_dir, logical->line_num,
+                             logical->discriminator);
+      if (logical->context != 0) {
+        line_id.context = AddLogicalStack(logical->context);
+      }
+      line_id.subprog_num = logical->subprog_num;
+      return linemap_->AddLogical(logical_num, line_id);
+    } else {
+      LOG(INFO) << "error in AddLogicalStack (bad dir_num "
+                << file.first << ")";
+    }
+  } else {
+    LOG(INFO) << "error in AddLogicalStack (bad file_num "
+              << logical->file_num << ")";
+  }
+  return 0;
+}
+
+void CULineInfoHandler::AddLine(uint64 address, uint32 file_num,
+                                uint32 line_num, uint32 column_num,
+                                uint32 discriminator, bool end_sequence) {
+  if (!ShouldAddAddress(address)) {
+    return;
+  }
+  if (end_sequence) {
+    linemap_->AddActual(address, 0);
+  } else {
+    if (GetLogicals() == NULL) {
+      if (file_num < files_->size()) {
+        const std::pair<int, const char *>& file = (*files_)[file_num];
+        if (file.first < dirs_->size()) {
+          DirectoryFilePair file_and_dir =
+              std::make_pair((*dirs_)[file.first], file.second);
+          LineIdentifier line_id(file_and_dir, line_num, discriminator);
+          linemap_->AddLine(address, line_id);
+        } else {
+          LOG(INFO) << "error in AddLine (bad dir_num " << file.first << ")";
+        }
+      } else {
+        LOG(INFO) << "error in AddLine (bad file_num " << file_num << ")";
+      }
+    } else {
+      uint32 new_logical_num = AddLogicalStack(GetLogicalNum());
+      linemap_->AddActual(address, new_logical_num);
+    }
+  }
+}
+
+string CULineInfoHandler::MergedFilename(const std::pair<const char *,
                                          const char *>& filename) {
   string dir = filename.first;
   if (dir.empty())
@@ -144,8 +215,9 @@ bool CUFunctionInfoHandler::StartDIE(uint64 offset, enum DwarfTag tag,
       current_function_info_->lowpc = current_function_info_->highpc = 0;
       current_function_info_->name = "";
       current_function_info_->line = 0;
-      current_function_info_->file = make_pair("", "");
-      offset_to_funcinfo_->insert(make_pair(offset, current_function_info_));
+      current_function_info_->file = std::make_pair("", "");
+      offset_to_funcinfo_->insert(
+          std::make_pair(offset, current_function_info_));
       FALLTHROUGH_INTENDED;
     }
     case DW_TAG_compile_unit:
@@ -171,10 +243,21 @@ void CUFunctionInfoHandler::ProcessAttributeUnsigned(uint64 offset,
                                                      enum DwarfForm form,
                                                      uint64 data) {
   if (attr == DW_AT_stmt_list) {
-    SectionMap::const_iterator iter = sections_.find(".debug_line");
-    CHECK(iter != sections_.end());
+    SectionMap::const_iterator line_sect = sections_.find(".debug_line");
+    CHECK(line_sect != sections_.end());
 
-    LineInfo lireader(iter->second.first + data, iter->second.second  - data,
+    SectionMap::const_iterator str_sect = sections_.find(".debug_line_str");
+    const char* line_str_buffer = NULL;
+    uint64 line_str_size = 0;
+    if (str_sect != sections_.end()) {
+      line_str_buffer = str_sect->second.first;
+      line_str_size = str_sect->second.second;
+    }
+
+    LineInfo lireader(line_sect->second.first + data,
+                      line_sect->second.second  - data,
+                      line_str_buffer,
+                      line_str_size,
                       reader_, linehandler_);
     lireader.Start();
   } else if (current_function_info_) {
@@ -193,7 +276,7 @@ void CUFunctionInfoHandler::ProcessAttributeUnsigned(uint64 offset,
           const FileVector::value_type& file = (*files_)[data];
           CHECK_LT(file.first, dirs_->size());
           const char *dir = (*dirs_)[file.first];
-          current_function_info_->file = make_pair(dir, file.second);
+          current_function_info_->file = std::make_pair(dir, file.second);
         } else {
           LOG(INFO) << "unexpected file_num " << data;
         }

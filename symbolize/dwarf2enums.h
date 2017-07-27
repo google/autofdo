@@ -149,6 +149,9 @@ enum DwarfForm {
   DW_FORM_sec_offset = 0x17,
   DW_FORM_exprloc = 0x18,
   DW_FORM_flag_present = 0x19,
+  // DWARF 5.
+  DW_FORM_line_strp = 0x1f,
+  // DWARF 4.
   DW_FORM_ref_sig8 = 0x20,
   // Extensions for Fission.  See http://gcc.gnu.org/wiki/DebugFission.
   DW_FORM_GNU_addr_index = 0x1f01,
@@ -361,7 +364,13 @@ enum DwarfLineNumberOps {
   // DWARF 3.
   DW_LNS_set_prologue_end = 10,
   DW_LNS_set_epilogue_begin = 11,
-  DW_LNS_set_isa = 12
+  DW_LNS_set_isa = 12,
+  /* Experimental DWARF 5 extensions.
+     See http://wiki.dwarfstd.org/index.php?title=TwoLevelLineTables.  */
+  DW_LNS_set_address_from_logical = 13, /* Actuals table only.  */
+  DW_LNS_set_subprogram = 13,           /* Logicals table only.  */
+  DW_LNS_inlined_call = 14,             /* Logicals table only.  */
+  DW_LNS_pop_context = 15               /* Logicals table only.  */
 };
 
 // Line number extended opcodes.
@@ -383,6 +392,20 @@ enum DwarfLineNumberExtendedOps {
   DW_LNE_HP_negate_function_exit     = 0x18,
   DW_LNE_HP_negate_front_end_logical = 0x19,
   DW_LNE_HP_define_proc              = 0x20
+};
+
+// Line number content type codes (DWARF 5).
+enum DwarfLineNumberContentType {
+  DW_LNCT_path = 1,
+  DW_LNCT_directory_index = 2,
+  DW_LNCT_timestamp = 3,
+  DW_LNCT_size = 4,
+  DW_LNCT_MD5 = 5,
+  // Experimental DWARF 5 extensions.
+  // See http://wiki.dwarfstd.org/index.php?title=TwoLevelLineTables.
+  DW_LNCT_subprogram_name = 6,
+  DW_LNCT_decl_file = 7,
+  DW_LNCT_decl_line = 8
 };
 
 // Type encoding names and codes

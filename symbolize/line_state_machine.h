@@ -30,13 +30,17 @@ struct LineStateMachine {
     is_stmt = default_is_stmt;
     basic_block = false;
     end_sequence = false;
+    context = 0;
+    subprog_num = 0;
   }
 
-  uint32 file_num;
   uint64 address;
   uint64 line_num;
+  uint32 file_num;
   uint32 column_num;
   uint32 discriminator;
+  uint32 context;
+  uint32 subprog_num;
   bool is_stmt;  // stmt means statement.
   bool basic_block;
   bool end_sequence;

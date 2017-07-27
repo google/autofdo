@@ -43,14 +43,17 @@ class DwpReader;
 // This maps from a string naming a section to a pair containing a
 // the data for the section, and the size of the section.
 typedef map<string, pair<const char*, uint64> > SectionMap;
-typedef list<pair<enum DwarfAttribute, enum DwarfForm> > AttributeList;
+typedef std::list<std::pair<enum DwarfAttribute, enum DwarfForm> >
+    AttributeList;
 typedef AttributeList::iterator AttributeIterator;
 typedef AttributeList::const_iterator ConstAttributeIterator;
 
 // A vector containing directory names
-typedef vector<const char *> DirectoryVector;
+typedef std::vector<const char *> DirectoryVector;
 // A vector containing a directory name index and a file name
-typedef vector<pair<int, const char *> > FileVector;
+typedef std::vector<std::pair<int, const char *> > FileVector;
+
+typedef std::vector<struct LineStateMachine> LogicalsVector;
 
 struct LineInfoHeader {
   uint64 total_length;
@@ -64,7 +67,9 @@ struct LineInfoHeader {
   uint8 opcode_base;
   // Use a pointer so that signalsafe_addr2line is able to use this structure
   // without heap allocation problem.
-  vector<unsigned char> *std_opcode_lengths;
+  std::vector<unsigned char> *std_opcode_lengths;
+  uint64 logicals_offset;
+  uint64 actuals_offset;
 };
 
 class LineInfo {
@@ -76,11 +81,18 @@ class LineInfo {
   LineInfo(const char* buffer_, uint64 buffer_length,
            ByteReader* reader, LineInfoHandler* handler);
 
+  LineInfo(const char* buffer_, uint64 buffer_length,
+           const char* str_buffer_, uint64 str_buffer_length,
+           ByteReader* reader, LineInfoHandler* handler);
+
   virtual ~LineInfo() {
     if (header_.std_opcode_lengths) {
       delete header_.std_opcode_lengths;
     }
   }
+
+  bool have_two_level_line_tables() const
+  { return actuals_start_ != NULL; }
 
   bool malformed() const {return malformed_;}
 
@@ -93,15 +105,15 @@ class LineInfo {
   // machine at LSM.  Return true if we should define a line using the
   // current state of the line state machine.  Place the length of the
   // opcode in LEN.
-  static bool ProcessOneOpcode(ByteReader* reader,
-                               LineInfoHandler* handler,
-                               const struct LineInfoHeader &header,
-                               const char* start,
-                               struct LineStateMachine* lsm,
-                               size_t* len,
-                               uintptr_t pc);
+  static bool ProcessOneOpcode(
+      ByteReader* reader, LineInfoHandler* handler,
+      const struct LineInfoHeader& header, const char* start,
+      struct LineStateMachine* lsm, size_t* len,
+      const std::vector<struct LineStateMachine>* logicals, bool is_actuals);
 
  private:
+  static const int VERSION_TWO_LEVEL = 0xf006;
+
   // Advance lineptr in a buffer.  If lineptr will advance beyond the
   // end of buffer_, malformed_ is set true.
   //
@@ -111,6 +123,17 @@ class LineInfo {
   //
   // Returns true if lineptr is advanced.
   bool AdvanceLinePtr(int incr,  const char **lineptr);
+
+  // Reads the types and forms lists common to directory, filename,
+  // and subprogram tables.
+  bool ReadTypesAndForms(const char** lineptr, uint32* content_types,
+      uint32* content_forms, uint32 max_types, uint32* format_count);
+
+  // Reads a string of one of the forms DW_FORM_string or DW_FORM_line_strp.
+  bool ReadStringForm(uint32 form, const char** dirname, const char** lineptr);
+
+  // Reads an unsigned integer of form DW_FORM_udata.
+  bool ReadUnsignedForm(uint32 form, uint64* value, const char** lineptr);
 
   // Reads the DWARF2/3 header for this line info.
   void ReadHeader();
@@ -131,11 +154,24 @@ class LineInfo {
   struct LineInfoHeader header_;
 
   // buffer is the buffer for our line info, starting at exactly where
-  // the line info to read is.  after_header is the place right after
-  // the end of the line information header.
+  // the line info to read is.
   const char* buffer_;
   uint64 buffer_length_;
+
+  // str_buffer is the buffer for the string table, in .debug_line_str.
+  const char* str_buffer_;
+  uint64 str_buffer_length_;
+
+  // after_header is the place right after the end of the line
+  // information header.
   const char* after_header_;
+
+  // logicals_start_ points to the start of the logicals table,
+  // and actuals_start_ points to the start of the actuals table.
+  // If there is only a single line table, actuals_start_ will be NULL.
+  const char* logicals_start_;
+  const char* actuals_start_;
+
   bool malformed_;
   DISALLOW_EVIL_CONSTRUCTORS(LineInfo);
 };
@@ -147,9 +183,13 @@ class LineInfo {
 
 class LineInfoHandler {
  public:
-  LineInfoHandler() { }
+  LineInfoHandler() : logicals_(NULL), vaddr_of_first_load_segment_(0),
+      logical_num_(0), context_(0), subprog_num_(0) { }
 
   virtual ~LineInfoHandler() { }
+
+  // Called when we start a new CU.
+  virtual void StartCU() { }
 
   // Called when we define a directory.  NAME is the directory name,
   // DIR_NUM is the directory number
@@ -166,17 +206,96 @@ class LineInfoHandler {
                           uint32 dir_num, uint64 mod_time,
                           uint64 length) { }
 
+  // Called when we define a subprogram. NAME is the subprogram name,
+  // SUBPROG_NUM is the subprogram number, FILE_NUM is the file number
+  // where the subprogram is defined, and LINE_NUM is the line number.
+  virtual void DefineSubprog(const char *name, uint32 subprog_num,
+                             uint32 file_num, uint32 line_num) { }
+
+  // When reading a two-level line table, this is called for each row
+  // in the logicals table, and AddLine is called for lines in the
+  // actuals table. All logical lines are added before processing the
+  // actual line table.
+  virtual void AddLogical(uint64 address, uint32 file_num, uint32 line_num,
+                          uint32 column_num, uint32 discriminator,
+                          uint32 context, uint32 subprog) { }
+
+  // Called when the logicals table has been read, and we are about
+  // to start reading the actuals table.
+  virtual void StartActuals() { }
+
   // Called when the line info reader has a new line, address pair
   // ready for us.  ADDRESS is the address of the code, FILE_NUM is
   // the file number containing the code, LINE_NUM is the line number
   // in that file for the code, COLUMN_NUM is the column number the
-  // code starts at, if we know it (0 otherwise), and DISCRIMINATOR is
+  // code starts at, if we know it (0 otherwise), DISCRIMINATOR is
   // the path discriminator identifying the basic block on the
-  // specified line.
+  // specified line, and END_SEQUENCE is true when this row marks
+  // the end of a sequence. For two-level line tables, LINE_NUM is
+  // the logical row number (counting from 1) for the instructions
+  // (0 if there is no logicals table), and FILE_NUM, COLUMN_NUM,
+  // and DISCRIMINATOR are not used.
   virtual void AddLine(uint64 address, uint32 file_num, uint32 line_num,
-                       uint32 column_num, uint32 discriminator) { }
+                       uint32 column_num, uint32 discriminator,
+                       bool end_sequence) { }
+
+  void SetLogicals(LogicalsVector* logicals) {
+    logicals_ = logicals;
+  }
+
+  void SetLogicalNum(uint64 logical_num) {
+    logical_num_ = logical_num;
+  }
+
+  void SetContext(uint32 context) {
+    context_ = context;
+  }
+
+  void SetSubprog(uint32 subprog_num) {
+    subprog_num_ = subprog_num;
+  }
+
+  // Return the logicals table. This can be called from either the
+  // AddLogical or AddLine callback when reading a two-level line
+  // table. Returns NULL if we have an old-style line table.
+  const LogicalsVector* GetLogicals() const {
+    return logicals_;
+  }
+
+  // Return the row number of the corresponding logical.
+  // This can be called from the AddLine callback.
+  uint64 GetLogicalNum() const {
+    return logical_num_;
+  }
+
+  // Return the "context" field of the corresponding logical.
+  // This can be called from the AddLine callback.
+  uint32 GetContext() const {
+    return context_;
+  }
+
+  // Return the "subprog" field of the corresponding logical.
+  // This can be called from the AddLine callback.
+  uint32 GetSubprog() const {
+    return subprog_num_;
+  }
+
+  // Set the lowest virtual address of the text segment.
+  void SetVaddrOfFirstLoadSegment(uint64 vaddr) {
+    vaddr_of_first_load_segment_ = vaddr;
+  }
+
+  // Return the lowest virtual address of the text segment.
+  uint64 GetVaddrOfFirstLoadSegment() const {
+    return vaddr_of_first_load_segment_;
+  }
 
  private:
+  LogicalsVector* logicals_;
+  uint64 vaddr_of_first_load_segment_;
+  uint64 logical_num_;
+  uint32 context_;
+  uint32 subprog_num_;
   DISALLOW_EVIL_CONSTRUCTORS(LineInfoHandler);
 };
 
@@ -198,11 +317,21 @@ class Dwarf2Handler {
                                     uint8 offset_size, uint64 cu_length,
                                     uint8 dwarf_version) { return false; }
 
+  // When processing a skeleton compilation unit, resulting from a split
+  // DWARF compilation, once the skeleton debug info has been read,
+  // the reader will call this function to ask the client if it needs
+  // the full debug info from the .dwo or .dwp file.  Return true if
+  // you need it, or false to skip processing the split debug info.
+  virtual bool NeedSplitDebugInfo() { return false; }
+
   // Start to process a split compilation unit at OFFSET from the beginning of
   // the debug_info section in the .dwp/.dwo file.  Return false if you would
   // like to skip this compilation unit.
   virtual bool StartSplitCompilationUnit(uint64 offset,
                                          uint64 cu_length) { return false; }
+
+  // Called when processing of a DWO file is finished.
+  virtual bool EndSplitCompilationUnit() { return false; }
 
   // Start to process a DIE at OFFSET from the beginning of the
   // debug_info section.  Return false if you would like to skip this
@@ -303,6 +432,11 @@ class CompilationUnit {
   CompilationUnit(const string& path, const SectionMap& sections,
                   uint64 offset, ByteReader* reader, Dwarf2Handler* handler);
 
+  // Initialize a compilation unit with an explicit dwp file.
+  CompilationUnit(const string& path, const string& dwp_path,
+                  const SectionMap& sections, uint64 offset, ByteReader* reader,
+                  Dwarf2Handler* handler);
+
   virtual ~CompilationUnit();
 
   // Initialize a compilation unit from a .dwo or .dwp file.
@@ -312,7 +446,7 @@ class CompilationUnit {
   // the executable file, and call it as if we were still
   // processing the original compilation unit.
   void SetSplitDwarf(const char* addr_buffer, uint64 addr_buffer_length,
-                     uint64 addr_base, uint64 ranges_base);
+                     uint64 addr_base, uint64 ranges_base, uint64 dwo_id);
 
   bool malformed() const {return malformed_;}
 
@@ -386,7 +520,10 @@ class CompilationUnit {
       addr_base_ = data;
     else if (attr == DW_AT_GNU_ranges_base)
       ranges_base_ = data;
-    else if (attr == DW_AT_ranges)
+    // TODO(ccoutant): When we add DW_AT_ranges_base from DWARF-5,
+    // that base will apply to DW_AT_ranges attributes in the
+    // skeleton CU as well as in the .dwo/.dwp files.
+    else if (attr == DW_AT_ranges && is_split_dwarf_)
       data += ranges_base_;
     handler_->ProcessAttributeUnsigned(offset, attr, form, data);
   }
@@ -474,7 +611,7 @@ class CompilationUnit {
   // Set of DWARF2/3 abbreviations for this compilation unit.  Indexed
   // by abbreviation number, which means that abbrevs_[0] is not
   // valid.
-  vector<Abbrev>* abbrevs_;
+  std::vector<Abbrev>* abbrevs_;
 
   // String section buffer and length, if we have a string section.
   // This is here to avoid doing a section lookup for strings in
@@ -506,6 +643,10 @@ class CompilationUnit {
 
   // The value of the DW_AT_GNU_dwo_name attribute, if any.
   const char* dwo_name_;
+
+  // If this is a split DWARF CU, the value of the DW_AT_GNU_dwo_id attribute
+  // from the skeleton CU.
+  uint64 skeleton_dwo_id_;
 
   // The value of the DW_AT_GNU_ranges_base attribute, if any.
   uint64 ranges_base_;

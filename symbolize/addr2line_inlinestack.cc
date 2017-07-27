@@ -70,6 +70,30 @@ void SubprogramInfo::SetSingletonRangeHigh(uint64 addr, bool is_offset) {
   }
 }
 
+string SubprogramInfo::CallsiteFilename(bool basenames_only,
+                                        bool with_comp_dir) const {
+  string rval;
+  if (basenames_only) {
+    CHECK(!with_comp_dir) << "with_comp_dir disallowed with basenames_only";
+  } else {
+    if (with_comp_dir && comp_directory_) {
+      rval.append(comp_directory_);
+      rval.append("/");
+    }
+    if (callsite_directory_) {
+      rval.append(callsite_directory_);
+      rval.append("/");
+    }
+  }
+  if (callsite_filename_) {
+    rval.append(callsite_filename_);
+  }
+  if (rval.empty()) {
+    rval.append("??");
+  }
+  return rval;
+}
+
 bool InlineStackHandler::StartCompilationUnit(uint64 offset,
                                               uint8 /*address_size*/,
                                               uint8 /*offset_size*/,
@@ -78,22 +102,44 @@ bool InlineStackHandler::StartCompilationUnit(uint64 offset,
   CHECK(subprogram_stack_.empty());
   compilation_unit_offset_ = offset;
   compilation_unit_base_ = 0;
-  ++cu_index_;
-  subprograms_by_offset_maps_.push_back(new SubprogramsByOffsetMap);
-  CHECK(subprograms_by_offset_maps_.size() == cu_index_ + 1);
+  have_two_level_line_tables_ = false;
+  subprogram_added_by_cu_ = false;
+  if (input_file_index_ == -1) {
+    input_file_index_ = 0;
+    subprograms_by_offset_maps_.push_back(new SubprogramsByOffsetMap);
+  }
   return true;
+}
+
+bool InlineStackHandler::NeedSplitDebugInfo() {
+  // If we have already seen any subprogram DIEs, that means that
+  // the skeleton compile unit includes inlined call information,
+  // so we don't need to read DWARF info from the .dwo or .dwp file.
+  return !subprogram_added_by_cu_;
 }
 
 bool InlineStackHandler::StartSplitCompilationUnit(uint64 offset,
                                                    uint64 /*cu_length*/) {
   compilation_unit_offset_ = offset;
+  input_file_index_ = subprograms_by_offset_maps_.size();
+  subprograms_by_offset_maps_.push_back(new SubprogramsByOffsetMap);
+  return true;
+}
+
+bool InlineStackHandler::EndSplitCompilationUnit() {
+  // If dwo/dwp is available, cleanup the unused subprograms.
+  if (input_file_index_ != 0) {
+    CleanupUnusedSubprograms();
+  }
+  // Now that we get back to the binary file, input_file_index_ is reset to 0.
+  input_file_index_ = 0;
   return true;
 }
 
 void InlineStackHandler::CleanupUnusedSubprograms() {
   SubprogramsByOffsetMap* subprograms_by_offset =
       subprograms_by_offset_maps_.back();
-  vector<const SubprogramInfo *> worklist;
+  std::vector<const SubprogramInfo *> worklist;
   for (const auto &offset_subprogram : *subprograms_by_offset) {
     if (offset_subprogram.second->used()) {
       worklist.push_back(offset_subprogram.second);
@@ -145,17 +191,22 @@ bool InlineStackHandler::StartDIE(uint64 offset,
   switch (tag) {
     case DW_TAG_subprogram:
     case DW_TAG_inlined_subroutine: {
+      // If we have two-level line tables, we don't need to read the
+      // debug info to collect inline call information.
+      if (have_two_level_line_tables_)
+        return false;
       bool inlined = (tag == DW_TAG_inlined_subroutine);
       SubprogramInfo *parent =
           subprogram_stack_.empty() ? NULL : subprogram_stack_.back();
-      SubprogramInfo *child =
-          new SubprogramInfo(cu_index_, offset, parent, inlined);
+      SubprogramInfo *child = new SubprogramInfo(input_file_index_,
+                                                 offset, parent, inlined);
       if (!compilation_unit_comp_dir_.empty())
         child->set_comp_directory(compilation_unit_comp_dir_.back()->c_str());
       SubprogramsByOffsetMap* subprograms_by_offset =
-          subprograms_by_offset_maps_.back();
+          subprograms_by_offset_maps_[input_file_index_];
       subprograms_by_offset->insert(std::make_pair(offset, child));
       subprogram_stack_.push_back(child);
+      subprogram_added_by_cu_ = true;
       return true;
     }
     case DW_TAG_compile_unit:
@@ -168,28 +219,24 @@ bool InlineStackHandler::StartDIE(uint64 offset,
 void InlineStackHandler::EndDIE(uint64 offset) {
   DwarfTag die = die_stack_.back();
   die_stack_.pop_back();
-  if (die == DW_TAG_subprogram ||
-      die == DW_TAG_inlined_subroutine) {
+  if ((die == DW_TAG_subprogram ||
+       die == DW_TAG_inlined_subroutine) &&
+      !have_two_level_line_tables_) {
     // If the top level subprogram is used, we mark all subprograms in
     // the subprogram_stack_ as used.
     if (subprogram_stack_.front()->used()) {
       subprogram_stack_.back()->set_used();
     }
-    if (!sampled_functions_ || subprogram_stack_.front()->used()) {
+    if (subprogram_stack_.front()->used()) {
       subprogram_insert_order_.push_back(subprogram_stack_.back());
     }
     subprogram_stack_.pop_back();
   }
-  if (die == DW_TAG_compile_unit && sampled_functions_ != NULL) {
-    CleanupUnusedSubprograms();
-  }
 }
 
 void InlineStackHandler::ProcessAttributeString(
-    uint64 offset,
-    enum DwarfAttribute attr,
-    enum DwarfForm form,
-    const char *data) {
+    uint64 offset, enum DwarfAttribute attr,
+    enum DwarfForm form, const char *data) {
   if (attr == DW_AT_comp_dir) {
     compilation_unit_comp_dir_.emplace_back(new string(data));
   }
@@ -247,23 +294,38 @@ void InlineStackHandler::ProcessAttributeUnsigned(
         subprogram_stack_.back()->set_callsite_discr(data);
         break;
       case DW_AT_abstract_origin:
-        CHECK(form == DW_FORM_ref4);
-        subprogram_stack_.back()->set_abstract_origin(
+        if (form == DW_FORM_ref_addr) {
+          subprogram_stack_.back()->set_abstract_origin(data);
+        } else {
+          CHECK(form == DW_FORM_ref4);
+          subprogram_stack_.back()->set_abstract_origin(
             compilation_unit_offset_ + data);
+        }
         break;
       case DW_AT_specification:
-        CHECK(form == DW_FORM_ref4);
-        subprogram_stack_.back()->set_specification(
-            compilation_unit_offset_ + data);
+        if (form == DW_FORM_ref_addr) {
+          subprogram_stack_.back()->set_specification(data);
+        } else {
+          CHECK(form == DW_FORM_ref4);
+          subprogram_stack_.back()->set_specification(
+              compilation_unit_offset_ + data);
+        }
         break;
       case DW_AT_low_pc:
         subprogram_stack_.back()->SetSingletonRangeLow(data);
         // If a symbol's start address is in sampled_functions, we will
         // mark the top level subprogram of this symbol as used.
-        if (sampled_functions_ != NULL &&
-            subprogram_stack_.size() == 1 &&
-            sampled_functions_->find(data) != sampled_functions_->end()) {
-          subprogram_stack_.front()->set_used();
+        if (subprogram_stack_.size() != 1) {
+          break;
+        }
+        if (sampled_functions_ != NULL) {
+          if (sampled_functions_->find(data) != sampled_functions_->end()) {
+            subprogram_stack_.front()->set_used();
+          }
+        } else {
+          if (data != 0) {
+            subprogram_stack_.front()->set_used();
+          }
         }
         break;
       case DW_AT_high_pc:
@@ -275,18 +337,27 @@ void InlineStackHandler::ProcessAttributeUnsigned(
         AddressRangeList::RangeList ranges;
         address_ranges_->ReadRangeList(data, compilation_unit_base_, &ranges);
 
-        if (sampled_functions_ != NULL && subprogram_stack_.size() == 1) {
-          for (const auto &range : ranges) {
-            if (sampled_functions_->find(range.first)
-                != sampled_functions_->end()) {
-              subprogram_stack_.front()->set_used();
-              break;
+        if (subprogram_stack_.size() == 1) {
+          if (sampled_functions_ != NULL) {
+            for (const auto &range : ranges) {
+              if (sampled_functions_->find(range.first)
+                  != sampled_functions_->end()) {
+                subprogram_stack_.front()->set_used();
+                break;
+              }
+            }
+          } else {
+            for (const auto &range : ranges) {
+              if (range.first != 0) {
+                subprogram_stack_.front()->set_used();
+                break;
+              }
             }
           }
         }
+
         AddressRangeList::RangeList sorted_ranges = SortAndMerge(ranges);
         subprogram_stack_.back()->SwapAddressRanges(&sorted_ranges);
-
         break;
       }
       case DW_AT_decl_line: {
@@ -307,13 +378,27 @@ void InlineStackHandler::ProcessAttributeUnsigned(
         break;
       case DW_AT_stmt_list:
         {
-          SectionMap::const_iterator iter = sections_.find(".debug_line");
+          SectionMap::const_iterator iter =
+              sections_.find(".debug_line");
           CHECK(iter != sections_.end()) << "unable to find .debug_line "
               "in section map";
+          SectionMap::const_iterator line_str =
+              sections_.find(".debug_line_str");
+          const char* line_str_buffer = NULL;
+          uint64 line_str_size = 0;
+          if (line_str != sections_.end()) {
+            line_str_buffer = line_str->second.first;
+            line_str_size = line_str->second.second;
+          }
           LineInfo lireader(iter->second.first + data,
-                                          iter->second.second - data,
-                                          reader_, line_handler_);
+                            iter->second.second - data,
+                            line_str_buffer,
+                            line_str_size,
+                            reader_, line_handler_);
+          line_handler_->SetVaddrOfFirstLoadSegment(
+              vaddr_of_first_load_segment_);
           lireader.Start();
+          have_two_level_line_tables_ = lireader.have_two_level_line_tables();
         }
         break;
       default:
@@ -323,7 +408,7 @@ void InlineStackHandler::ProcessAttributeUnsigned(
 }
 
 void InlineStackHandler::FindBadSubprograms(
-    set<const SubprogramInfo *> *bad_subprograms) {
+    std::set<const SubprogramInfo *> *bad_subprograms) {
   // Search for bad DIEs.  The debug information often contains
   // multiple entries for the same function.  However, only one copy
   // of the debug information corresponds to the actual emitted code.
@@ -361,7 +446,7 @@ void InlineStackHandler::FindBadSubprograms(
   }
 
   // Find the start addresses for each non-inlined subprogram.
-  set<uint64> start_addresses;
+  std::set<uint64> start_addresses;
   for (const auto &subprog : subprogram_insert_order_) {
     // Filter out inlined subprograms
     if (subprog->inlined())
@@ -393,7 +478,7 @@ void InlineStackHandler::FindBadSubprograms(
       uint64 min_address = range.first;
       uint64 max_address = range.second;
 
-      set<uint64>::iterator closest_match =
+      std::set<uint64>::iterator closest_match =
           start_addresses.lower_bound(min_address);
 
       if (closest_match != start_addresses.end() &&
@@ -410,7 +495,7 @@ void InlineStackHandler::FindBadSubprograms(
   }
 
   // Find the bad non-inlined subprograms according to rule (3) above.
-  map<uint64, set<SubprogramInfo *>> subprogram_index;
+  std::map<uint64, std::set<SubprogramInfo *>> subprogram_index;
   for (SubprogramInfo *subprog : subprogram_insert_order_) {
     // Filter out inlined subprograms
     if (subprog->inlined())
@@ -425,7 +510,7 @@ void InlineStackHandler::FindBadSubprograms(
       continue;
 
     bool keep_subprog = true;
-    set<SubprogramInfo *> overlapping_subprograms;
+    std::set<SubprogramInfo *> overlapping_subprograms;
     for (const auto &range : *subprog->address_ranges()) {
       for (const auto &other_subprog : subprogram_index[range.first]) {
         if (SubprogramContains(other_subprog, subprog)) {
@@ -455,13 +540,15 @@ void InlineStackHandler::FindBadSubprograms(
     }
   }
 
+
+
   // Expand the set of bad subprograms to include inlined subprograms.
   // An inlined subprogram is bad if its parent is bad.  Since
   // subprograms are stored in a leaf-to-parent order in
   // subprogram_insert_order_, it suffices to scan the vector
   // backwards once.
   // Also, if a subprogram is not a subset of its parent, mark it bad.
-  for (vector<SubprogramInfo *>::reverse_iterator subprogs =
+  for (std::vector<SubprogramInfo *>::reverse_iterator subprogs =
            subprogram_insert_order_.rbegin();
        subprogs != subprogram_insert_order_.rend();
        ++subprogs) {
@@ -480,12 +567,12 @@ void InlineStackHandler::PopulateSubprogramsByAddress() {
   // here since this is the first opportunity to do so.
   address_ranges_ = NULL;
 
-  set<const SubprogramInfo *> bad_subprograms;
+  std::set<const SubprogramInfo *> bad_subprograms;
   FindBadSubprograms(&bad_subprograms);
 
   // For the DIEs that are not marked bad, insert them into the
   // address based map.
-  for (vector<SubprogramInfo *>::iterator subprogs =
+  for (std::vector<SubprogramInfo *>::iterator subprogs =
            subprogram_insert_order_.begin();
        subprogs != subprogram_insert_order_.end();
        ++subprogs) {
@@ -535,11 +622,11 @@ const SubprogramInfo *InlineStackHandler::GetSubprogramForAddress(
 
 const SubprogramInfo *InlineStackHandler::GetDeclaration(
     const SubprogramInfo *subprog) const {
-  const int cu_index = subprog->cu_index();
+  const int input_file_index = subprog->input_file_index();
   const SubprogramInfo *declaration = subprog;
-  CHECK(cu_index < subprograms_by_offset_maps_.size());
+  CHECK(input_file_index < subprograms_by_offset_maps_.size());
   SubprogramsByOffsetMap* subprograms_by_offset =
-      subprograms_by_offset_maps_[cu_index];
+      subprograms_by_offset_maps_[input_file_index];
   while (declaration->name().empty() || declaration->callsite_line() == 0) {
     uint64 specification = declaration->specification();
     if (specification) {
@@ -557,17 +644,17 @@ const SubprogramInfo *InlineStackHandler::GetDeclaration(
 
 const SubprogramInfo *InlineStackHandler::GetAbstractOrigin(
     const SubprogramInfo *subprog) const {
-  const int cu_index = subprog->cu_index();
-  CHECK(cu_index < subprograms_by_offset_maps_.size());
+  const int input_file_index = subprog->input_file_index();
+  CHECK(input_file_index < subprograms_by_offset_maps_.size());
   SubprogramsByOffsetMap* subprograms_by_offset =
-      subprograms_by_offset_maps_[cu_index];
+      subprograms_by_offset_maps_[input_file_index];
   if (subprog->abstract_origin())
     return subprograms_by_offset->find(subprog->abstract_origin())->second;
   else
     return subprog;
 }
 
-void InlineStackHandler::GetSubprogramAddresses(set<uint64> *addrs) {
+void InlineStackHandler::GetSubprogramAddresses(std::set<uint64> *addrs) {
   for (auto it = subprograms_by_address_.Begin();
        it != subprograms_by_address_.End(); ++it) {
     addrs->insert(it->first.first);

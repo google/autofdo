@@ -80,6 +80,10 @@ class ElfReader {
   // shared libraries and position-independent executables.
   uint64 VaddrOfFirstLoadSegment();
 
+  // Returns the index of the first section of the given type, starting at the
+  // specified start_index.  Returns -1 if no section matches the type.
+  int GetSectionIndexByType(uint32_t type, int start_index);
+
   // Return the name of section "shndx".  Returns NULL if the section
   // is not found.
   const char *GetSectionName(int shndx);
