@@ -59,8 +59,22 @@ CompilationUnit::CompilationUnit(const string& path,
       string_buffer_(NULL), string_buffer_length_(0),
       str_offsets_buffer_(NULL), str_offsets_buffer_length_(0),
       addr_buffer_(NULL), addr_buffer_length_(0),
-      is_split_dwarf_(false), dwo_id_(0), dwo_name_(), ranges_base_(0),
-      addr_base_(0), have_checked_for_dwp_(false), dwp_path_(),
+      is_split_dwarf_(false), dwo_id_(0), dwo_name_(),
+      skeleton_dwo_id_(0), ranges_base_(0), addr_base_(0),
+      have_checked_for_dwp_(false), dwp_path_(),
+      dwp_byte_reader_(NULL), dwp_reader_(NULL), malformed_(false) {}
+
+CompilationUnit::CompilationUnit(const string& path, const string& dwp_path,
+                                 const SectionMap& sections, uint64 offset,
+                                 ByteReader* reader, Dwarf2Handler* handler)
+    : path_(path), offset_from_section_start_(offset), reader_(reader),
+      sections_(sections), handler_(handler), abbrevs_(),
+      string_buffer_(NULL), string_buffer_length_(0),
+      str_offsets_buffer_(NULL), str_offsets_buffer_length_(0),
+      addr_buffer_(NULL), addr_buffer_length_(0),
+      is_split_dwarf_(false), dwo_id_(0), dwo_name_(),
+      skeleton_dwo_id_(0), ranges_base_(0), addr_base_(0),
+      have_checked_for_dwp_(false), dwp_path_(dwp_path),
       dwp_byte_reader_(NULL), dwp_reader_(NULL), malformed_(false) {}
 
 CompilationUnit::~CompilationUnit() {
@@ -79,12 +93,14 @@ CompilationUnit::~CompilationUnit() {
 void CompilationUnit::SetSplitDwarf(const char* addr_buffer,
                                     uint64 addr_buffer_length,
                                     uint64 addr_base,
-                                    uint64 ranges_base) {
+                                    uint64 ranges_base,
+                                    uint64 dwo_id) {
   is_split_dwarf_ = true;
   addr_buffer_ = addr_buffer;
   addr_buffer_length_ = addr_buffer_length;
   addr_base_ = addr_base;
   ranges_base_ = ranges_base;
+  skeleton_dwo_id_ = dwo_id;
 }
 
 // Read a DWARF2/3 abbreviation section.
@@ -342,6 +358,7 @@ uint64 CompilationUnit::Start(uint64 offset) {
 
   dwo_id_ = 0;
   dwo_name_ = NULL;
+  skeleton_dwo_id_ = 0;
 
   ranges_base_ = 0;
   addr_base_ = 0;
@@ -420,6 +437,16 @@ uint64 CompilationUnit::Start() {
 
   // Now that we have our abbreviations, start processing DIE's.
   ProcessDIEs();
+
+  // If this is a skeleton compilation unit generated with split DWARF,
+  // and the client needs the full debug info, we need to find the full
+  // compilation unit in a .dwo or .dwp file.
+  if (!is_split_dwarf_
+      && dwo_name_ != NULL
+      && handler_->NeedSplitDebugInfo()) {
+    ProcessSplitDwarf();
+    handler_->EndSplitCompilationUnit();
+  }
 
   return ourlength;
 }
@@ -599,8 +626,8 @@ const char* CompilationUnit::ProcessAttribute(
 }
 
 const char* CompilationUnit::ProcessDIE(uint64 dieoffset,
-                                                 const char* start,
-                                                 const Abbrev& abbrev) {
+                                        const char* start,
+                                        const Abbrev& abbrev) {
   for (AttributeList::const_iterator i = abbrev.attributes.begin();
        i != abbrev.attributes.end();
        i++)  {
@@ -610,12 +637,16 @@ const char* CompilationUnit::ProcessDIE(uint64 dieoffset,
     }
   }
 
-  // If this is a skeleton compilation unit generated with split DWARF,
-  // we need to find the full compilation unit in a .dwo or .dwp file.
+  // If this is a compilation unit in a split DWARF object, verify that
+  // the dwo_id matches. If it does not match, we will ignore this
+  // compilation unit.
   if (abbrev.tag == DW_TAG_compile_unit
-      && !is_split_dwarf_
-      && dwo_name_ != NULL)
-    ProcessSplitDwarf();
+      && is_split_dwarf_
+      && dwo_id_ != skeleton_dwo_id_) {
+    LOG(WARNING) << "dwo_id 0x" << std::hex << skeleton_dwo_id_
+                 << " does not match .dwo file '" << path_ << "'.";
+    return NULL;
+  }
 
   return start;
 }
@@ -691,9 +722,11 @@ void CompilationUnit::ProcessSplitDwarf() {
   struct stat statbuf;
 
   if (!have_checked_for_dwp_) {
-    // Look for a .dwp file in the same directory as the executable.
     have_checked_for_dwp_ = true;
-    dwp_path_ = path_ + ".dwp";
+    if (dwp_path_.empty()) {
+      // Look for a .dwp file in the same directory as the executable.
+      dwp_path_ = path_ + ".dwp";
+    }
     if (stat(dwp_path_.c_str(), &statbuf) == 0) {
       ElfReader* elf = new ElfReader(dwp_path_);
       int width = GetElfWidth(*elf);
@@ -715,10 +748,10 @@ void CompilationUnit::ProcessSplitDwarf() {
     dwp_reader_->ReadDebugSectionsForCU(dwo_id_, &sections);
     if (!sections.empty()) {
       found_in_dwp = true;
-      CompilationUnit dwp_comp_unit(dwp_path_, sections, 0, dwp_byte_reader_,
-                                    handler_);
+      CompilationUnit dwp_comp_unit(dwp_path_, sections, 0,
+                                    dwp_byte_reader_, handler_);
       dwp_comp_unit.SetSplitDwarf(addr_buffer_, addr_buffer_length_, addr_base_,
-                                  ranges_base_);
+                                  ranges_base_, dwo_id_);
       dwp_comp_unit.Start();
       if (dwp_comp_unit.malformed())
         LOG(WARNING) << "File '" << dwp_path_ << "' has mangled "
@@ -738,7 +771,7 @@ void CompilationUnit::ProcessSplitDwarf() {
         CompilationUnit dwo_comp_unit(dwo_name_, sections, 0, &reader,
                                       handler_);
         dwo_comp_unit.SetSplitDwarf(addr_buffer_, addr_buffer_length_,
-                                    addr_base_, ranges_base_);
+                                    addr_base_, ranges_base_, dwo_id_);
         dwo_comp_unit.Start();
         if (dwo_comp_unit.malformed())
           LOG(WARNING) << "File '" << dwo_name_ << "' has mangled "
@@ -957,11 +990,26 @@ uint32 DwpReader::LookupCUv2(uint64 dwo_id) {
 LineInfo::LineInfo(const char* buffer, uint64 buffer_length,
                    ByteReader* reader, LineInfoHandler* handler):
     handler_(handler), reader_(reader), buffer_(buffer),
-    buffer_length_(buffer_length), malformed_(false) {
+    buffer_length_(buffer_length), str_buffer_(NULL),
+    str_buffer_length_(0), after_header_(NULL),
+    logicals_start_(NULL), actuals_start_(NULL),
+    malformed_(false) {
+  header_.std_opcode_lengths = NULL;
+}
+
+LineInfo::LineInfo(const char* buffer, uint64 buffer_length,
+                   const char* str_buffer, uint64 str_buffer_length,
+                   ByteReader* reader, LineInfoHandler* handler):
+    handler_(handler), reader_(reader), buffer_(buffer),
+    buffer_length_(buffer_length), str_buffer_(str_buffer),
+    str_buffer_length_(str_buffer_length), after_header_(NULL),
+    logicals_start_(NULL), actuals_start_(NULL),
+    malformed_(false) {
   header_.std_opcode_lengths = NULL;
 }
 
 uint64 LineInfo::Start() {
+  handler_->StartCU();
   ReadHeader();
   if (malformed()) {
     // Return the buffer_length_ so callers will not process further
@@ -986,11 +1034,75 @@ bool LineInfo::AdvanceLinePtr(int incr,  const char **lineptr) {
   return true;
 }
 
+bool LineInfo::ReadTypesAndForms(const char** lineptr,
+    uint32* content_types, uint32* content_forms, uint32 max_types,
+    uint32* format_count) {
+  size_t len;
+
+  uint32 count = reader_->ReadUnsignedLEB128(*lineptr, &len);
+  if (!AdvanceLinePtr(len, lineptr)) {
+    return false;
+  }
+  if (count < 1 || count > max_types) {
+    return false;
+  }
+  for (uint32 col = 0; col < count; ++col) {
+    content_types[col] = reader_->ReadUnsignedLEB128(*lineptr, &len);
+    if (!AdvanceLinePtr(len, lineptr)) {
+      return false;
+    }
+    content_forms[col] = reader_->ReadUnsignedLEB128(*lineptr, &len);
+    if (!AdvanceLinePtr(len, lineptr)) {
+      return false;
+    }
+  }
+  *format_count = count;
+  return true;
+}
+
+bool LineInfo::ReadStringForm(uint32 form, const char** dirname,
+    const char** lineptr) {
+  if (form == DW_FORM_string) {
+    *dirname = *lineptr;
+    if (!AdvanceLinePtr(strlen(*dirname) + 1, lineptr)) {
+      return false;
+    }
+  } else if (form == DW_FORM_line_strp) {
+    uint64 offset = reader_->ReadOffset(*lineptr);
+    if (!AdvanceLinePtr(reader_->OffsetSize(), lineptr)) {
+      return false;
+    }
+    if (str_buffer_ == NULL) {
+      return false;
+    }
+    *dirname = str_buffer_ + offset;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+bool LineInfo::ReadUnsignedForm(uint32 form, uint64* value,
+    const char** lineptr) {
+  size_t len;
+
+  if (form == DW_FORM_udata) {
+    *value = reader_->ReadUnsignedLEB128(*lineptr, &len);
+    if (!AdvanceLinePtr(len, lineptr)) {
+      return false;
+    }
+  } else {
+    return false;
+  }
+  return true;
+}
+
 // The header for a debug_line section is mildly complicated, because
 // the line info is very tightly encoded.
 void LineInfo::ReadHeader() {
   const char* lineptr = buffer_;
   size_t initial_length_size;
+  const char* end_of_prologue_length;
 
   const uint64 initial_length = ReadInitialLength(lineptr, reader_,
                                                   &initial_length_size);
@@ -1015,7 +1127,8 @@ void LineInfo::ReadHeader() {
   if (!AdvanceLinePtr(2, &lineptr)) {
     return;
   }
-  if (header_.version < 2 || header_.version > 4) {
+  if ((header_.version < 2 || header_.version > 4)
+      && header_.version != VERSION_TWO_LEVEL) {
     malformed_ = true;
     return;
   }
@@ -1024,6 +1137,8 @@ void LineInfo::ReadHeader() {
   if (!AdvanceLinePtr(reader_->OffsetSize(), &lineptr)) {
     return;
   }
+
+  end_of_prologue_length = lineptr;
 
   header_.min_insn_length = reader_->ReadOneByte(lineptr);
   if (!AdvanceLinePtr(1, &lineptr)) {
@@ -1069,67 +1184,229 @@ void LineInfo::ReadHeader() {
     }
   }
 
-  // It is legal for the directory entry table to be empty.
-  if (*lineptr) {
-    uint32 dirindex = 1;
-    while (*lineptr) {
-      const char* dirname = lineptr;
-      handler_->DefineDir(dirname, dirindex);
-      if (!AdvanceLinePtr(strlen(dirname) + 1, &lineptr)) {
-        return;
+  if (header_.version != VERSION_TWO_LEVEL) {
+    // It is legal for the directory entry table to be empty.
+    if (*lineptr) {
+      uint32 dirindex = 1;
+      while (*lineptr) {
+        const char* dirname = lineptr;
+        handler_->DefineDir(dirname, dirindex);
+        if (!AdvanceLinePtr(strlen(dirname) + 1, &lineptr)) {
+          return;
+        }
+        dirindex++;
       }
-      dirindex++;
     }
-  }
-  if (!AdvanceLinePtr(1, &lineptr)) {
-    return;
-  }
-
-  // It is also legal for the file entry table to be empty.
-  if (*lineptr) {
-    uint32 fileindex = 1;
-    size_t len;
-    while (*lineptr) {
-      const char* filename = lineptr;
-      if (!AdvanceLinePtr(strlen(filename) + 1, &lineptr)) {
-        return;
-      }
-
-      uint64 dirindex = reader_->ReadUnsignedLEB128(lineptr, &len);
-      if (!AdvanceLinePtr(len, &lineptr)) {
-        return;
-      }
-
-      uint64 mod_time = reader_->ReadUnsignedLEB128(lineptr, &len);
-      if (!AdvanceLinePtr(len, &lineptr)) {
-        return;
-      }
-
-      uint64 filelength = reader_->ReadUnsignedLEB128(lineptr, &len);
-      if (!AdvanceLinePtr(len, &lineptr)) {
-        return;
-      }
-      handler_->DefineFile(filename, fileindex, dirindex, mod_time,
-                           filelength);
-      fileindex++;
+    if (!AdvanceLinePtr(1, &lineptr)) {
+      return;
     }
-  }
-  if (++lineptr > buffer_ + buffer_length_) {
-    malformed_ = true;
-    return;
+
+    // It is also legal for the file entry table to be empty.
+    if (*lineptr) {
+      uint32 fileindex = 1;
+      size_t len;
+      while (*lineptr) {
+        const char* filename = lineptr;
+        if (!AdvanceLinePtr(strlen(filename) + 1, &lineptr)) {
+          return;
+        }
+
+        uint64 dirindex = reader_->ReadUnsignedLEB128(lineptr, &len);
+        if (!AdvanceLinePtr(len, &lineptr)) {
+          return;
+        }
+
+        uint64 mod_time = reader_->ReadUnsignedLEB128(lineptr, &len);
+        if (!AdvanceLinePtr(len, &lineptr)) {
+          return;
+        }
+
+        uint64 filelength = reader_->ReadUnsignedLEB128(lineptr, &len);
+        if (!AdvanceLinePtr(len, &lineptr)) {
+          return;
+        }
+        handler_->DefineFile(filename, fileindex, dirindex, mod_time,
+                             filelength);
+        fileindex++;
+      }
+    }
+    if (++lineptr > buffer_ + buffer_length_) {
+      malformed_ = true;
+      return;
+    }
+    header_.logicals_offset = 0;
+    header_.actuals_offset = 0;
+  } else {
+    // Two-level line table.
+    // Skip the fake directory and filename tables, and the fake
+    // extended opcode that wraps the rest of the section.
+    if (!AdvanceLinePtr(7, &lineptr)) {
+      return;
+    }
+
+    // Logicals table offset.
+    header_.logicals_offset = reader_->ReadOffset(lineptr);
+    logicals_start_ = end_of_prologue_length + header_.logicals_offset;
+    if (!AdvanceLinePtr(reader_->OffsetSize(), &lineptr)) {
+      return;
+    }
+
+    // Actuals table offset.
+    header_.actuals_offset = reader_->ReadOffset(lineptr);
+    if (header_.actuals_offset > 0)
+      actuals_start_ = end_of_prologue_length + header_.actuals_offset;
+    if (!AdvanceLinePtr(reader_->OffsetSize(), &lineptr)) {
+      return;
+    }
+
+    // Read the DWARF-5 directory table.
+    {
+      static const uint32 kMaxTypes = 4;
+      uint32 content_types[kMaxTypes];
+      uint32 content_forms[kMaxTypes];
+      uint32 format_count;
+      size_t len;
+
+      if (!ReadTypesAndForms(&lineptr, content_types, content_forms,
+          kMaxTypes, &format_count)) {
+        malformed_ = true;
+        return;
+      }
+      uint32 entry_count = reader_->ReadUnsignedLEB128(lineptr, &len);
+      if (!AdvanceLinePtr(len, &lineptr)) {
+        return;
+      }
+      for (uint32 row = 1; row <= entry_count; ++row) {
+        const char* dirname = NULL;
+        for (uint32 col = 0; col < format_count; ++col) {
+          if (content_types[col] == DW_LNCT_path) {
+            if (!ReadStringForm(content_forms[col], &dirname, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else {
+            malformed_ = true;
+            return;
+          }
+        }
+        if (dirname == NULL) {
+          malformed_ = true;
+          return;
+        }
+        handler_->DefineDir(dirname, row);
+      }
+    }
+
+    // Read the DWARF-5 filename table.
+    {
+      static const uint32 kMaxTypes = 4;
+      uint32 content_types[kMaxTypes];
+      uint32 content_forms[kMaxTypes];
+      uint32 format_count;
+      size_t len;
+
+      if (!ReadTypesAndForms(&lineptr, content_types, content_forms,
+          kMaxTypes, &format_count)) {
+        malformed_ = true;
+        return;
+      }
+      uint32 entry_count = reader_->ReadUnsignedLEB128(lineptr, &len);
+      if (!AdvanceLinePtr(len, &lineptr)) {
+        return;
+      }
+      for (uint32 row = 1; row <= entry_count; ++row) {
+        const char* filename = NULL;
+        uint64 dirindex = 0;
+        uint64 mod_time = 0;
+        uint64 filelength = 0;
+        for (uint32 col = 0; col < format_count; ++col) {
+          if (content_types[col] == DW_LNCT_path) {
+            if (!ReadStringForm(content_forms[col], &filename, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else if (content_types[col] == DW_LNCT_directory_index) {
+            if (!ReadUnsignedForm(content_forms[col], &dirindex, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else {
+            malformed_ = true;
+            return;
+          }
+        }
+        if (filename == NULL) {
+          malformed_ = true;
+          return;
+        }
+        handler_->DefineFile(filename, row, dirindex, mod_time, filelength);
+      }
+    }
+
+    // Read the subprogram table.
+    {
+      static const uint32 kMaxTypes = 4;
+      uint32 content_types[kMaxTypes];
+      uint32 content_forms[kMaxTypes];
+      uint32 format_count;
+      size_t len;
+
+      if (!ReadTypesAndForms(&lineptr, content_types, content_forms,
+          kMaxTypes, &format_count)) {
+        malformed_ = true;
+        return;
+      }
+      uint32 entry_count = reader_->ReadUnsignedLEB128(lineptr, &len);
+      if (!AdvanceLinePtr(len, &lineptr)) {
+        return;
+      }
+      for (uint32 row = 1; row <= entry_count; ++row) {
+        const char* subprogname = NULL;
+        uint64 decl_file = 0;
+        uint64 decl_line = 0;
+        for (uint32 col = 0; col < format_count; ++col) {
+          if (content_types[col] == DW_LNCT_subprogram_name) {
+            if (!ReadStringForm(content_forms[col], &subprogname, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else if (content_types[col] == DW_LNCT_decl_file) {
+            if (!ReadUnsignedForm(content_forms[col], &decl_file, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else if (content_types[col] == DW_LNCT_decl_line) {
+            if (!ReadUnsignedForm(content_forms[col], &decl_line, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else {
+            malformed_ = true;
+            return;
+          }
+        }
+        if (subprogname == NULL) {
+          malformed_ = true;
+          return;
+        }
+        handler_->DefineSubprog(subprogname, row, decl_file, decl_line);
+      }
+    }
   }
 
   after_header_ = lineptr;
 }
 
 /* static */
-bool LineInfo::ProcessOneOpcode(ByteReader* reader,
-                                LineInfoHandler* handler,
-                                const struct LineInfoHeader &header,
-                                const char* start,
-                                struct LineStateMachine* lsm,
-                                size_t* len,
-                                uintptr_t pc) {
+bool LineInfo::ProcessOneOpcode(
+    ByteReader* reader,
+    LineInfoHandler* handler,
+    const struct LineInfoHeader &header,
+    const char* start,
+    struct LineStateMachine* lsm,
+    size_t* len,
+    const LogicalsVector *logicals,
+    bool is_actuals) {
   size_t oplen = 0;
   size_t templen;
   uint8 opcode = reader->ReadOneByte(start);
@@ -1204,6 +1481,70 @@ bool LineInfo::ProcessOneOpcode(ByteReader* reader,
                                        / header.line_range);
       lsm->address += advance_address;
     }
+      break;
+    case DW_LNS_set_subprogram:
+      // This opcode is aliased with DW_LNS_set_address_from_logical.
+      // One is used only in the logicals table, and the other is used
+      // only in the actuals table.
+      if (logicals != NULL && !is_actuals) {
+        // We're reading the logicals table, so this is
+        // DW_LNS_set_subprogram.
+        const uint64 subprog_num = reader->ReadUnsignedLEB128(start, &templen);
+        oplen += templen;
+        lsm->subprog_num = subprog_num;
+        lsm->context = 0;
+      } else if (logicals != NULL && is_actuals) {
+        // We're reading the actuals table, so this is
+        // DW_LNS_set_address_from_logical.
+        const int64 advance_line = reader->ReadSignedLEB128(start, &templen);
+        oplen += templen;
+        lsm->line_num += advance_line;
+        if (lsm->line_num >= 1
+            && lsm->line_num <= static_cast<int64>(logicals->size())) {
+          const struct LineStateMachine& logical =
+              (*logicals)[lsm->line_num - 1];
+          lsm->address = logical.address;
+        }
+      } else {
+        // Just skip the operand.
+        reader->ReadSignedLEB128(start, &templen);
+        oplen += templen;
+        LOG(WARNING) << "DW_LNS_set_subprogram/set_address_from_logical "
+            "opcode seen, but not in actuals table";
+      }
+      break;
+    case DW_LNS_inlined_call: {
+      const int64 advance_line = reader->ReadSignedLEB128(start, &templen);
+      oplen += templen;
+      start += templen;
+      const int64 subprog_num = reader->ReadUnsignedLEB128(start, &templen);
+      oplen += templen;
+      if (logicals != NULL && !is_actuals) {
+        lsm->context = logicals->size() + advance_line;
+        lsm->subprog_num = subprog_num;
+      } else {
+        LOG(WARNING) << "DW_LNS_inlined_call opcode seen, "
+                        "but not in actuals table";
+      }
+    }
+      break;
+    case DW_LNS_pop_context:
+      if (logicals != NULL && !is_actuals) {
+        if (lsm->context > 0 && lsm->context <= logicals->size()) {
+          const struct LineStateMachine& logical =
+              (*logicals)[lsm->context - 1];
+          lsm->file_num = logical.file_num;
+          lsm->line_num = logical.line_num;
+          lsm->column_num = logical.column_num;
+          lsm->discriminator = logical.discriminator;
+          lsm->is_stmt = logical.is_stmt;
+          lsm->context = logical.context;
+          lsm->subprog_num = logical.subprog_num;
+        }
+      } else {
+        LOG(WARNING) << "DW_LNS_pop_context opcode seen, "
+                        "but not in actuals table";
+      }
       break;
     case DW_LNS_extended_op: {
       const size_t extended_op_len = reader->ReadUnsignedLEB128(start,
@@ -1290,20 +1631,84 @@ void LineInfo::ReadLines() {
   else
     lengthstart += 4;
 
-  const char* lineptr = after_header_;
-  while (lineptr < lengthstart + header_.total_length) {
-    lsm.Reset(header_.default_is_stmt);
-    while (!lsm.end_sequence) {
-      size_t oplength;
-      bool add_line = ProcessOneOpcode(reader_, handler_, header_,
-                                       lineptr, &lsm, &oplength, -1);
-      if (add_line) {
-        handler_->AddLine(lsm.address, lsm.file_num, lsm.line_num,
-                          lsm.column_num, lsm.discriminator);
-        lsm.basic_block = false;
-        lsm.discriminator = 0;
+  if (logicals_start_ != NULL && actuals_start_ != NULL) {
+    // Two-level line table.
+    LogicalsVector logicals;
+    handler_->SetLogicals(&logicals);
+
+    // Read the logicals table.
+    const char* lineptr = logicals_start_;
+    while (lineptr < actuals_start_) {
+      lsm.Reset(header_.default_is_stmt);
+      while (!lsm.end_sequence && lineptr < actuals_start_) {
+        size_t oplength;
+        bool add_line = ProcessOneOpcode(reader_, handler_, header_,
+                                         lineptr, &lsm, &oplength,
+                                         &logicals, false);
+        if (add_line) {
+          logicals.push_back(lsm);
+          handler_->AddLogical(lsm.address, lsm.file_num, lsm.line_num,
+                               lsm.column_num, lsm.discriminator,
+                               lsm.context, lsm.subprog_num);
+          lsm.basic_block = false;
+          lsm.discriminator = 0;
+        }
+        lineptr += oplength;
       }
-      lineptr += oplength;
+    }
+
+    // Read the actuals table;
+    handler_->StartActuals();
+    lineptr = actuals_start_;
+    while (lineptr < lengthstart + header_.total_length) {
+      lsm.Reset(header_.default_is_stmt);
+      while (!lsm.end_sequence) {
+        size_t oplength;
+        bool add_line = ProcessOneOpcode(reader_, handler_, header_,
+                                         lineptr, &lsm, &oplength,
+                                         &logicals, true);
+        if (add_line) {
+          if (lsm.line_num >= 1
+              && lsm.line_num <= static_cast<uint64>(logicals.size())) {
+            const struct LineStateMachine& logical =
+                logicals[lsm.line_num - 1];
+            handler_->SetLogicalNum(lsm.line_num);
+            handler_->SetContext(logical.context);
+            handler_->SetSubprog(logical.subprog_num);
+            handler_->AddLine(lsm.address, logical.file_num, logical.line_num,
+                              logical.column_num, logical.discriminator,
+                              lsm.end_sequence);
+          }
+          lsm.basic_block = false;
+          lsm.discriminator = 0;
+        }
+        lineptr += oplength;
+      }
+    }
+
+    handler_->SetLogicals(NULL);
+  } else {
+    // Normal line table.
+    handler_->SetLogicals(NULL);
+    handler_->SetContext(0);
+    handler_->SetSubprog(0);
+    const char* lineptr = after_header_;
+    while (lineptr < lengthstart + header_.total_length) {
+      lsm.Reset(header_.default_is_stmt);
+      while (!lsm.end_sequence) {
+        size_t oplength;
+        bool add_line = ProcessOneOpcode(reader_, handler_, header_,
+                                         lineptr, &lsm, &oplength,
+                                         NULL, false);
+        if (add_line) {
+          handler_->AddLine(lsm.address, lsm.file_num, lsm.line_num,
+                            lsm.column_num, lsm.discriminator,
+                            lsm.end_sequence);
+          lsm.basic_block = false;
+          lsm.discriminator = 0;
+        }
+        lineptr += oplength;
+      }
     }
   }
 

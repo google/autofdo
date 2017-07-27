@@ -61,7 +61,8 @@ Addr2line *Addr2line::Create(const string &binary_name) {
 }
 
 Addr2line *Addr2line::CreateWithSampledFunctions(
-    const string &binary_name, const map<uint64, uint64> *sampled_functions) {
+    const string &binary_name,
+    const std::map<uint64, uint64> *sampled_functions) {
   Addr2line *addr2line = new Google3Addr2line(binary_name, sampled_functions);
   if (!addr2line->Prepare()) {
     delete addr2line;
@@ -101,7 +102,7 @@ bool Google3Addr2line::Prepare() {
   SectionMap sections;
   const char *debug_section_names[] = {
     ".debug_line", ".debug_abbrev", ".debug_info", ".debug_line", ".debug_str",
-    ".debug_ranges", ".debug_addr"
+    ".debug_ranges", ".debug_addr", ".debug_line_str"
   };
   for (const char *section_name : debug_section_names) {
     size_t section_size;
@@ -173,8 +174,6 @@ bool Google3Addr2line::Prepare() {
       }
     }
   }
-  inline_stack_handler_->PopulateSubprogramsByAddress();
-
   return true;
 }
 
@@ -184,11 +183,20 @@ void Google3Addr2line::GetInlineStack(uint64 address,
   if (iter == line_map_->begin())
     return;
   --iter;
-  if (iter->second.line == 0)
+  if (iter->second == 0)
     return;
 
+  const LineIdentifier *logical = &line_map_->GetLogical(iter->second);
+
+  // subprog points to subprogram info obtained from .debug_info.
   const SubprogramInfo *subprog =
       inline_stack_handler_->GetSubprogramForAddress(address);
+
+  // subprog2 points to subprogram info obtained from two-level line tables.
+  const AddressToLineMap::SubprogInfo *subprog2 = NULL;
+  if (logical->subprog_num > 0) {
+    subprog2 = &line_map_->GetSubprogInfo(logical->subprog_num);
+  }
 
   const char *function_name = NULL;
   uint32 start_line = 0;
@@ -200,33 +208,55 @@ void Google3Addr2line::GetInlineStack(uint64 address,
         inline_stack_handler_->GetAbstractOrigin(subprog)->callsite_line();
     if (start_line == 0)
       start_line = declaration->callsite_line();
+  } else if (subprog2 != NULL) {
+    function_name = subprog2->name;
+    start_line = subprog2->line_num;
   }
 
   stack->push_back(SourceInfo(function_name,
-                              iter->second.file.first,
-                              iter->second.file.second,
+                              logical->file.first,
+                              logical->file.second,
                               start_line,
-                              iter->second.line,
-                              iter->second.discriminator));
+                              logical->line,
+                              logical->discriminator));
 
-  while (subprog != NULL && subprog->inlined()) {
-    const SubprogramInfo *canonical_parent =
-        inline_stack_handler_->GetDeclaration(subprog->parent());
-    CHECK(subprog->parent() != NULL);
-    uint32 start_line = inline_stack_handler_->GetAbstractOrigin(
-        subprog->parent())->callsite_line();
-    if (start_line == 0)
-      start_line = canonical_parent->callsite_line();
-    if (start_line == 0)
-      start_line = subprog->callsite_line();
-    stack->push_back(SourceInfo(
-        canonical_parent->name().c_str(),
-        subprog->callsite_directory(),
-        subprog->callsite_filename(),
-        start_line,
-        subprog->callsite_line(),
-        subprog->callsite_discr()));
-    subprog = subprog->parent();
+  if (logical->context > 0) {
+    // Two-level line tables.
+    while (logical->context > 0) {
+      const char *name = NULL;
+      logical = &line_map_->GetLogical(logical->context);
+      if (logical->subprog_num > 0) {
+        subprog2 = &line_map_->GetSubprogInfo(logical->subprog_num);
+        name = subprog2->name;
+        start_line = subprog2->line_num;
+      } else {
+        start_line = 0;
+      }
+      stack->push_back(SourceInfo(name, logical->file.first,
+          logical->file.second, start_line, logical->line,
+          logical->discriminator));
+    }
+  } else {
+    // Old-style line tables (or two-level, but not an inlined call).
+    while (subprog != NULL && subprog->inlined()) {
+      const SubprogramInfo *canonical_parent =
+          inline_stack_handler_->GetDeclaration(subprog->parent());
+      CHECK(subprog->parent() != NULL);
+      uint32 start_line = inline_stack_handler_->GetAbstractOrigin(
+          subprog->parent())->callsite_line();
+      if (start_line == 0)
+        start_line = canonical_parent->callsite_line();
+      if (start_line == 0)
+        start_line = subprog->callsite_line();
+      stack->push_back(SourceInfo(
+          canonical_parent->name().c_str(),
+          subprog->callsite_directory(),
+          subprog->callsite_filename(),
+          start_line,
+          subprog->callsite_line(),
+          subprog->callsite_discr()));
+      subprog = subprog->parent();
+    }
   }
 }
 }  // namespace autofdo

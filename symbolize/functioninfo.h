@@ -49,17 +49,145 @@ struct FunctionInfo {
 typedef map<uint64, FunctionInfo*> FunctionMap;
 
 struct LineIdentifier {
-  LineIdentifier() : file(), line(), discriminator() { }
+  LineIdentifier()
+      : file(), line(0), discriminator(0), context(0), subprog_num(0) { }
   LineIdentifier(const DirectoryFilePair &file_in, uint32 line_in,
                  uint32 discriminator_in)
-      : file(file_in), line(line_in), discriminator(discriminator_in) { }
+      : file(file_in), line(line_in), discriminator(discriminator_in),
+        context(0), subprog_num(0) { }
 
   DirectoryFilePair file;
   uint32 line;
   uint32 discriminator;
+  uint32 context;
+  uint32 subprog_num;
 };
 
-typedef map<uint64, LineIdentifier> AddressToLineMap;
+// Address to line map to support two-level line tables.
+// This class maps an address to a reference to a logical line
+// table entry, which is represented by a LineIdentifier.
+// An iterator it for this class contains a logical line
+// table index as it->second, and the client can obtain the
+// logical row via logical(it->second). If there is an
+// inline call stack, the context field from LineIdentifier
+// can be used to fetch the logical row for the calling
+// context.
+class AddressToLineMap {
+ public:
+  // A vector containing Subprogram entries.
+  struct SubprogInfo {
+    const char *name;
+    DirectoryFilePair file;
+    uint32 line_num;
+  };
+  typedef std::vector<struct SubprogInfo> SubprogVector;
+
+  // Map an address to a logical row number.
+  typedef std::map<uint64, uint32> AddressToLogical;
+  typedef AddressToLogical::const_iterator const_iterator;
+
+  AddressToLineMap()
+    : subprogs_(), logical_lines_(), line_map_(), logical_map_(),
+      subprog_bias_(0) { }
+
+  void StartCU() {
+    subprog_bias_ = subprogs_.size();
+  }
+
+  void AddSubprog(uint32 subprog_num, const char *name,
+                  DirectoryFilePair file, uint32 line_num) {
+    CHECK_EQ(subprog_bias_ + subprog_num - 1, subprogs_.size());
+    SubprogInfo info = { name, file, line_num };
+    subprogs_.push_back(info);
+  }
+
+  // Add a line from a normal line table (not two-level).
+  // Adds both a logical entry and an actual entry.
+  void AddLine(uint64 addr, LineIdentifier line_id) {
+    logical_lines_.push_back(line_id);
+    line_map_[addr] = logical_lines_.size();
+  }
+
+  // Resize the per-CU logical map to the size of the CU's
+  // logicals table.
+  void InitializeLogicalMap(uint32 num_logicals) {
+    logical_map_.clear();
+    // Logicals are 1-based.
+    logical_map_.resize(num_logicals + 1);
+  }
+
+  // Map a per-CU logical line number to an index into the
+  // logical_lines_ vector.
+  uint32 MapLogical(int logical_num) {
+    if (logical_num < 1 || logical_num >= logical_map_.size()) {
+      LOG(INFO) << "error in MapLogical (bad logical_num "
+                << logical_num << ")";
+      return 0;
+    }
+    return logical_map_[logical_num];
+  }
+
+  // Add a logical line to the map.
+  uint32 AddLogical(int logical_num, LineIdentifier line_id) {
+    CHECK_GT(logical_num, 0);
+    CHECK_LT(logical_num, logical_map_.size());
+    if (logical_map_[logical_num] > 0) {
+      return logical_map_[logical_num];
+    }
+    if (line_id.subprog_num > 0) {
+      line_id.subprog_num += subprog_bias_;
+    }
+    logical_lines_.push_back(line_id);
+    uint32 new_logical_num = logical_lines_.size();
+    logical_map_[logical_num] = new_logical_num;
+    return new_logical_num;
+  }
+
+  void AddActual(uint64 addr, uint64 logical_num) {
+    line_map_[addr] = logical_num;
+  }
+
+  const_iterator begin() const {
+    return line_map_.begin();
+  }
+
+  const_iterator end() const {
+    return line_map_.end();
+  }
+
+  const_iterator upper_bound(uint64 addr) const {
+    return line_map_.upper_bound(addr);
+  }
+
+  const LineIdentifier& GetLogical(uint32 logical_num) const {
+    CHECK_GT(logical_num, 0);
+    CHECK_LE(logical_num, logical_lines_.size());
+    return logical_lines_[logical_num - 1];
+  }
+
+  const SubprogInfo& GetSubprogInfo(uint32 subprog_num) const {
+    CHECK_GT(subprog_num, 0);
+    CHECK_LE(subprog_num, subprogs_.size());
+    return subprogs_[subprog_num - 1];
+  }
+
+ private:
+  SubprogVector subprogs_;
+  std::vector<LineIdentifier> logical_lines_;
+  AddressToLogical line_map_;
+
+  // The logical_lines_ vector stores only logicals that are actually
+  // used by actuals that we keep (i.e., for non-deleted and/or
+  // sampled functions). This maps a per-CU logical number onto the
+  // index of that logical in logical_lines_, which accumulates
+  // logicals across multiple CUs.
+  std::vector<uint32> logical_map_;
+
+  // This line map may accumulate entries from multiple CUs, so we need
+  // to keep track of the first subprogram for the current CU, and adjust
+  // all references into these arrays by this amount.
+  uint32 subprog_bias_;
+};
 
 static int strcmp_maybe_null(const char *a, const char *b) {
   if (a == 0 && b == 0) {
@@ -118,6 +246,9 @@ class CULineInfoHandler: public LineInfoHandler {
                     const map<uint64, uint64> *sampled_functions);
   virtual ~CULineInfoHandler() { }
 
+  // Called at the start of each CU.
+  virtual void StartCU();
+
   // Called when we define a directory.  We just place NAME into dirs_
   // at position DIR_NUM.
   virtual void DefineDir(const char *name, uint32 dir_num);
@@ -127,6 +258,13 @@ class CULineInfoHandler: public LineInfoHandler {
   virtual void DefineFile(const char *name, int32 file_num,
                           uint32 dir_num, uint64 mod_time, uint64 length);
 
+  // Called when we define a subprogram.
+  virtual void DefineSubprog(const char *name, uint32 subprog_num,
+                             uint32 file_num, uint32 line_num);
+
+  // Called when the logicals table has been read, and we are about
+  // to start reading the actuals table.
+  virtual void StartActuals();
 
   // Called when the line info reader has a new line, address pair
   // ready for us.  ADDRESS is the address of the code, FILE_NUM is
@@ -137,8 +275,11 @@ class CULineInfoHandler: public LineInfoHandler {
   // If this function is called more than once with the same address, the
   // information from the last call is stored.
   virtual void AddLine(uint64 address, uint32 file_num, uint32 line_num,
-                       uint32 column_num, uint32 discriminator);
+                       uint32 column_num, uint32 discriminator,
+                       bool end_sequence);
 
+  // Add a logical line and its inline stack to linemap2_.
+  uint32 AddLogicalStack(uint32 logical_num);
 
   static string MergedFilename(const DirectoryFilePair& filename);
 

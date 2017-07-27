@@ -33,7 +33,8 @@ class Addr2line {
   static Addr2line *Create(const string &binary_name);
 
   static Addr2line *CreateWithSampledFunctions(
-      const string &binary_name, const map<uint64, uint64> *sampled_functions);
+      const string &binary_name,
+      const std::map<uint64, uint64> *sampled_functions);
 
   // Reads the binary to prepare necessary binary in data.
   // Returns True on success.
@@ -53,21 +54,21 @@ class AddressQuery;
 class InlineStackHandler;
 class ElfReader;
 class LineIdentifier;
-typedef map<uint64, LineIdentifier> AddressToLineMap;
+class AddressToLineMap;
 
 class Google3Addr2line : public Addr2line {
  public:
   explicit Google3Addr2line(const string &binary_name,
-                            const map<uint64, uint64> *sampled_functions);
+                            const std::map<uint64, uint64> *sampled_functions);
   virtual ~Google3Addr2line();
-  virtual bool Prepare();
-  virtual void GetInlineStack(uint64 address, SourceStack *stack) const;
+  bool Prepare() override;
+  void GetInlineStack(uint64 address, SourceStack *stack) const override;
 
  private:
   AddressToLineMap *line_map_;
   InlineStackHandler *inline_stack_handler_;
   ElfReader *elf_;
-  const map<uint64, uint64> *sampled_functions_;
+  const std::map<uint64, uint64> *sampled_functions_;
   DISALLOW_COPY_AND_ASSIGN(Google3Addr2line);
 };
 }  // namespace autofdo

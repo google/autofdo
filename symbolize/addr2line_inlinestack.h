@@ -41,15 +41,24 @@ class ByteReader;
 // cases, the address ranges occupied by the Subprogram are stored.
 class SubprogramInfo {
  public:
-  SubprogramInfo(int cu_index, uint64 offset, const SubprogramInfo *parent,
-                 bool inlined)
-      : cu_index_(cu_index), offset_(offset), parent_(parent), name_(),
-        inlined_(inlined), comp_directory_(NULL),
-        callsite_directory_(NULL), callsite_filename_(NULL), callsite_line_(0),
-        callsite_discr_(0), abstract_origin_(0), specification_(0),
+  SubprogramInfo(int input_file_index,
+                 uint64 offset, const SubprogramInfo *parent, bool inlined)
+      : offset_(offset),
+        parent_(parent),
+        name_(),
+        address_ranges_(),
+        inlined_(inlined),
+        comp_directory_(NULL),
+        callsite_directory_(NULL),
+        callsite_filename_(NULL),
+        callsite_line_(0),
+        callsite_discr_(0),
+        abstract_origin_(0),
+        specification_(0),
+        input_file_index_(input_file_index),
         used_(false) { }
 
-  const int cu_index() const { return cu_index_; }
+  const int input_file_index() const { return input_file_index_; }
 
   const uint64 offset() const { return offset_; }
   const SubprogramInfo *parent() const { return parent_; }
@@ -116,7 +125,6 @@ class SubprogramInfo {
   bool used() const { return used_; }
 
  private:
-  int cu_index_;
   uint64 offset_;
   const SubprogramInfo *parent_;
   // The name may come from a .dwo file's string table, which will be
@@ -131,6 +139,7 @@ class SubprogramInfo {
   uint32 callsite_discr_;
   uint64 abstract_origin_;
   uint64 specification_;
+  int input_file_index_;
   bool used_;
   DISALLOW_COPY_AND_ASSIGN(SubprogramInfo);
 };
@@ -158,23 +167,28 @@ class InlineStackHandler: public Dwarf2Handler {
       AddressRangeList *address_ranges,
       const SectionMap& sections,
       ByteReader *reader,
-      const map<uint64, uint64> *sampled_functions,
+      const std::map<uint64, uint64> *sampled_functions,
       uint64 vaddr_of_first_load_segment)
       : directory_names_(NULL), file_names_(NULL), line_handler_(NULL),
         sections_(sections), reader_(reader),
         vaddr_of_first_load_segment_(vaddr_of_first_load_segment),
         address_ranges_(address_ranges),
         subprogram_stack_(), die_stack_(),
-        cu_index_(-1), subprograms_by_offset_maps_(),
+        input_file_index_(-1), subprograms_by_offset_maps_(),
         compilation_unit_comp_dir_(), sampled_functions_(sampled_functions),
-        overlap_count_(0)
+        overlap_count_(0), have_two_level_line_tables_(false),
+        subprogram_added_by_cu_(false)
   { }
 
   virtual bool StartCompilationUnit(uint64 offset, uint8 address_size,
                                     uint8 offset_size, uint64 cu_length,
                                     uint8 dwarf_version);
 
+  virtual bool NeedSplitDebugInfo();
+
   virtual bool StartSplitCompilationUnit(uint64 offset, uint64 cu_length);
+
+  bool EndSplitCompilationUnit() override;
 
   virtual bool StartDIE(uint64 offset, enum DwarfTag tag,
                         const AttributeList& attrs);
@@ -211,19 +225,21 @@ class InlineStackHandler: public Dwarf2Handler {
   const SubprogramInfo *GetAbstractOrigin(const SubprogramInfo *subprog) const;
 
   // Puts the start addresses of all inlined subprograms into the given set.
-  void GetSubprogramAddresses(set<uint64> *addrs);
+  void GetSubprogramAddresses(std::set<uint64> *addrs);
 
   // Cleans up memory consumed by subprograms that are not used.
   void CleanupUnusedSubprograms();
 
-  void PopulateSubprogramsByAddress();
-
   ~InlineStackHandler();
 
  private:
-  typedef map<uint64, SubprogramInfo*> SubprogramsByOffsetMap;
+  typedef std::map<uint64, SubprogramInfo*> SubprogramsByOffsetMap;
 
-  void FindBadSubprograms(set<const SubprogramInfo *> *bad_subprograms);
+  void PopulateSubprogramsByAddress();
+  void FindBadSubprograms(std::set<const SubprogramInfo *> *bad_subprograms);
+  static void InitSubprograms(InlineStackHandler *handler) {
+    handler->PopulateSubprogramsByAddress();
+  }
 
   AddressRangeList::RangeList SortAndMerge(
       AddressRangeList::RangeList rangelist);
@@ -235,14 +251,14 @@ class InlineStackHandler: public Dwarf2Handler {
   ByteReader *reader_;
   uint64 vaddr_of_first_load_segment_;
   AddressRangeList *address_ranges_;
-  vector<SubprogramInfo*> subprogram_stack_;
-  vector<DwarfTag> die_stack_;
-  // We keep a separate map from offset to SubprogramInfo for each CU,
+  std::vector<SubprogramInfo*> subprogram_stack_;
+  std::vector<DwarfTag> die_stack_;
+  // We keep a separate map from offset to SubprogramInfo for each DWO,
   // because when reading .dwo or .dwp files, the offsets are relative
-  // to the beginning of the debug info for that CU.
-  int cu_index_;
-  vector<SubprogramsByOffsetMap*> subprograms_by_offset_maps_;
-  vector<SubprogramInfo *> subprogram_insert_order_;
+  // to the beginning of the debug info for that DWO.
+  int input_file_index_;
+  std::vector<SubprogramsByOffsetMap*> subprograms_by_offset_maps_;
+  std::vector<SubprogramInfo *> subprogram_insert_order_;
   NonOverlappingRangeMap<SubprogramInfo*> subprograms_by_address_;
   uint64 compilation_unit_offset_;
   uint64 compilation_unit_base_;
@@ -251,9 +267,12 @@ class InlineStackHandler: public Dwarf2Handler {
   // each compilation unit.  We need to keep a vector of all the
   // directories that we've seen, because SubprogramInfo keeps
   // StringPiece objects pointing to these copies.
-  vector<string*> compilation_unit_comp_dir_;
-  const map<uint64, uint64> *sampled_functions_;
+  std::vector<string*> compilation_unit_comp_dir_;
+  const std::map<uint64, uint64> *sampled_functions_;
   int overlap_count_;
+  bool have_two_level_line_tables_;
+  bool subprogram_added_by_cu_;
+
   DISALLOW_COPY_AND_ASSIGN(InlineStackHandler);
 };
 

@@ -239,6 +239,7 @@ class SymbolIterator {
   DISALLOW_EVIL_CONSTRUCTORS(SymbolIterator);
 };
 
+
 // Copied from strings/strutil.h.  Per chatham,
 // this library should not depend on strings.
 
@@ -366,6 +367,18 @@ class ElfReaderImpl {
       return section->contents();
     }
     return NULL;
+  }
+
+  // Return the index of the first section of the given type by iterating
+  // through all section headers, starting at the specified start_index.
+  // Returns -1 if the section type is not found.
+  int GetSectionIndexByType(uint32_t type, int start_index) {
+    for (int shndx = start_index; shndx < GetNumSections(); ++shndx) {
+      if (section_headers_[shndx].sh_type == type) {
+        return shndx;
+      }
+    }
+    return -1;
   }
 
   // Return a pointer to the first section of the given name by
@@ -752,6 +765,17 @@ uint64 ElfReader::VaddrOfFirstLoadSegment() {
   }
 }
 
+int ElfReader::GetSectionIndexByType(uint32_t type, int start_index) {
+  if (IsElf32File()) {
+    return GetImpl32()->GetSectionIndexByType(type, start_index);
+  } else if (IsElf64File()) {
+    return GetImpl64()->GetSectionIndexByType(type, start_index);
+  } else {
+    LOG(ERROR) << "not an elf binary: " << path_;
+    return -1;
+  }
+}
+
 const char *ElfReader::GetSectionName(int shndx) {
   if (IsElf32File()) {
     return GetImpl32()->GetSectionNameByIndex(shndx);
@@ -808,25 +832,49 @@ bool ElfReader::SectionNamesMatch(const string &name, const string &sh_name) {
 }
 
 string ElfReader::GetBuildId() {
-  size_t size;
+  std::vector<string> build_ids;
 
-  // Hex dump of section '.note.gnu.build-id':
-  // 0x00400280 04000000 10000000 03000000 474e5500 ............GNU.
-  // 0x00400290 76fe55ee a70df375 dd752205 334a51e0 v.U....u.u".3JQ.
-  const char *build_id_section = ".note.gnu.build-id";
-  const char *build_id_suffix = "00000000";
-  const char *data = GetSectionByName(build_id_section, &size);
-  if (size != 32) {
-    LOG(ERROR) << "Malformed .note.gnu.build-id section.";
-    return "";
+  // The format of the .note section is as follows (see "ELF file Format"):
+  typedef struct BuildIdNoteSection {
+    uint32 namesz;
+    uint32 descsz;
+    uint32 type;
+    char gnu_name[4];
+    uint8 id[];
+  } BuildIdNoteSection;
+
+  for (int nindex = GetSectionIndexByType(SHT_NOTE, 0); nindex >= 0;
+       nindex = GetSectionIndexByType(SHT_NOTE, nindex + 1)) {
+    size_t size;
+    const BuildIdNoteSection *id_note =
+        reinterpret_cast<const BuildIdNoteSection *>(
+            GetSectionByIndex(nindex, &size));
+
+    if (id_note != nullptr && size >= sizeof(*id_note) &&
+        id_note->type == NT_GNU_BUILD_ID &&
+        memcmp(id_note->gnu_name, "GNU\0", 4) == 0 && id_note->descsz <= 20) {
+      // Pre-fill with '0' so that the build ID is always 40 chars long.
+      // TODO(dehao): remove [adding once quipper is fixed (see b/21597512)
+      string build_id(40, '0');
+      const char hexdigits[] = "0123456789abcdef";
+      for (int i = 0; i < id_note->descsz; i++) {
+        build_id[2 * i] = hexdigits[(id_note->id[i]) >> 4];
+        build_id[2 * i + 1] = hexdigits[id_note->id[i] & 0x0f];
+      }
+      build_ids.push_back(build_id);
+    }
   }
 
-  char build_id[33];
-  const char *src = data + 16;
-  for (int i = 0; i < 16; i++) {
-    snprintf(&build_id[2*i], sizeof(build_id[i]) * 3, "%02x", src[i]);
+  switch (build_ids.size()) {
+    case 0:
+      return "";
+    case 1:
+      return build_ids[0];
+    default:
+      // Repeated builds-ids. Complain and ignore them.
+      LOG(ERROR) << "Ignoring multiple GNU_BUILD_ID notes";
+      return "";
   }
-  return string(build_id) + build_id_suffix;
 }
 
 bool ElfReader::IsDynamicSharedObject() {
