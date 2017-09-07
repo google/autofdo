@@ -54,20 +54,17 @@ bool ProfileCreator::CreateProfile(const string &input_profile_name,
 bool ProfileCreator::ReadSample(const string &input_profile_name,
                                 const string &profiler) {
   if (profiler == "perf") {
-    // Sets the regular expression to filter samples for a given binary.
-    char *dup_name = strdup(binary_.c_str());
-    char *strip_ptr = strstr(dup_name, ".unstripped");
-    if (strip_ptr) {
-      *strip_ptr = 0;
+    string file_base_name = basename(binary_.c_str());
+    size_t unstripped_at = file_base_name.find(".unstripped");
+    if (unstripped_at != string::npos) {
+      file_base_name.erase(unstripped_at);
     }
-    const char *file_base_name = basename(dup_name);
-    CHECK(file_base_name) << "Cannot find basename for: " << binary_;
+    CHECK(!file_base_name.empty()) << "Cannot find basename for: " << binary_;
 
     ElfReader reader(binary_);
 
     sample_reader_ = new PerfDataSampleReader(
-        input_profile_name, file_base_name);
-    free(dup_name);
+        input_profile_name, std::move(file_base_name));
   } else if (profiler == "text") {
     sample_reader_ = new TextSampleReaderWriter(input_profile_name);
   } else {
