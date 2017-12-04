@@ -19,7 +19,8 @@
 
 #include <vector>
 
-#if defined(HAVE_LLVM)
+#include "config.h"
+#if defined(CREATE_LLVM_PROF) && defined(HAVE_LLVM)
 #include "llvm/IR/DebugInfoMetadata.h"
 #endif
 
@@ -50,7 +51,7 @@ struct SourceInfo {
   }
 
   uint32 Offset(bool use_discriminator_encoding) const {
-#if defined(HAVE_LLVM)
+#if defined(CREATE_LLVM_PROF) && defined(HAVE_LLVM)
     return ((line - start_line) << 16) |
            (use_discriminator_encoding
                 ? llvm::DILocation::getBaseDiscriminatorFromDiscriminator(
@@ -62,7 +63,7 @@ struct SourceInfo {
   }
 
   uint32 DuplicationFactor() const {
-#if defined(HAVE_LLVM)
+#if defined(CREATE_LLVM_PROF) && defined(HAVE_LLVM)
     return llvm::DILocation::getDuplicationFactorFromDiscriminator(
         discriminator);
 #else
