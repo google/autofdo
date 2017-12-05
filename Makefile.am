@@ -43,7 +43,7 @@ create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) \
                            llvm_profile_writer.cc create_llvm_prof.cc
 create_llvm_prof_LDADD = $(LLVM_LDFLAGS) libquipper.a libglog.a libsymbolize.a \
                          libgflags.a
-create_llvm_prof_CXXFLAGS = $(LLVM_CXXFLAGS)
+create_llvm_prof_CXXFLAGS = $(LLVM_CXXFLAGS) -DCREATE_LLVM_PROF
 
 noinst_LIBRARIES = libquipper.a
 libquipper_a_SOURCES = chromiumos-wide-profiling/address_mapper.cc chromiumos-wide-profiling/perf_reader.cc \
