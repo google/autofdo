@@ -42,7 +42,7 @@ bin_PROGRAMS += create_llvm_prof
 create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) \
                            llvm_profile_writer.cc create_llvm_prof.cc
 create_llvm_prof_LDADD = $(LLVM_LDFLAGS) libquipper.a libglog.a libsymbolize.a \
-                         libgflags.a $(LLVM_LIBS)
+                         libgflags.a
 create_llvm_prof_CXXFLAGS = $(LLVM_CXXFLAGS) -DCREATE_LLVM_PROF
 
 noinst_LIBRARIES = libquipper.a
