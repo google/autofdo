@@ -28,7 +28,13 @@ namespace autofdo {
 
 // Represents the source position.
 struct SourceInfo {
-  SourceInfo() : func_name(NULL), start_line(0), line(0), discriminator(0) {}
+  SourceInfo()
+      : func_name(NULL),
+        dir_name(NULL),
+        file_name(NULL),
+        start_line(0),
+        line(0),
+        discriminator(0) {}
 
   SourceInfo(const char *func_name, const char *dir_name,
              const char *file_name, uint32 start_line, uint32 line,
