@@ -34,7 +34,7 @@ AC_DEFUN([AX_LLVM],
     AS_HELP_STRING(
       [--with-llvm@<:@=PATH-TO-LLVM-CONFIG@:>@],
       [ use LLVM libraries (default is yes). It is possible to specify the
-        full path to the llvm-config binary. If not given, llvm-config will be
+        absolute path to the llvm-config binary. If not given, llvm-config will be
         searched in your path.
       ]),
     [
@@ -89,10 +89,15 @@ AC_DEFUN([AX_LLVM],
           AC_LINK_IFELSE(
             [
               AC_LANG_PROGRAM(
-                [[#include "llvm/ProfileData/SampleProf.h"]],
+                [[
+                  #include "llvm/ProfileData/SampleProf.h"
+                  #include "llvm/IR/DebugInfoMetadata.h"
+                ]],
                 [[
                   llvm::sampleprof::SampleRecord *R;
                   R = new llvm::sampleprof::SampleRecord();
+                  llvm::DILocation::getBaseDiscriminatorFromDiscriminator(0);
+                  llvm::DILocation::getDuplicationFactorFromDiscriminator(0);
                   return llvm::sampleprof::SPVersion();
                 ]]
               )
@@ -123,7 +128,7 @@ AC_DEFUN([AX_LLVM],
 
   if test "$succeeded" != "yes" ; then
     AC_MSG_WARN(
-      [[could not detect the LLVM libraries. Support for LLVM profiles disabled.]]
+      [[could not detect LLVM version 5 (or higher) libraries. Support for LLVM profiles disabled.]]
     )
   else
     AC_SUBST(LLVM_CXXFLAGS)
