@@ -62,14 +62,14 @@ AC_DEFUN([AX_LLVM],
       shared_mode=$($ac_llvm_config_path --shared-mode)
       rpath=""
       if test "x$shared_mode" = "xstatic"; then
-        LLVM_LDFLAGS="$($ac_llvm_config_path --ldflags) \
-                      $($ac_llvm_config_path --libs $1) \
+        LLVM_LDFLAGS="$($ac_llvm_config_path --ldflags)"
+        LLVM_LIBS="$($ac_llvm_config_path --libs $1) \
                       -ldl -lpthread -ltinfo"
       elif test "x$shared_mode" = "xshared"; then
         rpath="$($ac_llvm_config_path --libdir)"
         LLVM_LDFLAGS="-Wl,-rpath $rpath \
-                      $($ac_llvm_config_path --ldflags) \
-                      $($ac_llvm_config_path --libs $1)"
+                      $($ac_llvm_config_path --ldflags)"
+        LLVM_LIBS="$($ac_llvm_config_path --libs $1)"
       fi
 
       AC_REQUIRE([AC_PROG_CXX])
@@ -80,6 +80,10 @@ AC_DEFUN([AX_LLVM],
       LDFLAGS_SAVED="$LDFLAGS"
       LDFLAGS="$LDFLAGS $LLVM_LDFLAGS"
       export LDFLAGS
+
+      LIBS_SAVED="$LIBS"
+      LIBS="$LIBS $LLVM_LIBS"
+      export LIBS
 
       AC_CACHE_CHECK(
         whether we can compile and link with llvm([$1]),
@@ -113,6 +117,7 @@ AC_DEFUN([AX_LLVM],
         succeeded=yes
         CXXFLAGS="$CXXFLAGS_SAVED"
         LDFLAGS="$LDFLAGS_SAVED"
+        LIBS="$LIBS_SAVED"
         if test "x$shared_mode" = "xstatic"; then
           AC_MSG_NOTICE([Using static LLVM libraries.])
         elif test "x$shared_mode" = "xshared"; then
@@ -133,6 +138,7 @@ AC_DEFUN([AX_LLVM],
   else
     AC_SUBST(LLVM_CXXFLAGS)
     AC_SUBST(LLVM_LDFLAGS)
+    AC_SUBST(LLVM_LIBS)
     AC_DEFINE(HAVE_LLVM,,[define if the LLVM library is available])
   fi
 ])
