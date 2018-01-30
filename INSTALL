@@ -12,6 +12,16 @@ without warranty of any kind.
 Basic Installation
 ==================
 
+   This project is configured with autoconf, so, if building from a
+clean git clone of the project, i.e., where autoconf generated files 
+are not already provided, they need to be created.  To do this, install
+autoconf tools: e.g., 'sudo apt install automake',  and run:
+
+	aclocal -I .; autoheader; autoconf; automake --add-missing -c
+
+That will create the config.h.in, aclocal.m4, configure, and Makefile.in
+files necessary to proceed to the next step.
+
    Briefly, the shell commands `./configure; make; make install' should
 configure, build, and install this package.  The following
 more-detailed instructions are generic; see the `README' file for
