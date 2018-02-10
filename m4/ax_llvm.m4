@@ -34,7 +34,7 @@ AC_DEFUN([AX_LLVM],
     AS_HELP_STRING(
       [--with-llvm@<:@=PATH-TO-LLVM-CONFIG@:>@],
       [ use LLVM libraries (default is yes). It is possible to specify the
-        full path to the llvm-config binary. If not given, llvm-config will be
+        absolute path to the llvm-config binary. If not given, llvm-config will be
         searched in your path.
       ]),
     [
@@ -62,14 +62,14 @@ AC_DEFUN([AX_LLVM],
       shared_mode=$($ac_llvm_config_path --shared-mode)
       rpath=""
       if test "x$shared_mode" = "xstatic"; then
-        LLVM_LDFLAGS="$($ac_llvm_config_path --ldflags) \
-                      $($ac_llvm_config_path --libs $1) \
+        LLVM_LDFLAGS="$($ac_llvm_config_path --ldflags)"
+        LLVM_LIBS="$($ac_llvm_config_path --libs $1) \
                       -ldl -lpthread -ltinfo"
       elif test "x$shared_mode" = "xshared"; then
         rpath="$($ac_llvm_config_path --libdir)"
         LLVM_LDFLAGS="-Wl,-rpath $rpath \
-                      $($ac_llvm_config_path --ldflags) \
-                      $($ac_llvm_config_path --libs $1)"
+                      $($ac_llvm_config_path --ldflags)"
+        LLVM_LIBS="$($ac_llvm_config_path --libs $1)"
       fi
 
       AC_REQUIRE([AC_PROG_CXX])
@@ -81,6 +81,10 @@ AC_DEFUN([AX_LLVM],
       LDFLAGS="$LDFLAGS $LLVM_LDFLAGS"
       export LDFLAGS
 
+      LIBS_SAVED="$LIBS"
+      LIBS="$LIBS $LLVM_LIBS"
+      export LIBS
+
       AC_CACHE_CHECK(
         whether we can compile and link with llvm([$1]),
         ax_cv_llvm,
@@ -89,10 +93,15 @@ AC_DEFUN([AX_LLVM],
           AC_LINK_IFELSE(
             [
               AC_LANG_PROGRAM(
-                [[#include "llvm/ProfileData/SampleProf.h"]],
+                [[
+                  #include "llvm/ProfileData/SampleProf.h"
+                  #include "llvm/IR/DebugInfoMetadata.h"
+                ]],
                 [[
                   llvm::sampleprof::SampleRecord *R;
                   R = new llvm::sampleprof::SampleRecord();
+                  llvm::DILocation::getBaseDiscriminatorFromDiscriminator(0);
+                  llvm::DILocation::getDuplicationFactorFromDiscriminator(0);
                   return llvm::sampleprof::SPVersion();
                 ]]
               )
@@ -106,15 +115,16 @@ AC_DEFUN([AX_LLVM],
 
       if test "x$ax_cv_llvm" = "xyes"; then
         succeeded=yes
-      fi
-      CXXFLAGS="$CXXFLAGS_SAVED"
-      LDFLAGS="$LDFLAGS_SAVED"
-      if test "x$shared_mode" = "xstatic"; then
-        AC_MSG_NOTICE([Using static LLVM libraries.])
-      elif test "x$shared_mode" = "xshared"; then
-        AC_MSG_NOTICE([Using shared LLVM libraries.  Setting -rpath to $rpath.])
-      else
-        AC_MSG_ERROR([Could not determine whether to use shared or static LLVM libraries])
+        CXXFLAGS="$CXXFLAGS_SAVED"
+        LDFLAGS="$LDFLAGS_SAVED"
+        LIBS="$LIBS_SAVED"
+        if test "x$shared_mode" = "xstatic"; then
+          AC_MSG_NOTICE([Using static LLVM libraries.])
+        elif test "x$shared_mode" = "xshared"; then
+          AC_MSG_NOTICE([Using shared LLVM libraries.  Setting -rpath to $rpath.])
+        else
+          AC_MSG_ERROR([Could not determine whether to use shared or static LLVM libraries])
+        fi
       fi
     else
       succeeded=no
@@ -123,11 +133,12 @@ AC_DEFUN([AX_LLVM],
 
   if test "$succeeded" != "yes" ; then
     AC_MSG_WARN(
-      [[could not detect the LLVM libraries. Support for LLVM profiles disabled.]]
+      [[could not detect LLVM version 5 (or higher) libraries. Support for LLVM profiles disabled.]]
     )
   else
     AC_SUBST(LLVM_CXXFLAGS)
     AC_SUBST(LLVM_LDFLAGS)
+    AC_SUBST(LLVM_LIBS)
     AC_DEFINE(HAVE_LLVM,,[define if the LLVM library is available])
   fi
 ])

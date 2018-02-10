@@ -5,7 +5,7 @@
 #    % aclocal -I . && autoheader && autoconf && automake --add-missing -c
 
 AC_PREREQ([2.68])
-AC_INIT([AutoFDO], [0.14], [autofdo@googlegroups.com])
+AC_INIT([AutoFDO], [m4_esyscmd_s([git describe --abbrev=0 --tags])], [autofdo@googlegroups.com])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS(config.h glog/src/config.h)
 AM_INIT_AUTOMAKE([subdir-objects])

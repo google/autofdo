@@ -87,9 +87,9 @@ int main(int argc, char **argv) {
 #include <stdio.h>
 int main(int argc, char **argv) {
   fprintf(stderr,
-          "ERROR: LLVM support was not enabled in this configuration.\nPlease "
-          "configure and rebuild with:\n\n$ ./configure "
-          "--with-llvm=<path-to-llvm-config>\n\n");
+          "ERROR: LLVM version 5 (or higher) support was not enabled in this configuration.\n"
+          "Please configure and rebuild with:\n\n$ ./configure "
+          "--with-llvm=<absolute-path-to-llvm-config>\n\n");
   return -1;
 }
 #endif  // HAVE_LLVM
