@@ -991,6 +991,12 @@ bool PerfReader::IsSupportedEventType(uint32_t type) {
 bool PerfReader::ReadPerfSampleInfo(const event_t& event,
                                     struct perf_sample* sample) const {
   CHECK(sample);
+  unsigned type = event.header.type;
+
+  /* Ignore events added by perf record */
+  if (type >= PERF_RECORD_USER_TYPE_START &&
+      type < PERF_RECORD_HEADER_MAX)
+    return true;
 
   if (!IsSupportedEventType(event.header.type)) {
     LOG(ERROR) << "Unsupported event type " << event.header.type;

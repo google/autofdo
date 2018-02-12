@@ -181,8 +181,7 @@ bool PerfParser::ProcessEvents() {
       case PERF_RECORD_THROTTLE:
       case PERF_RECORD_UNTHROTTLE:
       case PERF_RECORD_READ:
-      case PERF_RECORD_MAX:
-      case PERF_RECORD_FINISHED_ROUND:
+      case PERF_RECORD_USER_TYPE_START ... PERF_RECORD_HEADER_MAX:
         VLOG(1) << "Parsed event type: " << event.header.type
                 << ". Doing nothing.";
         break;
@@ -401,11 +400,7 @@ bool PerfParser::MapBranchStack(const uint32_t pid,
     parsed_entry.predicted = entry.flags.predicted;
     // Either predicted or mispredicted, not both. But don't use a CHECK here,
     // just exit gracefully because it's a minor issue.
-    if (entry.flags.predicted == entry.flags.mispred) {
-      LOG(ERROR) << "Branch stack entry predicted and mispred flags "
-                 << "both have value " << entry.flags.mispred;
-      return false;
-    }
+    // We can't check this because Atom doesn't have predicted/mispredicted flags
   }
 
   return true;

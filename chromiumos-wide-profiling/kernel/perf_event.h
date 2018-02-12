@@ -715,6 +715,28 @@ enum perf_event_type {
 	PERF_RECORD_MAX,			/* non-ABI */
 };
 
+enum perf_user_event_type { /* above any possible kernel type */
+        PERF_RECORD_USER_TYPE_START             = 64,
+        PERF_RECORD_HEADER_ATTR                 = 64,
+        PERF_RECORD_HEADER_EVENT_TYPE           = 65, /* depreceated */
+        PERF_RECORD_HEADER_TRACING_DATA         = 66,
+        PERF_RECORD_HEADER_BUILD_ID             = 67,
+        PERF_RECORD_FINISHED_ROUND              = 68,
+        PERF_RECORD_ID_INDEX                    = 69,
+        PERF_RECORD_AUXTRACE_INFO               = 70,
+        PERF_RECORD_AUXTRACE                    = 71,
+        PERF_RECORD_AUXTRACE_ERROR              = 72,
+        PERF_RECORD_THREAD_MAP                  = 73,
+        PERF_RECORD_CPU_MAP                     = 74,
+        PERF_RECORD_STAT_CONFIG                 = 75,
+        PERF_RECORD_STAT                        = 76,
+        PERF_RECORD_STAT_ROUND                  = 77,
+        PERF_RECORD_EVENT_UPDATE                = 78,
+        PERF_RECORD_TIME_CONV                   = 79,
+	/* Predicting the future */
+        PERF_RECORD_HEADER_MAX			= 100,
+};
+
 #define PERF_MAX_STACK_DEPTH		127
 
 enum perf_callchain_context {
