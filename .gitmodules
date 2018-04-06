@@ -1,0 +1,3 @@
+[submodule "third_party/perf_data_converter"]
+	path = third_party/perf_data_converter
+	url = https://github.com/google/perf_data_converter.git

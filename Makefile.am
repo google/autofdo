@@ -1,8 +1,11 @@
 ## Process this file with automake to produce Makefile.in
 
+PKG_CONFIG ?= pkg-config
+
 ACLOCAL_AMFLAGS = -I m4
-AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/glog/src
-AM_CXXFLAGS = -std=gnu++11
+AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/glog/src -I$(top_srcdir)/third_party/perf_data_converter/src/quipper
+AM_CXXFLAGS = -std=gnu++11 `$(PKG_CONFIG) --cflags protobuf`
+AM_LDFLAGS = -lpthread -lelf `$(PKG_CONFIG) --libs protobuf`
 
 COMMON_PROFILE_CREATOR_FILES = addr2line.cc gcov.cc instruction_map.cc \
                                module_grouper.cc profile_creator.cc \
@@ -45,11 +48,32 @@ create_llvm_prof_LDADD = $(LLVM_LDFLAGS) $(LLVM_LIBS) libquipper.a libglog.a \
                          libsymbolize.a libgflags.a
 create_llvm_prof_CXXFLAGS = $(LLVM_CXXFLAGS) -DCREATE_LLVM_PROF
 
+dist_noinst_DATA = \
+	third_party/perf_data_converter/src/quipper/perf_data.proto \
+	third_party/perf_data_converter/src/quipper/perf_stat.proto
+
+%.pb.cc %.pb.h: %.proto
+	$(PROTOC) --cpp_out=`dirname $<` -I`dirname $<` $<
+
 noinst_LIBRARIES = libquipper.a
-libquipper_a_SOURCES = chromiumos-wide-profiling/address_mapper.cc chromiumos-wide-profiling/perf_reader.cc \
-                       chromiumos-wide-profiling/perf_parser.cc chromiumos-wide-profiling/utils.cc \
-                       chromiumos-wide-profiling/buffer_reader.cc chromiumos-wide-profiling/data_reader.cc \
-                       chromiumos-wide-profiling/buffer_writer.cc chromiumos-wide-profiling/data_writer.cc
+libquipper_a_SOURCES = \
+	third_party/perf_data_converter/src/quipper/address_mapper.cc \
+	third_party/perf_data_converter/src/quipper/binary_data_utils.cc \
+	third_party/perf_data_converter/src/quipper/buffer_reader.cc \
+	third_party/perf_data_converter/src/quipper/buffer_writer.cc \
+	third_party/perf_data_converter/src/quipper/data_reader.cc \
+	third_party/perf_data_converter/src/quipper/data_writer.cc \
+	third_party/perf_data_converter/src/quipper/dso.cc \
+	third_party/perf_data_converter/src/quipper/file_reader.cc \
+	third_party/perf_data_converter/src/quipper/file_utils.cc \
+	third_party/perf_data_converter/src/quipper/perf_data_utils.cc \
+	third_party/perf_data_converter/src/quipper/perf_parser.cc \
+	third_party/perf_data_converter/src/quipper/perf_reader.cc \
+	third_party/perf_data_converter/src/quipper/perf_serializer.cc \
+	third_party/perf_data_converter/src/quipper/sample_info_reader.cc \
+	third_party/perf_data_converter/src/quipper/huge_page_deducer.cc \
+	third_party/perf_data_converter/src/quipper/perf_data.pb.cc \
+	third_party/perf_data_converter/src/quipper/perf_stat.pb.cc
 
 noinst_LIBRARIES += libglog.a
 libglog_a_SOURCES = glog/src/glog/log_severity.h \

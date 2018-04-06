@@ -10,6 +10,12 @@ AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS(config.h glog/src/config.h)
 AM_INIT_AUTOMAKE([subdir-objects])
 
+# Checks for the flag --with-protoc.
+AC_ARG_WITH([protoc],
+  [AS_HELP_STRING([--with-protoc=COMMAND],
+    [use the given protoc command instead of building a new one when building tests (useful for cross-compiling)])],
+  [],[with_protoc=no])
+
 # Checks for programs.
 AC_PROG_CXX
 AC_PROG_CC
@@ -92,6 +98,26 @@ AC_SUBST(GTEST_CFLAGS)
 AC_SUBST(GMOCK_CFLAGS)
 AC_SUBST(GTEST_LIBS)
 AC_SUBST(GMOCK_LIBS)
+
+AS_IF([test "$with_protoc" != "no"], [PROTOC=$with_protoc],
+      [test "$with_protoc" = "no"], [
+    # No argument given.  Use system protoc.
+    PROTOC=`which protoc`
+  ])
+AS_IF([echo "$PROTOC" | grep -q '^@<:@^/@:>@.*/'], [
+    # Does not start with a slash, but contains a slash.  So, it's a relative
+    # path (as opposed to an absolute path or an executable in $PATH).
+    # Since it will actually be executed from the src directory, prefix with
+    # the current directory.  We also insert $ac_top_build_prefix in case this
+    # is a nested package and --with-protoc was actually given on the outer
+    # package's configure script.
+    PROTOC=`pwd`/${ac_top_build_prefix}$PROTOC
+  ])
+AC_SUBST([PROTOC])
+AM_CONDITIONAL([USE_EXTERNAL_PROTOC], [test "$with_protoc" != "no"])
+
+AS_IF([test -d third_party/perf_data_converter/src/quipper/base],
+      [rm -rf third_party/perf_data_converter/src/quipper/base])
 
 AC_CONFIG_FILES([Makefile glog/src/glog/logging.h \
                  glog/src/glog/raw_logging.h glog/src/glog/vlog_is_on.h \
