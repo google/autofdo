@@ -1,21 +1,31 @@
 ## Process this file with automake to produce Makefile.in
 
-PKG_CONFIG ?= pkg-config
+PROTOBUF = third_party/protobuf
+PROTOBUF_DEP = $(PROTOBUF)/src/.libs/libprotobuf.a
+PROTOC = ./$(PROTOBUF)/src/protoc
+
+$(PROTOBUF)/configure:
+	echo "[AUTOGEN] Preparing protobuf"
+	(cd $(PROTOBUF) ; autoreconf -f -i -Wall,no-obsolete)
+
+$(PROTOBUF)/src/.libs/libprotobuf.a: $(PROTOBUF)/configure
+	echo "[MAKE] Building protobuf"
+	(cd third_party/protobuf/; CC="$(CC)" CXX="$(CXX)" LDFLAGS="$(LDFLAGS_$(CONFIG)) -g $(PROTOBUF_LDFLAGS_EXTRA)" CPPFLAGS="$(PIC_CPPFLAGS) $(CPPFLAGS_$(CONFIG)) -g $(PROTOBUF_CPPFLAGS_EXTRA)" ./configure --disable-shared --enable-static $(PROTOBUF_CONFIG_OPTS))
+	make -C $(PROTOBUF)
 
 ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/glog/src -I$(top_srcdir)/third_party/perf_data_converter/src/quipper
-AM_CXXFLAGS = -std=gnu++11 `$(PKG_CONFIG) --cflags protobuf`
-AM_LDFLAGS = -lpthread -lelf `$(PKG_CONFIG) --libs protobuf`
+AM_CXXFLAGS = -std=gnu++11 -I./$(PROTOBUF)/src
+AM_LDFLAGS = -lpthread -lelf -lz
 
 COMMON_PROFILE_CREATOR_FILES = addr2line.cc gcov.cc instruction_map.cc \
                                module_grouper.cc profile_creator.cc \
                                profile_writer.cc sample_reader.cc \
                                source_info.cc symbol_map.cc profile.cc
 
-
 bin_PROGRAMS = create_gcov
 create_gcov_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) create_gcov.cc
-create_gcov_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+create_gcov_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a $(PROTOBUF_DEP)
 
 bin_PROGRAMS += dump_gcov
 dump_gcov_SOURCES = profile_reader.cc symbol_map.cc module_grouper.cc gcov.cc \
@@ -24,35 +34,35 @@ dump_gcov_LDADD = libglog.a libgflags.a libsymbolize.a
 
 bin_PROGRAMS += sample_merger
 sample_merger_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) sample_merger.cc
-sample_merger_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+sample_merger_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a $(PROTOBUF_DEP)
 
 bin_PROGRAMS += profile_merger
 profile_merger_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
                          profile_merger.cc
-profile_merger_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+profile_merger_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a $(PROTOBUF_DEP)
 
 bin_PROGRAMS += profile_diff
 profile_diff_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
                        profile_diff.cc
-profile_diff_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+profile_diff_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a $(PROTOBUF_DEP)
 
 bin_PROGRAMS += profile_update
 profile_update_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) profile_reader.cc \
                          profile_update.cc
-profile_update_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a
+profile_update_LDADD = libquipper.a libglog.a libsymbolize.a libgflags.a $(PROTOBUF_DEP)
 
 bin_PROGRAMS += create_llvm_prof
 create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) \
                            llvm_profile_writer.cc create_llvm_prof.cc
 create_llvm_prof_LDADD = $(LLVM_LDFLAGS) $(LLVM_LIBS) libquipper.a libglog.a \
-                         libsymbolize.a libgflags.a
+                         libsymbolize.a libgflags.a $(PROTOBUF_DEP)
 create_llvm_prof_CXXFLAGS = $(LLVM_CXXFLAGS) -DCREATE_LLVM_PROF
 
 dist_noinst_DATA = \
 	third_party/perf_data_converter/src/quipper/perf_data.proto \
 	third_party/perf_data_converter/src/quipper/perf_stat.proto
 
-%.pb.cc %.pb.h: %.proto
+%.pb.cc %.pb.h: %.proto $(PROTOBUF)/src/.libs/libprotobuf.a
 	$(PROTOC) --cpp_out=`dirname $<` -I`dirname $<` $<
 
 noinst_LIBRARIES = libquipper.a

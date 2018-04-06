@@ -14,20 +14,14 @@ Clone the repository using the following command:
 	git clone --recursive https://github.com/google/autofdo.git
 
 	Note: `--recursive` fetches https://github.com/google/perf_data_converter.git,
-	which contains quipper.
+	which contains quipper, and https://github.com/google/protobuf.git.
 
 Full build instructions are in the INSTALL file, most can just install the above
 dependencies, and:
 
 aclocal -I .; autoheader; autoconf; automake --add-missing -c
-./configure # or --with-llvm=$(which llvm-config-5.0) or --with-protoc=$(which
-protoc)
+./configure # or --with-llvm=$(which llvm-config-5.0)
 make -j$(nproc)
-
-The --with-protoc flag to ./configure accepts the path to protoc. By default it
-uses the path from `which protoc`. Follow the instructions here
-(https://github.com/google/protobuf/tree/master/src#c-installation---unix) to
-build and use the latest version of protoc.
 
 Usage:
 ./create_gcov --binary=BINARY --profile=PERF_PROFILE --gcov=OUTPUT

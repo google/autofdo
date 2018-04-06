@@ -99,23 +99,6 @@ AC_SUBST(GMOCK_CFLAGS)
 AC_SUBST(GTEST_LIBS)
 AC_SUBST(GMOCK_LIBS)
 
-AS_IF([test "$with_protoc" != "no"], [PROTOC=$with_protoc],
-      [test "$with_protoc" = "no"], [
-    # No argument given.  Use system protoc.
-    PROTOC=`which protoc`
-  ])
-AS_IF([echo "$PROTOC" | grep -q '^@<:@^/@:>@.*/'], [
-    # Does not start with a slash, but contains a slash.  So, it's a relative
-    # path (as opposed to an absolute path or an executable in $PATH).
-    # Since it will actually be executed from the src directory, prefix with
-    # the current directory.  We also insert $ac_top_build_prefix in case this
-    # is a nested package and --with-protoc was actually given on the outer
-    # package's configure script.
-    PROTOC=`pwd`/${ac_top_build_prefix}$PROTOC
-  ])
-AC_SUBST([PROTOC])
-AM_CONDITIONAL([USE_EXTERNAL_PROTOC], [test "$with_protoc" != "no"])
-
 AS_IF([test -d third_party/perf_data_converter/src/quipper/base],
       [rm -rf third_party/perf_data_converter/src/quipper/base])
 
