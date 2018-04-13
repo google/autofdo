@@ -19,8 +19,12 @@ class BufferReader : public DataReader {
     size_ = size;
   }
 
-  void SeekSet(size_t offset) override {
+  bool SeekSet(size_t offset) override {
+    if (offset >= size_) {
+      return false;
+    }
     offset_ = offset;
+    return true;
   }
 
   size_t Tell() const override {

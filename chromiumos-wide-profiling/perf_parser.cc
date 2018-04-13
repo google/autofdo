@@ -237,7 +237,10 @@ void PerfParser::MaybeSortParsedEvents() {
     event_and_time->event = &parsed_event;
 
     struct perf_sample sample_info;
-    CHECK(reader_.ReadPerfSampleInfo(*parsed_event.raw_event, &sample_info));
+    if (reader_.ReadPerfSampleInfo(*parsed_event.raw_event, &sample_info) == false) {
+      LOG(ERROR) << "Skip one unsupported event." ;
+      continue;
+    }
     event_and_time->time = sample_info.time;
 
     events_and_times.emplace_back(std::move(event_and_time));
