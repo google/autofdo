@@ -1318,7 +1318,9 @@ bool PerfReader::ReadMetadata(DataReader* data) {
   for (u32 type = HEADER_FIRST_FEATURE; type != HEADER_LAST_FEATURE; ++type) {
     if ((metadata_mask_ & (1 << type)) == 0)
       continue;
-    data->SeekSet(section_iter->offset);
+    if (data->SeekSet(section_iter->offset) == false) {
+      continue;
+    }
     u64 size = section_iter->size;
 
     switch (type) {
