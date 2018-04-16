@@ -20,7 +20,7 @@
 #include <utility>
 
 #include "base/logging.h"
-#include "chromiumos-wide-profiling/perf_parser.h"
+#include "third_party/perf_data_converter/src/quipper/perf_parser.h"
 
 namespace {
 // Returns true if name equals full_name, or full_name is empty and name
@@ -199,8 +199,9 @@ bool TextSampleReaderWriter::IsFileExist() const {
 }
 
 bool PerfDataSampleReader::Append(const string &profile_file) {
-  quipper::PerfParser parser;
-  if (!parser.ReadFile(profile_file) || !parser.ParseRawEvents()) {
+  quipper::PerfReader reader;
+  quipper::PerfParser parser(&reader);
+  if (!reader.ReadFile(profile_file) || !parser.ParseRawEvents()) {
     return false;
   }
 
@@ -210,8 +211,8 @@ bool PerfDataSampleReader::Append(const string &profile_file) {
   // in the profile, then we use focus_binary to match samples. Otherwise,
   // focus_binary_re_ is used to match the binary name with the samples.
   for (const auto &event : parser.parsed_events()) {
-    if (!event.raw_event ||
-        event.raw_event->header.type != PERF_RECORD_SAMPLE) {
+    if (!event.event_ptr ||
+        event.event_ptr->header().type() != PERF_RECORD_SAMPLE) {
       continue;
     }
     if (MatchBinary(event.dso_and_offset.dso_name(), focus_binary)) {
