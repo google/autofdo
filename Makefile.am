@@ -27,7 +27,7 @@ $(protoc_outputs): $(protoc_inputs) $(PROTOC)
 	$(PROTOC) --cpp_out=`dirname $<` -I`dirname $<` $(protoc_inputs)
 
 ACLOCAL_AMFLAGS = -I m4
-AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/glog/src -I$(top_srcdir)/third_party/perf_data_converter/src/quipper
+AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/glog/src -I$(top_srcdir)/third_party/perf_data_converter/src/quipper -I./$(PROTOBUF)/src
 AM_CXXFLAGS = -std=gnu++11 -I./$(PROTOBUF)/src
 AM_LDFLAGS = -lpthread -lelf -lz
 
