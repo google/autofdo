@@ -21,7 +21,10 @@ dependencies, and:
 
 aclocal -I .; autoheader; autoconf; automake --add-missing -c
 ./configure # or --with-llvm=$(which llvm-config-5.0)
-make -j$(nproc)
+make
+
+(Note: do not use the '-j' (parallel build) option of make. The configure scripts
+ for the sub-projects fail if run in parallel)
 
 Usage:
 ./create_gcov --binary=BINARY --profile=PERF_PROFILE --gcov=OUTPUT
