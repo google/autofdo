@@ -20,11 +20,13 @@
 #define AUTOFDO_SYMBOL_MAP_H_
 
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "addr2line.h"
 #include "base/common.h"
 #include "base/macros.h"
 #include "source_info.h"
@@ -172,7 +174,8 @@ class SymbolMap {
       : binary_(binary),
         base_addr_(0),
         count_threshold_(0),
-        use_discriminator_encoding_(false) {
+        use_discriminator_encoding_(false),
+        ignore_thresholds_(false) {
     if (!binary.empty()) {
       BuildSymbolMap();
       BuildNameAddressMap();
@@ -195,6 +198,7 @@ class SymbolMap {
 
   // Returns true if the count is large enough to be emitted.
   bool ShouldEmit(int64 count) const {
+    if (ignore_thresholds_) return true;
     CHECK_GT(count_threshold_, 0);
     return count > count_threshold_;
   }
@@ -214,6 +218,16 @@ class SymbolMap {
   void set_use_discriminator_encoding(bool v) {
     use_discriminator_encoding_ = v;
   }
+
+  void set_ignore_thresholds(bool v) {
+    ignore_thresholds_ = v;
+  }
+
+  void set_addr2line(std::unique_ptr<Addr2line> addr2line) {
+    addr2line_ = std::move(addr2line);
+  }
+
+  Addr2line *get_addr2line() const { return addr2line_.get(); }
 
   // Adds an empty named symbol.
   void AddSymbol(const string &name);
@@ -366,6 +380,8 @@ class SymbolMap {
   uint64 base_addr_;
   int64 count_threshold_;
   bool use_discriminator_encoding_;
+  bool ignore_thresholds_;
+  std::unique_ptr<Addr2line> addr2line_;
   /* working_set_[i] stores # of instructions that consumes
      i/NUM_GCOV_WORKING_SETS of total instruction counts.  */
   gcov_working_set_info working_set_[NUM_GCOV_WORKING_SETS];

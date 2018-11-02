@@ -24,7 +24,9 @@
 #include "llvm_profile_writer.h"
 
 DEFINE_string(profile, "perf.data", "Input profile file name");
-DEFINE_string(profiler, "perf", "Input profile type");
+DEFINE_string(profiler, "perf",
+              "Input profile type. Possible values: perf, text, or prefetch");
+DEFINE_string(prefetch_hints, "", "Input cache prefetch hints");
 DEFINE_string(out, "", "Output profile file name");
 DEFINE_string(gcov, "",
               "Output profile file name. Alias for --out; used for "

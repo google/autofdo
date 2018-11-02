@@ -65,10 +65,12 @@ class ProfileCreator {
 
   // Computes the profile and updates the given symbol map and addr2line
   // instance.
-  bool ComputeProfile(autofdo::SymbolMap *symbol_map,
-                      autofdo::Addr2line **addr2line);
+  bool ComputeProfile(SymbolMap *symbol_map);
 
  private:
+  bool ConvertPrefetchHints(const string &profile_file, SymbolMap *symbol_map);
+  bool CheckAndAssignAddr2Line(SymbolMap *symbol_map, Addr2line *addr2line);
+
   SampleReader *sample_reader_;
   string binary_;
   bool use_discriminator_encoding_;
