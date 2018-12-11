@@ -16,17 +16,17 @@
 
 #include <memory>
 
-#include "addr2line.h"
-#include "base/common.h"
-#include "gcov.h"
-#include "gflags/gflags.h"
-#include "module_grouper.h"
-#include "profile.h"
 #include "profile_creator.h"
+#include "gflags/gflags.h"
+#include "base/common.h"
+#include "addr2line.h"
+#include "gcov.h"
+#include "profile.h"
 #include "profile_writer.h"
 #include "sample_reader.h"
 #include "symbol_map.h"
 #include "symbolize/elf_reader.h"
+#include "module_grouper.h"
 
 namespace {
 struct PrefetchHint {
@@ -126,8 +126,8 @@ bool ProfileCreator::ReadSample(const string &input_profile_name,
 
     ElfReader reader(binary_);
 
-    sample_reader_ =
-        new PerfDataSampleReader(input_profile_name, std::move(file_base_name));
+    sample_reader_ = new PerfDataSampleReader(
+        input_profile_name, std::move(file_base_name));
   } else if (profiler == "text") {
     sample_reader_ = new TextSampleReaderWriter(input_profile_name);
   } else {
