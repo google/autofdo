@@ -327,6 +327,7 @@ void SymbolMap::AddSymbolEntryCount(const string &symbol_name, uint64 count) {
 Symbol *SymbolMap::TraverseInlineStack(const string &symbol_name,
                                        const SourceStack &src,
                                        uint64 count) {
+  if (src.empty()) return nullptr;
   Symbol *symbol = map_.find(symbol_name)->second;
   symbol->total_count += count;
   const SourceInfo &info = src[src.size() - 1];
@@ -356,11 +357,10 @@ void SymbolMap::AddSourceCount(const string &symbol_name,
                                const SourceStack &src,
                                uint64 count, uint64 num_inst,
                                Operation op) {
-  if (src.size() == 0) {
-    return;
-  }
-  uint32 offset = src[0].Offset(use_discriminator_encoding_);
   Symbol *symbol = TraverseInlineStack(symbol_name, src, count);
+  if (!symbol) return;
+
+  uint32 offset = src[0].Offset(use_discriminator_encoding_);
   if (op == MAX) {
     if (count > symbol->pos_counts[offset].count) {
       symbol->pos_counts[offset].count = count;
@@ -373,16 +373,16 @@ void SymbolMap::AddSourceCount(const string &symbol_name,
   symbol->pos_counts[offset].num_inst += num_inst;
 }
 
-void SymbolMap::AddIndirectCallTarget(const string &symbol_name,
+bool SymbolMap::AddIndirectCallTarget(const string &symbol_name,
                                       const SourceStack &src,
                                       const string &target,
                                       uint64 count) {
-  if (src.size() == 0) {
-    return;
-  }
   Symbol *symbol = TraverseInlineStack(symbol_name, src, 0);
+
+  if (!symbol) return false;
   symbol->pos_counts[src[0].Offset(use_discriminator_encoding_)].target_map[
       GetOriginalName(target.c_str())] = count;
+  return true;
 }
 
 struct CallsiteLessThan {

@@ -295,11 +295,13 @@ class SymbolMap {
   //   source: source location (in terms of inlined source stack).
   //   target: indirect call target.
   //   count: total sampled count.
-  void AddIndirectCallTarget(const string &symbol, const SourceStack &source,
+  // Returns false if we failed to add the call target.
+  bool AddIndirectCallTarget(const string &symbol, const SourceStack &source,
                              const string &target, uint64 count);
 
   // Traverses the inline stack in source, update the symbol map by adding
-  // count to the total count in the inlined symbol. Returns the leaf symbol.
+  // count to the total count in the inlined symbol. Returns the leaf symbol. If
+  // the inline stack is empty, returns nullptr without any other updates.
   Symbol *TraverseInlineStack(const string &symbol, const SourceStack &source,
                               uint64 count);
 
