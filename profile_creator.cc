@@ -16,17 +16,17 @@
 
 #include <memory>
 
-#include "profile_creator.h"
-#include "gflags/gflags.h"
-#include "base/common.h"
 #include "addr2line.h"
+#include "base/common.h"
 #include "gcov.h"
+#include "gflags/gflags.h"
+#include "module_grouper.h"
 #include "profile.h"
+#include "profile_creator.h"
 #include "profile_writer.h"
 #include "sample_reader.h"
 #include "symbol_map.h"
 #include "symbolize/elf_reader.h"
-#include "module_grouper.h"
 
 namespace {
 struct PrefetchHint {
@@ -126,8 +126,8 @@ bool ProfileCreator::ReadSample(const string &input_profile_name,
 
     ElfReader reader(binary_);
 
-    sample_reader_ = new PerfDataSampleReader(
-        input_profile_name, std::move(file_base_name));
+    sample_reader_ =
+        new PerfDataSampleReader(input_profile_name, std::move(file_base_name));
   } else if (profiler == "text") {
     sample_reader_ = new TextSampleReaderWriter(input_profile_name);
   } else {
@@ -181,18 +181,26 @@ bool ProfileCreator::ConvertPrefetchHints(const string &profile_file,
     if (symbol_map->map().find(*name) == symbol_map->map().end()) {
       symbol_map->AddSymbol(*name);
       // Add bogus samples, so that the writer won't skip over.
-      symbol_map->TraverseInlineStack(*name, stack,
-                                      symbol_map->count_threshold() + 1);
+      if (!symbol_map->TraverseInlineStack(*name, stack,
+                                           symbol_map->count_threshold() + 1)) {
+        LOG(WARNING) << "Ignoring address " << std::hex << pc
+                     << ". No inline stack found.";
+        continue;
+      }
     }
 
     // Currently, the profile format expects unsigned values, corresponding to
     // number of collected samples. We're hacking support for prefetch hints on
     // top of that, and prefetch hints are signed. For now, we'll explicitly
     // cast to unsigned.
-    symbol_map->AddIndirectCallTarget(
-        *name, stack,
-        "__prefetch_" + hint.type + "_" + std::to_string(prefetch_index),
-        static_cast<uint64>(delta));
+    if (!symbol_map->AddIndirectCallTarget(
+            *name, stack,
+            "__prefetch_" + hint.type + "_" + std::to_string(prefetch_index),
+            static_cast<uint64>(delta))) {
+      LOG(WARNING) << "Ignoring address " << std::hex << pc
+                   << ". Could not add an indirect call target. Likely the "
+                      "inline stack is empty for this address.";
+    }
   }
   return true;
 }

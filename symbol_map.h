@@ -83,11 +83,9 @@ typedef std::map<uint32, ProfileInfo> PositionCountMap;
 typedef std::pair<uint32, const char *> Callsite;
 
 struct CallsiteLess {
-  bool operator()(const Callsite& c1, const Callsite& c2) const {
-    if (c1.first != c2.first)
-      return c1.first < c2.first;
-    if ((c1.second == NULL || c2.second == NULL))
-      return c1.second < c2.second;
+  bool operator()(const Callsite &c1, const Callsite &c2) const {
+    if (c1.first != c2.first) return c1.first < c2.first;
+    if ((c1.second == NULL || c2.second == NULL)) return c1.second < c2.second;
     return strcmp(c1.second, c2.second) < 0;
   }
 };
@@ -108,11 +106,13 @@ class Symbol {
   // This constructor is used to create inlined symbol.
   Symbol(const char *name, const char *dir, const char *file, uint32 start)
       : info(SourceInfo(name, dir, file, start, 0, 0)),
-        total_count(0), head_count(0) {}
+        total_count(0),
+        head_count(0) {}
 
   // This constructor is used to create aliased symbol.
   Symbol(const Symbol *src, const char *new_func_name)
-      : info(src->info), total_count(src->total_count),
+      : info(src->info),
+        total_count(src->total_count),
         head_count(src->head_count) {
     info.func_name = new_func_name;
   }
@@ -125,9 +125,7 @@ class Symbol {
     return (name && strlen(name) > 0) ? name : "noname";
   }
 
-  string name() const {
-    return Name(info.func_name);
-  }
+  string name() const { return Name(info.func_name); }
 
   // Merges profile stored in src symbol with this symbol.
   void Merge(const Symbol *src);
@@ -189,12 +187,10 @@ class SymbolMap {
 
   ~SymbolMap();
 
-  uint64 size() const {
-    return map_.size();
-  }
+  uint64 size() const { return map_.size(); }
 
-  void set_count_threshold(int64 n) {count_threshold_ = n;}
-  int64 count_threshold() const {return count_threshold_;}
+  void set_count_threshold(int64 n) { count_threshold_ = n; }
+  int64 count_threshold() const { return count_threshold_; }
 
   // Returns true if the count is large enough to be emitted.
   bool ShouldEmit(int64 count) const {
@@ -211,17 +207,13 @@ class SymbolMap {
   void CalculateThreshold();
 
   // Returns relocation start address.
-  uint64 base_addr() const {
-    return base_addr_;
-  }
+  uint64 base_addr() const { return base_addr_; }
 
   void set_use_discriminator_encoding(bool v) {
     use_discriminator_encoding_ = v;
   }
 
-  void set_ignore_thresholds(bool v) {
-    ignore_thresholds_ = v;
-  }
+  void set_ignore_thresholds(bool v) { ignore_thresholds_ = v; }
 
   void set_addr2line(std::unique_ptr<Addr2line> addr2line) {
     addr2line_ = std::move(addr2line);
@@ -232,17 +224,11 @@ class SymbolMap {
   // Adds an empty named symbol.
   void AddSymbol(const string &name);
 
-  const NameSymbolMap &map() const {
-    return map_;
-  }
+  const NameSymbolMap &map() const { return map_; }
 
-  NameSymbolMap &map() {
-    return map_;
-  }
+  NameSymbolMap &map() { return map_; }
 
-  const gcov_working_set_info *GetWorkingSets() const {
-    return working_set_;
-  }
+  const gcov_working_set_info *GetWorkingSets() const { return working_set_; }
 
   uint64 GetSymbolStartAddr(const string &name) const {
     const auto &iter = name_addr_map_.find(name);
@@ -280,7 +266,7 @@ class SymbolMap {
   // Increments symbol's entry count.
   void AddSymbolEntryCount(const string &symbol, uint64 count);
 
-  typedef enum {INVALID = 1, SUM, MAX} Operation;
+  typedef enum { INVALID = 1, SUM, MAX } Operation;
   // Increments source stack's count.
   //   symbol: name of the symbol in which source is located.
   //   source: source location (in terms of inlined source stack).
@@ -295,11 +281,13 @@ class SymbolMap {
   //   source: source location (in terms of inlined source stack).
   //   target: indirect call target.
   //   count: total sampled count.
-  void AddIndirectCallTarget(const string &symbol, const SourceStack &source,
+  // Returns false if we failed to add the call target.
+  bool AddIndirectCallTarget(const string &symbol, const SourceStack &source,
                              const string &target, uint64 count);
 
   // Traverses the inline stack in source, update the symbol map by adding
-  // count to the total count in the inlined symbol. Returns the leaf symbol.
+  // count to the total count in the inlined symbol. Returns the leaf symbol. If
+  // the inline stack is empty, returns nullptr without any other updates.
   Symbol *TraverseInlineStack(const string &symbol, const SourceStack &source,
                               uint64 count);
 
@@ -356,7 +344,7 @@ class SymbolMap {
   void Dump() const;
   void DumpFuncLevelProfileCompare(const SymbolMap &map) const;
 
-  void AddAlias(const string& sym, const string& alias);
+  void AddAlias(const string &sym, const string &alias);
 
   // Validates if the current symbol map is sane.
   bool Validate() const;
