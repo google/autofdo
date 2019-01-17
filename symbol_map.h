@@ -185,7 +185,8 @@ class SymbolMap {
   SymbolMap()
       : base_addr_(0),
         count_threshold_(0),
-        use_discriminator_encoding_(false) {}
+        use_discriminator_encoding_(false),
+        ignore_thresholds_(false) {}
 
   ~SymbolMap();
 
