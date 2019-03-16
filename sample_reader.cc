@@ -212,7 +212,7 @@ bool PerfDataSampleReader::Append(const string &profile_file) {
   // focus_binary_re_ is used to match the binary name with the samples.
   for (const auto &event : parser.parsed_events()) {
     if (!event.event_ptr ||
-        event.event_ptr->header().type() != PERF_RECORD_SAMPLE) {
+        event.event_ptr->header().type() != quipper::PERF_RECORD_SAMPLE) {
       continue;
     }
     if (MatchBinary(event.dso_and_offset.dso_name(), focus_binary)) {
