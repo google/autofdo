@@ -4,6 +4,7 @@
 
 #include <fstream>
 #include <functional>
+#include <iomanip>
 #include <ios>
 #include <list>
 #include <sstream>
@@ -189,6 +190,25 @@ operator<<(std::ostream &out,
   }
   return out;
 }
+
+struct BuildIdWrapper {
+  BuildIdWrapper(const quipper::PerfDataProto_PerfBuildID &BuildId)
+      : Data(BuildId.build_id_hash().c_str()) {}
+  
+  BuildIdWrapper(const char *P) : Data(P) {}
+    
+  const char *Data;
+};
+
+static std::ostream &
+operator<<(std::ostream &out, const BuildIdWrapper &BW) {
+    const char *p = BW.Data;
+    for (int i = 0; i < quipper::kBuildIDArraySize; ++i, ++p) {
+      out << std::setw(2) << std::setfill('0') << std::hex
+          << ((int)(*p) & 0xFF);
+    }
+  return out;
+}
 } // namespace
 
 bool PLOProfileWriter::write() {
@@ -284,10 +304,14 @@ bool PLOProfileWriter::initBinaryFile() {
       auto P = SContents.end();
       auto Q = BinaryBuildId.get() + quipper::kBuildIDArraySize;
       for (int i = 1; i <= quipper::kBuildIDArraySize; ++i) {
-        if (P[-i] != Q[-i]) {
+        if (*(--P) != *(--Q)) {
           BuildIdMatch = false;
           break;
         }
+      }
+      if (BuildIdMatch) {
+        LOG(INFO) << "Found Build Id in binary '" << BinaryFileName
+                  << "': " << BuildIdWrapper(P);
       }
     }
   }
@@ -423,7 +447,6 @@ bool PLOProfileWriter::setupMMaps(quipper::PerfParser &Parser) {
     }
   }
   
-
   if (BinaryMMaps.empty()) {
     LOG(ERROR) << "Failed to find mmap entry for '" << BinaryFileName << "'. '"
                << PerfFileName << "' does not match '" << BinaryFileName
@@ -445,15 +468,15 @@ bool PLOProfileWriter::setupBinaryBuildId(quipper::PerfReader &PR) {
       BinaryBuildId.reset(new char[quipper::kBuildIDArraySize]);
       memcpy(BinaryBuildId.get(), BuildId.build_id_hash().c_str(),
              quipper::kBuildIDArraySize);
-      LOG(INFO) << "Found Build ID for '" << BinaryFileName << "'.";
+      LOG(INFO) << "Found Build Id in perf data '" << PerfFileName
+                << "': " << BuildId;
       return true;
     }
   }
-  LOG(INFO) << "No Build ID info for '" << this->BinaryFileName
+  LOG(INFO) << "No Build Id info for '" << this->BinaryFileName
             << "' found in '" << this->PerfFileName << "'.";
   BinaryBuildId.reset(nullptr);
   return false;
-
 }
 
 void PLOProfileWriter::aggregateLBR(quipper::PerfParser &Parser) {

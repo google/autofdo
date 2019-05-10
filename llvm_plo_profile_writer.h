@@ -14,8 +14,6 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/MemoryBuffer.h"
 
-#include "third_party/perf_data_converter/src/quipper/perf_reader.h"
-
 using std::list;
 using std::map;
 using std::string;
@@ -25,6 +23,7 @@ using llvm::StringRef;
 
 namespace quipper {
 class PerfParser;
+class PerfReader;
 }
 
 // This class, given binary and perf.data file paths, writes profile data
@@ -136,10 +135,10 @@ public:
   bool BinaryIsPIE;
   // MMap entries, load Addr -> Size.
   map<uint64_t, uint64_t> BinaryMMaps;
-  // Canonical names appears in the mmap events, we need this to extract build
-  // id.
-  string            BinaryMMapName;
-  unique_ptr<char>  BinaryBuildId;
+  // All binary mmaps must have the same BinaryMMapName.
+  string                  BinaryMMapName;
+  // Nullptr if build id does not exist for BinaryMMapName.
+  unique_ptr<char>        BinaryBuildId;
   bool setupMMaps(quipper::PerfParser &Parser);
   bool setupBinaryBuildId(quipper::PerfReader &R);
 
