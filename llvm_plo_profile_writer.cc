@@ -6,10 +6,12 @@
 #include <functional>
 #include <ios>
 #include <list>
+#include <sstream>
 #include <string>
 #include <utility>
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ObjectFile.h"
@@ -18,11 +20,13 @@
 #include "llvm/Support/Path.h"
 
 #include "third_party/perf_data_converter/src/quipper/perf_parser.h"
+#include "third_party/perf_data_converter/src/quipper/perf_reader.h"
 
 using llvm::StringRef;
 using std::string;
 
-PLOProfileWriter::PLOProfileWriter(const string &BFN, const string &PFN,
+PLOProfileWriter::PLOProfileWriter(const string &BFN,
+                                   const string &PFN,
                                    const string &OFN)
     : BinaryFileName(BFN), PerfFileName(PFN), OutFileName(OFN) {}
 
@@ -47,8 +51,7 @@ PLOProfileWriter::Addr2SymCacheHandler PLOProfileWriter::findSymbolEntry(
   auto CacheResult = Addr2SymCache.find(OriginAddr);
   if (CacheResult != Addr2SymCache.end()) return CacheResult;
 
-  // If it is within binary mmap.
-  // BinaryMMaps usually contains 1-2 elements at most.
+  // If the given address is within binary mmap.
   uint64_t LoadAddr = findLoadAddress(OriginAddr);
   if (LoadAddr == INVALID_ADDRESS) return Addr2SymCache.end();
 
@@ -61,24 +64,98 @@ PLOProfileWriter::Addr2SymCacheHandler PLOProfileWriter::findSymbolEntry(
   std::list<SymbolEntry *> Candidates;
   for (auto &SymEnt : R->second)
     if (SymEnt->conainsAddress(Addr))
-      Candidates.push_back(SymEnt.get());
+      Candidates.emplace_back(SymEnt.get());
 
   if (Candidates.empty()) return Addr2SymCache.end();
 
   // Sort candidates by symbol size.
   Candidates.sort([](const SymbolEntry *S1, const SymbolEntry *S2) {
-    return S1->Size < S2->Size;
+    if (S1->Size != S2->Size)
+      return S1->Size < S2->Size;
+    return S1->Name < S2->Name;
   });
 
+  // Some sort of disambiguation is needed for symbols that start from same
+  // address and contain addr.
+
+  // 1. If one of them is Func, the other is like Func.bb.1, return Func.bb.1.
   if (Candidates.size() == 2) {
-    // If one of them is Func, the other is like Func.bb.1,
-    // return Func.bb.1.
     auto *Sym = *(Candidates.begin());
     StringRef FuncName;
     if (isBBSymbol(Sym->Name, FuncName) &&
         FuncName == (*(Candidates.rbegin()))->Name) {
+      // Since, Func.Size > Func.bb.1.size, "Func.bb.1" must be the first of
+      // "Candidates".
       Candidates.pop_back();
     }
+  }
+
+  // 2. Whether Candidates are a group of ctors or dtors that after demangling,
+  // have exactly the same name. Itanium c++ abi - 5.1.4.3 Constructors and
+  // Destructors, there are 3 variants of ctors and dtors. <ctor-dtor-name>
+  //  ::= C1	# complete object constructor
+  //  ::= C2	# base object constructor
+  //  ::= C3	# complete object allocating constructor
+  //  ::= D0	# deleting destructor
+  //  ::= D1	# complete object destructor
+  //  ::= D2	# base object destructor
+  if (Candidates.size() <= 3 &&
+      (*Candidates.front()).Size == (*Candidates.back()).Size) {
+    // Helper lambdas.
+    auto findUniqueDiffSpot = [](SymbolEntry *S1, SymbolEntry *S2) -> int {
+      if (S1->Name.size() != S2->Name.size())
+        return -1;
+      int DiffSpot = -1;
+      for (auto P = S1->Name.begin(), Q = S2->Name.begin(), E = S1->Name.end();
+           P != E; ++P, ++Q) {
+        if (*P != *Q) {
+          if (DiffSpot != -1)
+            return -1;
+          DiffSpot = P - S1->Name.begin();
+        }
+      }
+      assert(DiffSpot != -1);
+      return DiffSpot;
+    };
+
+    auto isSameCtorOrDtor = [](StringRef &N1, StringRef &N2, int Spot) -> bool {
+      auto N1N = N1[Spot], N2N = N2[Spot];
+      auto N1CD = N1[Spot - 1], N2CD = N2[Spot - 1];
+      return ('0' <= N1N && N1N <= '3' && '0' <= N2N && N2N <= '3' &&
+              (N1CD == 'C' || N1CD == 'D') && N1CD == N2CD);
+    };
+
+    bool inSameGroup = true;
+    for (auto I = Candidates.begin(), E = Candidates.end();
+         inSameGroup && I != E; ++I) {
+      for (auto J = std::next(I); J != E; ++J) {
+        int DiffSpot = findUniqueDiffSpot(*I, *J);
+        if (DiffSpot <= 0 ||
+            !isSameCtorOrDtor((*I)->Name, (*J)->Name, DiffSpot)) {
+          inSameGroup = false;
+          break;
+        }
+      }
+    }
+    if (inSameGroup) {
+      auto *Chosen = Candidates.front();
+      Candidates.clear();
+      Candidates.push_back(Chosen);
+    }
+  } // End of disambiguating Ctor / Dtor groups.
+
+  if (Candidates.size() > 1) {
+    // If we hit this very rare case, log it up.
+    std::stringstream ss;
+    ss << "Multiple symbols may contain adderss: " << std::endl;
+    ss << std::hex << std::showbase;
+    for (auto &SE : Candidates) {
+      ss << "\t"
+         << "Addr=" << SE->Addr << ", Size=" << SE->Size
+         << ", Name=" << SE->Name.str() << std::endl;
+    }
+    // Issue the warning in one shot, not multiple warnings.
+    LOG(INFO) << ss.str();
   }
 
   auto InsertR = Addr2SymCache.emplace(OriginAddr, std::move(Candidates));
@@ -86,8 +163,36 @@ PLOProfileWriter::Addr2SymCacheHandler PLOProfileWriter::findSymbolEntry(
   return InsertR.first;
 }
 
+namespace {
+struct DecOut {
+} dec;
+
+struct HexOut {
+} hex;
+
+static std::ostream &operator<<(std::ostream &out, const struct DecOut &) {
+  return out << std::dec << std::noshowbase;
+}
+
+static std::ostream &operator<<(std::ostream &out, const struct HexOut &) {
+  return out << std::hex << std::noshowbase;
+}
+
+static std::ostream &
+operator<<(std::ostream &out,
+           const std::list<PLOProfileWriter::SymbolEntry *> &Syms) {
+  assert(!Syms.empty());
+  for (auto *P : Syms) {
+    if (P != Syms.front())
+      out << "/";
+    out << dec << P->Ordinal;
+  }
+  return out;
+}
+} // namespace
+
 bool PLOProfileWriter::write() {
-  if (!initBinaryFile() || !populateSymbolMap() || !parsePerfData()) {
+  if (!parsePerfData() || !initBinaryFile() || !populateSymbolMap()) {
     return false;
   }
   std::ofstream fout(OutFileName);
@@ -100,33 +205,21 @@ bool PLOProfileWriter::write() {
   return true;
 }
 
-static std::ostream & hexout(std::ostream &out) {
-    out.setf(std::ios_base::hex, std::ios_base::basefield);
-    out.unsetf(std::ios_base::showbase);
-    return out;
-}
-
-static std::ostream & decout(std::ostream &out) {
-    out.setf(std::ios_base::dec, std::ios_base::basefield);
-    out.unsetf(std::ios_base::showbase);
-    return out;
-}
-
 void PLOProfileWriter::writeSymbols(std::ofstream &fout) {
   fout << "Symbols" << std::endl;
   for (auto &LE : AddrMap) {
     for (auto &SEPtr : LE.second) {
       SymbolEntry &SE = *SEPtr;
-      decout(fout) << SE.Ordinal << " ";
-      hexout(fout) << SE.Addr << " " << SE.Size << " ";
+      fout << dec << SE.Ordinal << " "
+           << hex << SE.Addr << " " << SE.Size << " ";
       if (SE.BBFuncName.empty()) {
         fout << "N" << SE.Name.str() << std::endl;
       } else {
         auto R = NameMap.find(SE.BBFuncName);
         assert(R != NameMap.end());
         SymbolEntry *BBFuncSym = R->second;
-        decout(fout) << BBFuncSym->Ordinal << "." << SE.getBBIndex().str()
-                     << std::endl;
+        fout << dec << BBFuncSym->Ordinal << "." << SE.getBBIndex().str()
+             << std::endl;
       }
     }
   }
@@ -134,17 +227,6 @@ void PLOProfileWriter::writeSymbols(std::ofstream &fout) {
 
 void PLOProfileWriter::writeBranches(std::ofstream &fout) {
   fout << "Branches" << std::endl;
-  auto writeSymbolList =
-      [&fout](std::list<SymbolEntry *> &Syms) -> std::ostream & {
-    assert(!Syms.empty());
-    for (auto *P : Syms) {
-      if (P != Syms.front()) {
-        fout << "/";
-      }
-      decout(fout) << P->Ordinal;
-    }
-    return fout;
-  };
   for (auto &EC : EdgeCounters) {
     const uint64_t From = EC.first.first;
     const uint64_t To = EC.first.second;
@@ -153,11 +235,11 @@ void PLOProfileWriter::writeBranches(std::ofstream &fout) {
     auto ToSymHandler = findSymbolEntry(To);
     if (FromSymHandler != Addr2SymCache.end() &&
         ToSymHandler != Addr2SymCache.end()) {
-      writeSymbolList(FromSymHandler->second) << " ";
-      writeSymbolList(ToSymHandler->second) << " " ;
-      decout(fout) << Cnt << " ";
-      hexout(fout) << adjustAddressForPIE(From) << " ";
-      hexout(fout) << adjustAddressForPIE(To) << std::endl;
+      fout << FromSymHandler->second << " " 
+           << ToSymHandler->second << " "
+           << dec << Cnt << " " 
+           << hex << adjustAddressForPIE(From) << " "
+           << hex << adjustAddressForPIE(To) << std::endl;
     }
   }
 }
@@ -184,6 +266,41 @@ bool PLOProfileWriter::initBinaryFile() {
   BinaryIsPIE = (ELFObj->getEType() == llvm::ELF::ET_DYN);
   LOG(INFO) << "'" << this->BinaryFileName
                << "' is PIE binary: " << BinaryIsPIE;
+
+  if (!this->BinaryBuildId) return true;
+
+  // Extract build id and compare it against perf build id.
+  bool BuildIdFound = false;
+  bool BuildIdMatch = true;
+  for (auto &SR : ObjectFile->sections()) {
+    llvm::object::ELFSectionRef ESR(SR);
+    StringRef SName;
+    StringRef SContents;
+    if (ESR.getType() == llvm::ELF::SHT_NOTE &&
+        SR.getName(SName).value() == 0 && SName == ".note.gnu.build-id" &&
+        SR.getContents(SContents).value() == 0 &&
+        SContents.size() > quipper::kBuildIDArraySize) {
+      BuildIdFound = true;
+      auto P = SContents.end();
+      auto Q = BinaryBuildId.get() + quipper::kBuildIDArraySize;
+      for (int i = 1; i <= quipper::kBuildIDArraySize; ++i) {
+        if (P[-i] != Q[-i]) {
+          BuildIdMatch = false;
+          break;
+        }
+      }
+    }
+  }
+  if (!BuildIdFound) {
+    LOG(INFO) << "No Build Id found in '" << this->BinaryFileName << "'.";
+  } else {
+    if (BuildIdMatch) {
+      LOG(INFO) << "Found Build Id in binary, and it matches perf data.";
+    } else {
+      LOG(ERROR) << "Build Ids do not match.";
+      return false;
+    }
+  }
   return true;
 }
 
@@ -234,63 +351,79 @@ bool PLOProfileWriter::parsePerfData() {
     return false;
   }
 
+  setupBinaryBuildId(PR);
+
   aggregateLBR(Parser);
   return true;
 }
 
-bool PLOProfileWriter::setupMMaps(quipper::PerfParser &Parser){
-    // Depends on the binary file name, if
-    //   - it is absolute, compares it agains the full path
-    //   - it is relative, only compares the file name part
-    // Note: CompFunc is constructed in a way so that there is no branch /
-    // conditional test inside the function.
-    struct BinaryNameComparator {
-      BinaryNameComparator(const string &BinaryFileName) {
-        if (llvm::sys::path::is_absolute(BinaryFileName)) {
-          ComparePart = StringRef(BinaryFileName);
-          PathChanger = NullPathChanger;
-        } else {
-          ComparePart = llvm::sys::path::filename(BinaryFileName);
-          PathChanger = NameOnlyPathChanger;
-        }
-      }
-
-      bool operator()(const string &Path) {
-          return ComparePart == PathChanger(Path);
-      }
-
-      StringRef ComparePart;
-      std::function<StringRef(const string &)> PathChanger;
-
-      static StringRef NullPathChanger(const string &S) { return StringRef(S); }
-      static StringRef NameOnlyPathChanger(const string &S) {
-        return llvm::sys::path::filename(StringRef(S));
-      }
-    } CompFunc(this->BinaryFileName);
-
-  for (const auto &PE : Parser.parsed_events()) {
-    quipper::PerfDataProto_PerfEvent *EPtr = PE.event_ptr;
-    if (EPtr->event_type_case() ==
-        quipper::PerfDataProto_PerfEvent::kMmapEvent) {
-      const quipper::PerfDataProto_MMapEvent &MMap = EPtr->mmap_event();
-      if (MMap.has_filename()) {
-        const string &MMapFileName = MMap.filename();
-        if (CompFunc(MMapFileName) && MMap.has_start() && MMap.has_len()) {
-          uint64_t LoadAddr = MMap.start();
-          uint64_t LoadSize = MMap.len();
-          auto ExistingMMap = BinaryMMaps.find(LoadAddr);
-          if (ExistingMMap == BinaryMMaps.end()) {
-            BinaryMMaps.emplace(LoadAddr, LoadSize);
-          } else if (ExistingMMap->second != LoadSize) {
-            LOG(ERROR) << "Binary is loaded into memory segment "
-                          "with same starting address but different "
-                          "size.";
-            return false;
-          }
-        }
+bool PLOProfileWriter::setupMMaps(quipper::PerfParser &Parser) {
+  // Depends on the binary file name, if
+  //   - it is absolute, compares it agains the full path
+  //   - it is relative, only compares the file name part
+  // Note: CompFunc is constructed in a way so that there is no branch /
+  // conditional test inside the function.
+  struct BinaryNameComparator {
+    BinaryNameComparator(const string &BinaryFileName) {
+      if (llvm::sys::path::is_absolute(BinaryFileName)) {
+        ComparePart = StringRef(BinaryFileName);
+        PathChanger = NullPathChanger;
+      } else {
+        ComparePart = llvm::sys::path::filename(BinaryFileName);
+        PathChanger = NameOnlyPathChanger;
       }
     }
+
+    bool operator()(const string &Path) {
+      return ComparePart == PathChanger(Path);
+    }
+
+    StringRef ComparePart;
+    std::function<StringRef(const string &)> PathChanger;
+
+    static StringRef NullPathChanger(const string &S) { return StringRef(S); }
+    static StringRef NameOnlyPathChanger(const string &S) {
+      return llvm::sys::path::filename(StringRef(S));
+    }
+  } CompFunc(this->BinaryFileName);
+
+  this->BinaryMMapName = "";
+  for (const auto &PE : Parser.parsed_events()) {
+    quipper::PerfDataProto_PerfEvent *EPtr = PE.event_ptr;
+    if (EPtr->event_type_case() != quipper::PerfDataProto_PerfEvent::kMmapEvent)
+      continue;
+
+    const quipper::PerfDataProto_MMapEvent &MMap = EPtr->mmap_event();
+    if (!MMap.has_filename()) continue;
+
+    const string &MMapFileName = MMap.filename();
+    if (!CompFunc(MMapFileName) || !MMap.has_start() || !MMap.has_len())
+      continue;
+
+    if (this->BinaryMMapName.empty()) {
+      this->BinaryMMapName = MMapFileName;
+    } else if (BinaryMMapName != MMapFileName) {
+      LOG(ERROR) << "'" << BinaryFileName
+                 << "' is not specific enough. It matches both '"
+                 << BinaryMMapName << "' and '" << MMapFileName
+                 << "' in the perf data file. Consider using absolute "
+                    "file name.";
+      return false;
+    }
+    uint64_t LoadAddr = MMap.start();
+    uint64_t LoadSize = MMap.len();
+    auto ExistingMMap = BinaryMMaps.find(LoadAddr);
+    if (ExistingMMap == BinaryMMaps.end()) {
+      BinaryMMaps.emplace(LoadAddr, LoadSize);
+    } else if (ExistingMMap->second != LoadSize) {
+      LOG(ERROR) << "Binary is loaded into memory segment "
+                    "with same starting address but different "
+                    "size.";
+      return false;
+    }
   }
+  
+
   if (BinaryMMaps.empty()) {
     LOG(ERROR) << "Failed to find mmap entry for '" << BinaryFileName << "'. '"
                << PerfFileName << "' does not match '" << BinaryFileName
@@ -299,10 +432,28 @@ bool PLOProfileWriter::setupMMaps(quipper::PerfParser &Parser){
   }
   for (auto &M : BinaryMMaps) {
     LOG(INFO) << "Find mmap for binary: '" << BinaryFileName
-              << "', start mapping address=" << std::hex << std::showbase
-              << M.first << ", mapped size=" << M.second << ".";
+              << "', start mapping address=" << hex << M.first
+              << ", mapped size=" << M.second << ".";
   }
   return true;
+}
+
+bool PLOProfileWriter::setupBinaryBuildId(quipper::PerfReader &PR) {
+  for (const auto &BuildId: PR.build_ids()) {
+    if (BuildId.has_filename() && BuildId.has_build_id_hash() &&
+        BuildId.filename() == BinaryMMapName) {
+      BinaryBuildId.reset(new char[quipper::kBuildIDArraySize]);
+      memcpy(BinaryBuildId.get(), BuildId.build_id_hash().c_str(),
+             quipper::kBuildIDArraySize);
+      LOG(INFO) << "Found Build ID for '" << BinaryFileName << "'.";
+      return true;
+    }
+  }
+  LOG(INFO) << "No Build ID info for '" << this->BinaryFileName
+            << "' found in '" << this->PerfFileName << "'.";
+  BinaryBuildId.reset(nullptr);
+  return false;
+
 }
 
 void PLOProfileWriter::aggregateLBR(quipper::PerfParser &Parser) {

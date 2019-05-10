@@ -14,6 +14,8 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/MemoryBuffer.h"
 
+#include "third_party/perf_data_converter/src/quipper/perf_reader.h"
+
 using std::list;
 using std::map;
 using std::string;
@@ -82,7 +84,7 @@ class PerfParser;
 // latter case, it might be a return from call.)
 
 class PLOProfileWriter {
- public:
+public:
   struct SymbolEntry {
     SymbolEntry(uint64_t O, const StringRef &N, uint64_t A, uint64_t S)
         : Ordinal(O), Name(N), Addr(A), Size(S), BBFuncName("") {}
@@ -99,12 +101,12 @@ class PLOProfileWriter {
     // Given a basicblock symbol (e.g. "foo.bb.5"), return bb index "5".
     StringRef getBBIndex() const {
       assert(!BBFuncName.empty());
-      auto t = BBFuncName.size() + 4;  // "4" is for ".bb."
+      auto t = BBFuncName.size() + 4; // "4" is for ".bb."
       return StringRef(Name.data() + t, Name.size() - t);
     }
 
     bool conainsAddress(uint64_t A) const {
-        return Addr <= A && A < Addr + Size;
+      return Addr <= A && A < Addr + Size;
     }
   };
 
@@ -134,7 +136,12 @@ class PLOProfileWriter {
   bool BinaryIsPIE;
   // MMap entries, load Addr -> Size.
   map<uint64_t, uint64_t> BinaryMMaps;
+  // Canonical names appears in the mmap events, we need this to extract build
+  // id.
+  string            BinaryMMapName;
+  unique_ptr<char>  BinaryBuildId;
   bool setupMMaps(quipper::PerfParser &Parser);
+  bool setupBinaryBuildId(quipper::PerfReader &R);
 
   uint64_t findLoadAddress(uint64_t Addr) const {
     for (auto &P : BinaryMMaps)
