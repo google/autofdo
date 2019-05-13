@@ -436,17 +436,32 @@ bool PLOProfileWriter::setupMMaps(quipper::PerfParser &Parser) {
     }
     uint64_t LoadAddr = MMap.start();
     uint64_t LoadSize = MMap.len();
-    auto ExistingMMap = BinaryMMaps.find(LoadAddr);
-    if (ExistingMMap == BinaryMMaps.end()) {
-      BinaryMMaps.emplace(LoadAddr, LoadSize);
-    } else if (ExistingMMap->second != LoadSize) {
-      LOG(ERROR) << "Binary is loaded into memory segment "
-                    "with same starting address but different "
-                    "size.";
+    // Check for mmap conflicts.
+    bool CheckOk = true;
+    if (!BinaryMMaps.empty()) {
+      auto UpperMMap = BinaryMMaps.find(LoadAddr);
+      if (UpperMMap == BinaryMMaps.end()) {
+        auto E = std::prev(UpperMMap);
+        CheckOk = (E->first + E->second <= LoadAddr);
+      } else if (UpperMMap != BinaryMMaps.begin()) {
+        auto LowerMMap = std::prev(UpperMMap);
+        // Now LowerMMap->first <= LoadAddr && LoadAddr < UpperMMap->first
+        CheckOk =
+            (LowerMMap->first == LoadAddr && LowerMMap->second == LoadSize) ||
+            (LowerMMap->first + LowerMMap->second <= LoadAddr &&
+             LoadAddr + LoadSize < UpperMMap->first);
+      }
+    }
+
+    if (CheckOk) {
+      BinaryMMaps[LoadAddr] = LoadSize;
+    } else {
+      LOG(ERROR) << "Found conflict MMap event: [" << hex << LoadAddr << ", "
+                 << hex << LoadAddr + LoadSize << ").";
       return false;
     }
-  }
-  
+  }  // End of iterating mmap events.
+
   if (BinaryMMaps.empty()) {
     LOG(ERROR) << "Failed to find mmap entry for '" << BinaryFileName << "'. '"
                << PerfFileName << "' does not match '" << BinaryFileName
