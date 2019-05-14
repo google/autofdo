@@ -16,6 +16,8 @@
 
 using std::list;
 using std::map;
+using std::ofstream;
+using std::pair;
 using std::string;
 using std::unique_ptr;
 
@@ -107,6 +109,10 @@ public:
     bool conainsAddress(uint64_t A) const {
       return Addr <= A && A < Addr + Size;
     }
+
+    bool operator < (const SymbolEntry &Other) const {
+      return this->Ordinal < Other.Ordinal;
+    }
   };
 
   PLOProfileWriter(const string &BFN, const string &PFN, const string &OFN);
@@ -125,10 +131,16 @@ public:
   unique_ptr<llvm::object::ObjectFile> ObjectFile;
   // Addr -> Symbols mapping. Note that multiple symbols having same address is
   // common.
-  map<uint64_t, list<unique_ptr<SymbolEntry>>> AddrMap;
-  map<StringRef, SymbolEntry *>                NameMap;
+  list<unique_ptr<SymbolEntry>>      SymbolList;
+  // Symbol start address -> Symbol list.
+  map<uint64_t, list<SymbolEntry *>> AddrMap;
+  // Aribitrary address -> symbol list that contains the address.
+  map<uint64_t, list<SymbolEntry *>> ResolvedAddrToSymMap;
+  map<StringRef, SymbolEntry *>      NameMap;
   // Aggregated branch counters. <from, to> -> count.
-  map<std::pair<uint64_t, uint64_t>, uint64_t> EdgeCounters;
+  map<pair<uint64_t, uint64_t>, uint64_t> EdgeCounters;
+  map<pair<list<SymbolEntry *> *, list<SymbolEntry *> *>, uint64_t>
+      FallthroughCounters;
 
   // Whether it is Position Independent Executable. If so, addresses from perf
   // file must be adjusted to map to symbols.
@@ -149,24 +161,23 @@ public:
   }
 
   uint64_t adjustAddressForPIE(uint64_t Addr) const {
-      assert(findLoadAddress(Addr) != INVALID_ADDRESS);
-      if (BinaryIsPIE) return Addr - findLoadAddress(Addr);
+      uint64_t LoadAddress = findLoadAddress(Addr);
+      if (LoadAddress == INVALID_ADDRESS) return INVALID_ADDRESS;
+      if (BinaryIsPIE) return Addr - LoadAddress;
       return Addr;
   }
 
   void aggregateLBR(quipper::PerfParser &Parser);
 
-  using Addr2SymCacheTy = map<uint64_t, list<SymbolEntry *>>;
-  using Addr2SymCacheHandler = Addr2SymCacheTy::iterator;
-  Addr2SymCacheTy Addr2SymCache;
-
   bool initBinaryFile();
   bool populateSymbolMap();
   bool parsePerfData();
-  void writeSymbols(std::ofstream &fout);
-  void writeBranches(std::ofstream &fout);
+  void writeSymbols(ofstream &fout);
+  void writeBranches(ofstream &fout);
+  void writeFallthroughs(ofstream &fout);
 
-  Addr2SymCacheHandler findSymbolEntry(const uint64_t Addr);
+  list<PLOProfileWriter::SymbolEntry *> *
+  findSymbolEntryAtAddress(const uint64_t Addr);
 
   // Whether Name is a bb symbol. If so, return true and set FuncName to the
   // name of function that contains the symbol.

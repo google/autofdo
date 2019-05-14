@@ -24,6 +24,8 @@
 #include "third_party/perf_data_converter/src/quipper/perf_reader.h"
 
 using llvm::StringRef;
+using std::list;
+using std::ofstream;
 using std::string;
 
 PLOProfileWriter::PLOProfileWriter(const string &BFN,
@@ -47,37 +49,38 @@ bool PLOProfileWriter::isBBSymbol(const StringRef &Name, StringRef &FuncName) {
   return false;
 }
 
-PLOProfileWriter::Addr2SymCacheHandler PLOProfileWriter::findSymbolEntry(
-    uint64_t OriginAddr) {
-  auto CacheResult = Addr2SymCache.find(OriginAddr);
-  if (CacheResult != Addr2SymCache.end()) return CacheResult;
-
-  // If the given address is within binary mmap.
-  uint64_t LoadAddr = findLoadAddress(OriginAddr);
-  if (LoadAddr == INVALID_ADDRESS) return Addr2SymCache.end();
-
+list<PLOProfileWriter::SymbolEntry *> *
+PLOProfileWriter::findSymbolEntryAtAddress(uint64_t OriginAddr) {
   uint64_t Addr = adjustAddressForPIE(OriginAddr);
+  if (Addr == INVALID_ADDRESS) return nullptr;
+  auto ResolvedResult = ResolvedAddrToSymMap.find(Addr);
+  if (ResolvedResult != ResolvedAddrToSymMap.end())
+    return &(ResolvedResult->second);
 
   auto U = AddrMap.upper_bound(Addr);
-  if (U == AddrMap.begin()) return Addr2SymCache.end();
+  if (U == AddrMap.begin()) return nullptr;
   auto R = std::prev(U);
 
-  std::list<SymbolEntry *> Candidates;
+  // 95+% of the cases:
+  if (R->second.size() == 1 && R->second.front()->conainsAddress(Addr))
+    return &(R->second);
+
+  list<SymbolEntry *> Candidates;
   for (auto &SymEnt : R->second)
     if (SymEnt->conainsAddress(Addr))
-      Candidates.emplace_back(SymEnt.get());
+      Candidates.emplace_back(SymEnt);
 
-  if (Candidates.empty()) return Addr2SymCache.end();
+  if (Candidates.empty()) return nullptr;
 
-  // Sort candidates by symbol size.
+  // Some sort of disambiguation is needed for symbols that start from same
+  // address and contain addr.
+
+  // 0. Sort candidates by symbol size.
   Candidates.sort([](const SymbolEntry *S1, const SymbolEntry *S2) {
     if (S1->Size != S2->Size)
       return S1->Size < S2->Size;
     return S1->Name < S2->Name;
   });
-
-  // Some sort of disambiguation is needed for symbols that start from same
-  // address and contain addr.
 
   // 1. If one of them is Func, the other is like Func.bb.1, return Func.bb.1.
   if (Candidates.size() == 2) {
@@ -148,8 +151,8 @@ PLOProfileWriter::Addr2SymCacheHandler PLOProfileWriter::findSymbolEntry(
   if (Candidates.size() > 1) {
     // If we hit this very rare case, log it up.
     std::stringstream ss;
-    ss << "Multiple symbols may contain adderss: " << std::endl;
     ss << std::hex << std::showbase;
+    ss << "Multiple symbols may contain adderss: " << Addr << std::endl;
     for (auto &SE : Candidates) {
       ss << "\t"
          << "Addr=" << SE->Addr << ", Size=" << SE->Size
@@ -159,9 +162,11 @@ PLOProfileWriter::Addr2SymCacheHandler PLOProfileWriter::findSymbolEntry(
     LOG(INFO) << ss.str();
   }
 
-  auto InsertR = Addr2SymCache.emplace(OriginAddr, std::move(Candidates));
+  auto InsertR = ResolvedAddrToSymMap.emplace(
+      std::piecewise_construct, std::forward_as_tuple(Addr),
+      std::forward_as_tuple(std::move(Candidates)));
   assert(InsertR.second);
-  return InsertR.first;
+  return &(InsertR.first->second);
 }
 
 namespace {
@@ -202,30 +207,30 @@ struct BuildIdWrapper {
 
 static std::ostream &
 operator<<(std::ostream &out, const BuildIdWrapper &BW) {
-    const char *p = BW.Data;
-    for (int i = 0; i < quipper::kBuildIDArraySize; ++i, ++p) {
+    for (int i = 0; i < quipper::kBuildIDArraySize; ++i) {
       out << std::setw(2) << std::setfill('0') << std::hex
-          << ((int)(*p) & 0xFF);
+          << ((int)(BW.Data[i]) & 0xFF);
     }
   return out;
 }
 } // namespace
 
 bool PLOProfileWriter::write() {
-  if (!parsePerfData() || !initBinaryFile() || !populateSymbolMap()) {
+  if (!initBinaryFile() || !populateSymbolMap() || !parsePerfData()) {
     return false;
   }
-  std::ofstream fout(OutFileName);
+  ofstream fout(OutFileName);
   if (fout.bad()) {
     LOG(ERROR) << "Failed to open '" << OutFileName << "' for writing.";
     return false;
   }
   writeSymbols(fout);
   writeBranches(fout);
+  writeFallthroughs(fout);
   return true;
 }
 
-void PLOProfileWriter::writeSymbols(std::ofstream &fout) {
+void PLOProfileWriter::writeSymbols(ofstream &fout) {
   fout << "Symbols" << std::endl;
   for (auto &LE : AddrMap) {
     for (auto &SEPtr : LE.second) {
@@ -251,16 +256,23 @@ void PLOProfileWriter::writeBranches(std::ofstream &fout) {
     const uint64_t From = EC.first.first;
     const uint64_t To = EC.first.second;
     const uint64_t Cnt = EC.second;
-    auto FromSymHandler = findSymbolEntry(From);
-    auto ToSymHandler = findSymbolEntry(To);
-    if (FromSymHandler != Addr2SymCache.end() &&
-        ToSymHandler != Addr2SymCache.end()) {
-      fout << FromSymHandler->second << " " 
-           << ToSymHandler->second << " "
-           << dec << Cnt << " " 
-           << hex << adjustAddressForPIE(From) << " "
-           << hex << adjustAddressForPIE(To) << std::endl;
+    auto FromSymHandler = findSymbolEntryAtAddress(From);
+    auto ToSymHandler = findSymbolEntryAtAddress(To);
+    if (FromSymHandler && ToSymHandler && *FromSymHandler != *ToSymHandler) {
+      fout << *FromSymHandler << " " << *ToSymHandler << " " << dec << Cnt
+           << " " << hex << adjustAddressForPIE(From) << " " << hex
+           << adjustAddressForPIE(To) << std::endl;
     }
+  }
+}
+
+void PLOProfileWriter::writeFallthroughs(std::ofstream &fout) {
+  fout << "Fallthroughs" << std::endl;
+  for (auto &EC : FallthroughCounters) {
+    const auto *From = EC.first.first;
+    const auto *To = EC.first.second;
+    const uint64_t Cnt = EC.second;
+    fout << dec << *From << " " << *To << " " << Cnt << " " << std::endl;
   }
 }
 
@@ -319,7 +331,7 @@ bool PLOProfileWriter::initBinaryFile() {
     LOG(INFO) << "No Build Id found in '" << this->BinaryFileName << "'.";
   } else {
     if (BuildIdMatch) {
-      LOG(INFO) << "Found Build Id in binary, and it matches perf data.";
+      LOG(INFO) << "Binary Build Id and perf data Build Id match.";
     } else {
       LOG(ERROR) << "Build Ids do not match.";
       return false;
@@ -341,15 +353,16 @@ bool PLOProfileWriter::populateSymbolMap() {
     StringRef Name = *NameR;
     uint64_t Addr = *AddrR;
     if (!Name.endswith(".bbend")) {
+      SymbolEntry *NewSymbolEntry = new SymbolEntry(++SymbolOrdinal, Name, Addr,
+                          llvm::object::ELFSymbolRef(Sym).getSize());
+      SymbolList.emplace_back(NewSymbolEntry);
       auto &L = AddrMap[Addr];
-      L.emplace_back(
-          new SymbolEntry(++SymbolOrdinal, Name, Addr,
-                          llvm::object::ELFSymbolRef(Sym).getSize()));
+      L.push_back(NewSymbolEntry);
       StringRef BBFuncName;
       if (isBBSymbol(Name, BBFuncName)) {
         L.back()->BBFuncName = BBFuncName;
       } else {
-        NameMap[Name] = L.back().get();
+        NameMap[Name] = L.back();
       }
     }
   }
@@ -499,8 +512,24 @@ void PLOProfileWriter::aggregateLBR(quipper::PerfParser &Parser) {
     quipper::PerfDataProto_PerfEvent *EPtr = PE.event_ptr;
     if (EPtr->event_type_case() ==
         quipper::PerfDataProto_PerfEvent::kSampleEvent) {
-      for (const auto &BE : EPtr->sample_event().branch_stack()) {
-        ++(EdgeCounters[std::make_pair(BE.from_ip(), BE.to_ip())]);
+      uint64_t LastFrom = INVALID_ADDRESS;
+      auto BRStack = EPtr->sample_event().branch_stack();
+      if (BRStack.empty()) continue;
+      uint64_t LastTo = INVALID_ADDRESS;
+      list<SymbolEntry *> *LastToSyms = nullptr;
+      for (int P = BRStack.size() - 1; P >= 0; --P) {
+        const auto &BE = BRStack.Get(P);
+        uint64_t From = BE.from_ip();
+        uint64_t To = BE.to_ip();
+        ++(EdgeCounters[std::make_pair(From, To)]);
+
+        auto *FromSyms = findSymbolEntryAtAddress(From);
+        if (LastTo != INVALID_ADDRESS && LastToSyms && FromSyms &&
+            *LastToSyms != *FromSyms) {
+          ++(FallthroughCounters[std::make_pair(LastToSyms, FromSyms)]);
+        }
+        LastTo = To;
+        LastToSyms = findSymbolEntryAtAddress(LastTo);
       }
     }
   }
