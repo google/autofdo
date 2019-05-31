@@ -84,10 +84,27 @@ struct DecOut {
 struct HexOut {
 } hex;
 
-struct SymName {
-  SymName(const PropellerProfWriter::SymbolEntry &S) : Symbol(S) {}
+struct SymBaseF {
+  SymBaseF(const PropellerProfWriter::SymbolEntry &S) : Symbol(S) {}
   const PropellerProfWriter::SymbolEntry &Symbol;
+};
 
+struct SymNameF : public SymBaseF {
+  SymNameF(const PropellerProfWriter::SymbolEntry &S) : SymBaseF(S) {}
+};
+
+struct SymOrdinalF : public SymBaseF {
+  SymOrdinalF(const PropellerProfWriter::SymbolEntry &S) : SymBaseF(S) {}
+};
+
+struct SymSizeF : public SymBaseF {
+  SymSizeF(const PropellerProfWriter::SymbolEntry &S) : SymBaseF(S) {}
+};
+
+struct CountF {
+  CountF(uint64_t C) : Cnt(C) {};
+
+  uint64_t Cnt;
 };
 
 static std::ostream &operator<<(std::ostream &out, const struct DecOut &) {
@@ -98,12 +115,25 @@ static std::ostream &operator<<(std::ostream &out, const struct HexOut &) {
   return out << std::hex << std::noshowbase;
 }
 
-static std::ostream &operator<<(std::ostream &out, const SymName &SymName) {
-  auto &Sym = SymName.Symbol;
+static std::ostream &operator<<(std::ostream &out, const SymNameF &NameF) {
+  auto &Sym = NameF.Symbol;
   out << Sym.Name.str();
   for (auto A : Sym.Aliases)
     out << "/" << A.str();
   return out;
+}
+
+static std::ostream &operator<<(std::ostream &out,
+                                const SymOrdinalF &OrdinalF) {
+  return out << dec << OrdinalF.Symbol.Ordinal;
+}
+
+static std::ostream &operator<<(std::ostream &out, const SymSizeF &SizeF) {
+  return out << hex << SizeF.Symbol.Size;
+}
+
+static std::ostream &operator<<(std::ostream &out, const CountF &CountF) {
+  return out << dec << CountF.Cnt;
 }
 
 struct BuildIdWrapper {
@@ -147,13 +177,12 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
   for (auto &LE : AddrMap) {
     for (auto &SEPtr : LE.second) {
       SymbolEntry &SE = *SEPtr;
-      fout << dec << SE.Ordinal << " "
-           << hex << SE.Addr << " " << SE.Size << " ";
+      fout << SymOrdinalF(SE) << " " << SymSizeF(SE) << " ";
       if (SE.isBBSymbol) {
-        fout << dec << SE.ContainingFunc->Ordinal << "."
+        fout << SymOrdinalF(*(SE.ContainingFunc)) << "."
              << SE.getBBIndex().str() << std::endl;
       } else {
-        fout << "N" << SymName(SE) << std::endl;
+        fout << "N" << SymNameF(SE) << std::endl;
       }
     }
   }
@@ -168,7 +197,8 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
     auto *FromSym = findSymbolAtAddress(From);
     auto *ToSym = findSymbolAtAddress(To);
     if (FromSym && ToSym) {
-      fout << dec << FromSym->Ordinal << " " << ToSym->Ordinal << " " << Cnt;
+      fout << SymOrdinalF(*FromSym) << " " << SymOrdinalF(*ToSym) << " "
+           << CountF(Cnt);
       const uint64_t AdjustedTo = adjustAddressForPIE(To);
       if ((ToSym->isBBSymbol &&
            ToSym->ContainingFunc->Addr == AdjustedTo) ||
@@ -206,8 +236,9 @@ void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
 
   fout << "Fallthroughs" << std::endl;
   for (auto &FC : CountersBySymbol)
-    fout << dec << FC.first.first->Ordinal << " " << FC.first.second->Ordinal
-         << " " << FC.second << std::endl;
+    fout << SymOrdinalF(*(FC.first.first)) << " "
+         << SymOrdinalF(*(FC.first.second)) << " " << CountF(FC.second)
+         << std::endl;
 }
 
 bool PropellerProfWriter::initBinaryFile() {

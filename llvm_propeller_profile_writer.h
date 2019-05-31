@@ -36,21 +36,21 @@ class PerfReader;
 // A sample output is like below:
 //
 // Symbols
-// 15 4e8 0 N_init
-// 13 520 2b N_start
-// 1 550 0 Nderegister_tm_clones
-// 2 580 0 Nregister_tm_clones
-// 3 5c0 0 N__do_global_dtors_aux
-// 4 600 0 Nframe_dummy
-// 11 610 2c Ncompute_flag
-// 14 640 7c Nmain
-// 5 670 f 14.1
-// 6 67f 28 14.2
-// 7 6a7 b 14.3
-// 8 6b2 a 14.4
-// 12 6c0 65 N__libc_csu_init
-// 9 730 2 N__libc_csu_fini
-// 10 734 0 N_fini
+// 15 0 N_init
+// 13 43 N_start
+// 1 0 Nderegister_tm_clones
+// 2 0 Nregister_tm_clones
+// 3 0 N__do_global_dtors_aux
+// 4 0 Nframe_dummy
+// 11 44 Ncompute_flag
+// 14 124 Nmain
+// 5 15 14.1
+// 6 40 14.2
+// 7 11 14.3
+// 8 10 14.4
+// 12 101 N__libc_csu_init
+// 9 2 N__libc_csu_fini
+// 10 0 N_fini
 // 17391 19299de0 5e N_ZN9assistantD2Ev/_ZN9assistantD1Ev
 // 17392 19299dff c 17391.1
 // 17393 19299e0b d 17391.2
@@ -74,7 +74,6 @@ class PerfReader;
 //
 // Each line in "Symbols" section contains the following field:
 //   index    - in decimal, unique for each symbol
-//   address  - in hex, without "0x"
 //   size     - in hex, without "0x"
 //   name     - either starts with "N" or a digit. In the former case,
 //              everything after N is the symbol name. In the latter case, it's
