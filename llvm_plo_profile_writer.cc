@@ -138,7 +138,7 @@ bool PLOProfileWriter::write() {
   writeSymbols(fout);
   writeBranches(fout);
   writeFallthroughs(fout);
-  LOG(INFO) << "Wrote propell profile to " << OutFileName;
+  LOG(INFO) << "Wrote propeller profile to " << OutFileName;
   return true;
 }
 
@@ -150,7 +150,7 @@ void PLOProfileWriter::writeSymbols(ofstream &fout) {
       fout << dec << SE.Ordinal << " "
            << hex << SE.Addr << " " << SE.Size << " ";
       if (SE.isBBSymbol) {
-        fout << dec << SE.ContainingFuncSymbol->Ordinal << "."
+        fout << dec << SE.ContainingFunc->Ordinal << "."
              << SE.getBBIndex().str() << std::endl;
       } else {
         fout << "N" << SymName(SE) << std::endl;
@@ -171,7 +171,7 @@ void PLOProfileWriter::writeBranches(std::ofstream &fout) {
       fout << dec << FromSym->Ordinal << " " << ToSym->Ordinal << " " << Cnt;
       const uint64_t AdjustedTo = adjustAddressForPIE(To);
       if ((ToSym->isBBSymbol &&
-           ToSym->ContainingFuncSymbol->Addr == AdjustedTo) ||
+           ToSym->ContainingFunc->Addr == AdjustedTo) ||
           (!ToSym->isBBSymbol && ToSym->isFunction() &&
            ToSym->Addr == AdjustedTo)) {
         fout << " C";
@@ -254,11 +254,10 @@ bool PLOProfileWriter::populateSymbolMap() {
     llvm::object::ELFSymbolRef ELFSym(Sym);
     uint64_t Size = ELFSym.getSize();
     auto &L = AddrMap[Addr];
-    SymbolEntry *SymbolIsAliasedWith = nullptr;
     if (!L.empty()) {
       // If we already have a symbol at the same address with same size, merge
       // them together.
-      bool SymbolIsAliased = false;
+      SymbolEntry *SymbolIsAliasedWith = nullptr;
       for (auto *S : L) {
         if (S->Size == Size) {
           // Make sure Name and Aliased name are both BB or both NON-BB.
@@ -276,10 +275,6 @@ bool PLOProfileWriter::populateSymbolMap() {
             S->Type = llvm::object::SymbolRef::ST_Function;
           }
           SymbolIsAliasedWith = S;
-          if (!S->isBBSymbol) {
-            // This implies Name is not bb symbol.
-            NameMap[Name] = S;
-          }
           break;
         }
       }
@@ -290,29 +285,21 @@ bool PLOProfileWriter::populateSymbolMap() {
         new SymbolEntry(++SymbolOrdinal, Name, Addr, Size, Type);
     SymbolList.emplace_back(NewSymbolEntry);
     L.push_back(NewSymbolEntry);
-
-    if (!isBBSymbol(Name)) {
-      NameMap[Name] = L.back();
-      NewSymbolEntry->isBBSymbol = false;
-    } else {
-      NewSymbolEntry->isBBSymbol = true;
-    }
+    NewSymbolEntry->isBBSymbol = isBBSymbol(Name);
   }
 
   // Now scan all the symbols in address order to create function <-> bb
   // relationship.
   decltype (AddrMap)::iterator LastFuncPos = AddrMap.end();
   for (auto P = AddrMap.begin(), Q = AddrMap.end(); P != Q; ++P) {
-    uint64_t Addr = P->first;
-
     for (auto *S : P->second) {
       if (S->isFunction() && !S->isBBSymbol) {
         LastFuncPos = P;
         break;
       }
     }
-
     if (LastFuncPos == AddrMap.end())  continue;
+
     for (auto *S : P->second) {
       if (!S->isBBSymbol)
         continue;
@@ -323,10 +310,16 @@ bool PLOProfileWriter::populateSymbolMap() {
             FP->containsAnotherSymbol(S) && FP->isFunctionForBBName(S->Name)) {
           if (ContainingFunc == nullptr) {
             ContainingFunc = FP;
-          } else if (ContainingFunc->Size < S->Size) {
-            // Already has a containing function, choose the one that is
-            // larger.
-            ContainingFunc = S;
+          } else {
+            // Already has a containing function, so we have at least 2
+            // different functions with different sizes but start at the same
+            // address, impossible.
+            LOG(ERROR) << "Analyzing failure: at address 0x" << hex
+                       << LastFuncPos->first
+                       << ", there are 2 different functions: "
+                       << ContainingFunc->Name.str() << " and "
+                       << FP->Name.str();
+            return false;
           }
         }
       }
@@ -351,8 +344,8 @@ bool PLOProfileWriter::populateSymbolMap() {
           }
         }
       }
-      S->ContainingFuncSymbol = ContainingFunc;
-      if (S->ContainingFuncSymbol == nullptr) {
+      S->ContainingFunc = ContainingFunc;
+      if (S->ContainingFunc == nullptr) {
         LOG(ERROR) << "Failed to find function for bb symbol: " << S->Name.str()
                    << " @ 0x" << hex << S->Addr;
         return false;
@@ -360,7 +353,8 @@ bool PLOProfileWriter::populateSymbolMap() {
         if (!ContainingFunc->isFunctionForBBName(S->Name)) {
           LOG(ERROR) << "Internal check warning: \n"
                      << "Sym: " << S->Name.str() << "\n"
-                     << "Func: " << S->ContainingFuncSymbol->Name.str();
+                     << "Func: " << S->ContainingFunc->Name.str();
+          return false;
         }
       }
     }

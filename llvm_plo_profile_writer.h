@@ -100,7 +100,7 @@ public:
     SymbolEntry(uint64_t O, const StringRef &N, uint64_t A, uint64_t S,
                 uint8_t T)
         : Ordinal(O), Name(N), Aliases(), Addr(A), Size(S), Type(T),
-          isBBSymbol(false), ContainingFuncSymbol(nullptr) {}
+          isBBSymbol(false), ContainingFunc(nullptr) {}
     ~SymbolEntry() {}
 
     uint64_t Ordinal;
@@ -113,7 +113,7 @@ public:
     // For basicblock symbols (e.g. "foo.bb.5"), this is the function name
     // "foo". For non basicblock symbols, this is "".
     bool isBBSymbol;
-    SymbolEntry *ContainingFuncSymbol;
+    SymbolEntry *ContainingFunc;
 
     // Given a basicblock symbol (e.g. "foo.bb.5"), return bb index "5".
     // Need to be changed if we use another bb label schema.
@@ -173,7 +173,6 @@ public:
   list<unique_ptr<SymbolEntry>>      SymbolList;
   // Symbol start address -> Symbol list.
   map<uint64_t, list<SymbolEntry *>> AddrMap;
-  map<StringRef, SymbolEntry *>      NameMap;
   // Aggregated branch counters. <from, to> -> count.
   map<pair<uint64_t, uint64_t>, uint64_t> BranchCounters;
   map<pair<uint64_t, uint64_t>, uint64_t> FallthroughCounters;
