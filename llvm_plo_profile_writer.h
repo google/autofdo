@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -21,6 +22,7 @@ using std::pair;
 using std::string;
 using std::unique_ptr;
 
+using llvm::SmallVector;
 using llvm::StringRef;
 
 namespace quipper {
@@ -34,33 +36,41 @@ class PerfReader;
 // A sample output is like below:
 //
 // Symbols
-// 1 4c8 0 N
-// 20 4c8 0 N_init
-// 2 4e0 0 N
-// 3 4f0 0 N
-// 4 500 0 N
-// 18 500 2b N_start
-// 6 530 0 Nderegister_tm_clones
-// 7 560 0 Nregister_tm_clones
-// 8 5a0 0 N__do_global_dtors_aux
-// 9 5e0 0 Nframe_dummy
-// 16 5f0 2c Ncompute_flag
-// 19 620 7a Nmain
-// 10 64e f 19.1
-// 11 65d 28 19.2
-// 12 685 b 19.3
-// 13 690 a 19.4
-// 17 6a0 65 N__libc_csu_init
-// 14 710 2 N__libc_csu_fini
-// 5 714 0 N
-// 15 714 0 N_fini
+// 15 4e8 0 N_init
+// 13 520 2b N_start
+// 1 550 0 Nderegister_tm_clones
+// 2 580 0 Nregister_tm_clones
+// 3 5c0 0 N__do_global_dtors_aux
+// 4 600 0 Nframe_dummy
+// 11 610 2c Ncompute_flag
+// 14 640 7c Nmain
+// 5 670 f 14.1
+// 6 67f 28 14.2
+// 7 6a7 b 14.3
+// 8 6b2 a 14.4
+// 12 6c0 65 N__libc_csu_init
+// 9 730 2 N__libc_csu_fini
+// 10 734 0 N_fini
+// 17391 19299de0 5e N_ZN9assistantD2Ev/_ZN9assistantD1Ev
+// 17392 19299dff c 17391.1
+// 17393 19299e0b d 17391.2
+// 17394 19299e18 d 17391.3
+// 17395 19299e25 19 17391.4
 // Branches
-// 16 10 326983 61b 655
-// 10 16 330140 650 5f0
-// 10 12 206113 65b 685
-// 12 10 313726 68e 64e
+// 11 5 232381
+// 5 11 234632 C
+// 5 7 143535
+// 7 5 226796
+// Fallthroughs
+// 5 5 362482
+// 5 7 77142
+// 5 11 2201
+// 7 5 1446
+// 7 7 140643
+// 11 5 2221
+// 11 11 225042
 //
-// The file consists of 2 parts, "Symbols" and "Branches".
+// The file consists of 3 parts, "Symbols" and "Branches".
 //
 // Each line in "Symbols" section contains the following field:
 //   index    - in decimal, unique for each symbol
@@ -69,32 +79,33 @@ class PerfReader;
 //   name     - either starts with "N" or a digit. In the former case,
 //              everything after N is the symbol name. In the latter case, it's
 //              in the form of "a.b", "a" is a symbol index, "b" is the bb
-//              section number. For the above example, name "19.3" means
-//              "main.bb.3", because "19" points to symbol main.
+//              identification string (could be an index number). For the above
+//              example, name "14.2" means "main.bb.2", because "14" points to
+//              symbol main. Also note, symbols could have aliases, in such
+//              case, aliases are concatenated with the original name with a
+//              '/'. For example, symbol 17391 contains 2 aliases.
 //
 // Each line in "Branches" section contains the following field:
-//   from      - sym_index[/sym_index_2][/sym_index_3]..., in decimal
-//   to        - sym_index[/sym_index_2][/sym_index_3]..., in decimal
-//   cnt       - in decimal
-//   from_addr - address in hex without "0x"
-//   to_addr   - address in hex without "0x"
-// Sometimes, the same address corresponding to multiple symbols, in this case,
-// multiple symbol index are jointed by "/". Ideally, from_addr and to_addr
-// should not be present, however, they are used to differentiate whether the
-// jump target is the beginning of the symbol or in the middle of it. (In the
-// latter case, it might be a return from call.)
+//   from     - sym_index, in decimal
+//   to       - sym_index, in decimal
+//   cnt      - counter, in decimal
+//   C        - a field indicate this is a function call, instead of a jmp.
+//
+// Each line in "Fallthroughs" section contains exactly the same fields as in
+// "Branches" section, except the "C" field.
 
 class PLOProfileWriter {
 public:
   struct SymbolEntry {
     SymbolEntry(uint64_t O, const StringRef &N, uint64_t A, uint64_t S,
                 uint8_t T)
-        : Ordinal(O), Name(N), Addr(A), Size(S), Type(T), isBBSymbol(false),
-          ContainingFuncSymbol(nullptr) {}
+        : Ordinal(O), Name(N), Aliases(), Addr(A), Size(S), Type(T),
+          isBBSymbol(false), ContainingFuncSymbol(nullptr) {}
     ~SymbolEntry() {}
 
     uint64_t Ordinal;
     StringRef Name;
+    SmallVector<StringRef, 3> Aliases;
     uint64_t Addr;
     uint64_t Size;
     uint8_t  Type;
@@ -105,10 +116,10 @@ public:
     SymbolEntry *ContainingFuncSymbol;
 
     // Given a basicblock symbol (e.g. "foo.bb.5"), return bb index "5".
+    // Need to be changed if we use another bb label schema.
     StringRef getBBIndex() const {
       assert(isBBSymbol);
-      auto t = ContainingFuncSymbol->Name.size() + 4; // "4" is for ".bb."
-      return StringRef(Name.data() + t, Name.size() - t);
+      return Name.rsplit('.').second;
     }
 
     bool containsAddress(uint64_t A) const {
@@ -133,6 +144,15 @@ public:
     bool isFunction() const {
       return this->Type == llvm::object::SymbolRef::ST_Function;
     }
+
+    // This might be changed if we use a different bb name scheme.
+    bool isFunctionForBBName(StringRef BBName) {
+      if (BBName.startswith(Name)) return true;
+      for (auto N : Aliases) {
+        if (BBName.startswith(N)) return true;
+      }
+      return false;
+    }
   };
 
   PLOProfileWriter(const string &BFN, const string &PFN, const string &OFN);
@@ -153,8 +173,6 @@ public:
   list<unique_ptr<SymbolEntry>>      SymbolList;
   // Symbol start address -> Symbol list.
   map<uint64_t, list<SymbolEntry *>> AddrMap;
-  // Address -> symbol list that contains the address.
-  map<uint64_t, list<SymbolEntry *>> ResolvedAddrToSymMap;
   map<StringRef, SymbolEntry *>      NameMap;
   // Aggregated branch counters. <from, to> -> count.
   map<pair<uint64_t, uint64_t>, uint64_t> BranchCounters;
@@ -195,8 +213,7 @@ public:
   void writeBranches(ofstream &fout);
   void writeFallthroughs(ofstream &fout);
 
-  list<PLOProfileWriter::SymbolEntry *> *
-  findSymbolAtAddress(const uint64_t Addr);
+  SymbolEntry * findSymbolAtAddress(const uint64_t Addr);
 
   static bool isBBSymbol(const StringRef &Name);
 

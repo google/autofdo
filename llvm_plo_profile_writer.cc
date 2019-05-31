@@ -47,21 +47,17 @@ bool PLOProfileWriter::isBBSymbol(const StringRef &Name) {
   return false;
 }
 
-list<PLOProfileWriter::SymbolEntry *> *
+PLOProfileWriter::SymbolEntry *
 PLOProfileWriter::findSymbolAtAddress(uint64_t OriginAddr) {
   uint64_t Addr = adjustAddressForPIE(OriginAddr);
   if (Addr == INVALID_ADDRESS) return nullptr;
-  auto ResolvedResult = ResolvedAddrToSymMap.find(Addr);
-  if (ResolvedResult != ResolvedAddrToSymMap.end())
-    return &(ResolvedResult->second);
-
   auto U = AddrMap.upper_bound(Addr);
   if (U == AddrMap.begin()) return nullptr;
   auto R = std::prev(U);
 
-  // 95+% of the cases:
+  // 99+% of the cases:
   if (R->second.size() == 1 && R->second.front()->containsAddress(Addr))
-    return &(R->second);
+    return *(R->second.begin());
 
   list<SymbolEntry *> Candidates;
   for (auto &SymEnt : R->second)
@@ -70,101 +66,15 @@ PLOProfileWriter::findSymbolAtAddress(uint64_t OriginAddr) {
 
   if (Candidates.empty()) return nullptr;
 
-  // Some sort of disambiguation is needed for symbols that start from same
-  // address and contain addr.
-
-  // 0. Sort candidates by symbol size.
+   // Sort candidates by symbol size.
   Candidates.sort([](const SymbolEntry *S1, const SymbolEntry *S2) {
     if (S1->Size != S2->Size)
       return S1->Size < S2->Size;
     return S1->Name < S2->Name;
   });
 
-  // 1. If one of them is Func, the other is like Func.bb.1, return Func.bb.1.
-  if (Candidates.size() == 2) {
-    auto *Sym = *(Candidates.begin());
-    StringRef FuncName;
-    if (Sym->isBBSymbol &&
-        Sym->ContainingFuncSymbol == (*(Candidates.rbegin()))) {
-      // Since, Func.Size > Func.bb.1.size, "Func.bb.1" must be the first of
-      // "Candidates".
-      Candidates.pop_back();
-    }
-  }
-
-  // 2. Whether Candidates are a group of ctors or dtors that after demangling,
-  // have exactly the same name. Itanium c++ abi - 5.1.4.3 Constructors and
-  // Destructors, there are 3 variants of ctors and dtors. <ctor-dtor-name>
-  //  ::= C1	# complete object constructor
-  //  ::= C2	# base object constructor
-  //  ::= C3	# complete object allocating constructor
-  //  ::= D0	# deleting destructor
-  //  ::= D1	# complete object destructor
-  //  ::= D2	# base object destructor
-  if (Candidates.size() <= 3 &&
-      (*Candidates.front()).Size == (*Candidates.back()).Size) {
-    // Helper lambdas.
-    auto findUniqueDiffSpot = [](SymbolEntry *S1, SymbolEntry *S2) -> int {
-      if (S1->Name.size() != S2->Name.size())
-        return -1;
-      int DiffSpot = -1;
-      for (auto P = S1->Name.begin(), Q = S2->Name.begin(), E = S1->Name.end();
-           P != E; ++P, ++Q) {
-        if (*P != *Q) {
-          if (DiffSpot != -1)
-            return -1;
-          DiffSpot = P - S1->Name.begin();
-        }
-      }
-      assert(DiffSpot != -1);
-      return DiffSpot;
-    };
-
-    auto isSameCtorOrDtor = [](StringRef &N1, StringRef &N2, int Spot) -> bool {
-      auto N1N = N1[Spot], N2N = N2[Spot];
-      auto N1CD = N1[Spot - 1], N2CD = N2[Spot - 1];
-      return ('0' <= N1N && N1N <= '3' && '0' <= N2N && N2N <= '3' &&
-              (N1CD == 'C' || N1CD == 'D') && N1CD == N2CD);
-    };
-
-    bool inSameGroup = true;
-    for (auto I = Candidates.begin(), E = Candidates.end();
-         inSameGroup && I != E; ++I) {
-      for (auto J = std::next(I); J != E; ++J) {
-        int DiffSpot = findUniqueDiffSpot(*I, *J);
-        if (DiffSpot <= 0 ||
-            !isSameCtorOrDtor((*I)->Name, (*J)->Name, DiffSpot)) {
-          inSameGroup = false;
-          break;
-        }
-      }
-    }
-    if (inSameGroup) {
-      auto *Chosen = Candidates.front();
-      Candidates.clear();
-      Candidates.push_back(Chosen);
-    }
-  } // End of disambiguating Ctor / Dtor groups.
-
-  if (Candidates.size() > 1) {
-    // If we hit this very rare case, log it up.
-    std::stringstream ss;
-    ss << std::hex << std::showbase;
-    ss << "Multiple symbols may contain adderss: " << Addr << std::endl;
-    for (auto &SE : Candidates) {
-      ss << "\t"
-         << "Addr=" << SE->Addr << ", Size=" << SE->Size
-         << ", Name=" << SE->Name.str() << std::endl;
-    }
-    // Issue the warning in one shot, not multiple warnings.
-    LOG(INFO) << ss.str();
-  }
-
-  auto InsertR = ResolvedAddrToSymMap.emplace(
-      std::piecewise_construct, std::forward_as_tuple(Addr),
-      std::forward_as_tuple(std::move(Candidates)));
-  assert(InsertR.second);
-  return &(InsertR.first->second);
+  // Return the smallest symbol that contains address.
+  return *Candidates.begin();
 }
 
 namespace {
@@ -174,6 +84,12 @@ struct DecOut {
 struct HexOut {
 } hex;
 
+struct SymName {
+  SymName(const PLOProfileWriter::SymbolEntry &S) : Symbol(S) {}
+  const PLOProfileWriter::SymbolEntry &Symbol;
+
+};
+
 static std::ostream &operator<<(std::ostream &out, const struct DecOut &) {
   return out << std::dec << std::noshowbase;
 }
@@ -182,15 +98,11 @@ static std::ostream &operator<<(std::ostream &out, const struct HexOut &) {
   return out << std::hex << std::noshowbase;
 }
 
-static std::ostream &
-operator<<(std::ostream &out,
-           const std::list<PLOProfileWriter::SymbolEntry *> &Syms) {
-  assert(!Syms.empty());
-  for (auto *P : Syms) {
-    if (P != Syms.front())
-      out << "/";
-    out << dec << P->Ordinal;
-  }
+static std::ostream &operator<<(std::ostream &out, const SymName &SymName) {
+  auto &Sym = SymName.Symbol;
+  out << Sym.Name.str();
+  for (auto A : Sym.Aliases)
+    out << "/" << A.str();
   return out;
 }
 
@@ -225,7 +137,8 @@ bool PLOProfileWriter::write() {
   }
   writeSymbols(fout);
   writeBranches(fout);
-  // writeFallthroughs(fout);
+  writeFallthroughs(fout);
+  LOG(INFO) << "Wrote propell profile to " << OutFileName;
   return true;
 }
 
@@ -236,11 +149,11 @@ void PLOProfileWriter::writeSymbols(ofstream &fout) {
       SymbolEntry &SE = *SEPtr;
       fout << dec << SE.Ordinal << " "
            << hex << SE.Addr << " " << SE.Size << " ";
-      if (!SE.isBBSymbol) {
-        fout << "N" << SE.Name.str() << std::endl;
-      } else {
+      if (SE.isBBSymbol) {
         fout << dec << SE.ContainingFuncSymbol->Ordinal << "."
              << SE.getBBIndex().str() << std::endl;
+      } else {
+        fout << "N" << SymName(SE) << std::endl;
       }
     }
   }
@@ -252,15 +165,16 @@ void PLOProfileWriter::writeBranches(std::ofstream &fout) {
     const uint64_t From = EC.first.first;
     const uint64_t To = EC.first.second;
     const uint64_t Cnt = EC.second;
-    auto FromSymHandler = findSymbolAtAddress(From);
-    auto ToSymHandler = findSymbolAtAddress(To);
-    if (FromSymHandler && ToSymHandler) {
-      fout << *FromSymHandler << " " << *ToSymHandler << " " << dec << Cnt;
-      auto *ToSym = ToSymHandler->front();
+    auto *FromSym = findSymbolAtAddress(From);
+    auto *ToSym = findSymbolAtAddress(To);
+    if (FromSym && ToSym) {
+      fout << dec << FromSym->Ordinal << " " << ToSym->Ordinal << " " << Cnt;
       const uint64_t AdjustedTo = adjustAddressForPIE(To);
-      if ((ToSym->isBBSymbol && ToSym->ContainingFuncSymbol->Addr == AdjustedTo) ||
-      (!ToSym->isBBSymbol && ToSym->Addr == AdjustedTo)) {
-          fout << " C";
+      if ((ToSym->isBBSymbol &&
+           ToSym->ContainingFuncSymbol->Addr == AdjustedTo) ||
+          (!ToSym->isBBSymbol && ToSym->isFunction() &&
+           ToSym->Addr == AdjustedTo)) {
+        fout << " C";
       }
       fout << std::endl;
     }
@@ -268,13 +182,32 @@ void PLOProfileWriter::writeBranches(std::ofstream &fout) {
 }
 
 void PLOProfileWriter::writeFallthroughs(std::ofstream &fout) {
+  // Instead of sorting "SymbolEntry *" by pointer address, we sort it by it's
+  // symbol address, so we get a stable sort.
+  struct SymbolEntryPairComp {
+    using KeyT = pair<SymbolEntry *, SymbolEntry *>;
+    bool operator()(const KeyT &K1, const KeyT &K2) const {
+      if (K1.first->Addr == K2.first->Addr) {
+        return K1.second->Addr < K2.second->Addr;
+      }
+      return K1.first->Addr < K2.first->Addr;
+    }
+  };
+  map<pair<SymbolEntry *, SymbolEntry *>, uint64_t, SymbolEntryPairComp>
+      CountersBySymbol;
+  for (auto &CA : FallthroughCounters) {
+    const uint64_t Cnt = CA.second;
+    auto *FromSym = this->findSymbolAtAddress(CA.first.first);
+    auto *ToSym = this->findSymbolAtAddress(CA.first.second);
+    if (FromSym && ToSym) {
+      CountersBySymbol[std::make_pair(FromSym, ToSym)] += Cnt;
+    }
+  }
+
   fout << "Fallthroughs" << std::endl;
-  // for (auto &EC : FallthroughCounters) {
-  //   const auto *From = EC.first.first;
-  //   const auto *To = EC.first.second;
-  //   const uint64_t Cnt = EC.second;
-  //   fout << dec << *From << " " << *To << " " << Cnt << " " << std::endl;
-  // }
+  for (auto &FC : CountersBySymbol)
+    fout << dec << FC.first.first->Ordinal << " " << FC.first.second->Ordinal
+         << " " << FC.second << std::endl;
 }
 
 bool PLOProfileWriter::initBinaryFile() {
@@ -315,15 +248,49 @@ bool PLOProfileWriter::populateSymbolMap() {
       continue;
 
     StringRef Name = *NameR;
+    if (Name.empty()) continue;
     uint64_t Addr = *AddrR;
     uint8_t Type(*TypeR);
-
     llvm::object::ELFSymbolRef ELFSym(Sym);
-    SymbolEntry *NewSymbolEntry =
-        new SymbolEntry(++SymbolOrdinal, Name, Addr, ELFSym.getSize(), Type);
-    SymbolList.emplace_back(NewSymbolEntry);
+    uint64_t Size = ELFSym.getSize();
     auto &L = AddrMap[Addr];
+    SymbolEntry *SymbolIsAliasedWith = nullptr;
+    if (!L.empty()) {
+      // If we already have a symbol at the same address with same size, merge
+      // them together.
+      bool SymbolIsAliased = false;
+      for (auto *S : L) {
+        if (S->Size == Size) {
+          // Make sure Name and Aliased name are both BB or both NON-BB.
+          if (isBBSymbol(S->Name) != isBBSymbol(Name)) {
+            LOG(ERROR)
+                << "Fatal: incompatible symbols have same addr and size: '"
+                << S->Name.str() << "' and '" << Name.str() << "'.";
+            return false;
+          }
+          S->Aliases.push_back(Name);
+          if (!S->isFunction() &&
+              Type == llvm::object::SymbolRef::ST_Function) {
+            // If any of the aliased symbols is a function, promote the whole
+            // group to function.
+            S->Type = llvm::object::SymbolRef::ST_Function;
+          }
+          SymbolIsAliasedWith = S;
+          if (!S->isBBSymbol) {
+            // This implies Name is not bb symbol.
+            NameMap[Name] = S;
+          }
+          break;
+        }
+      }
+      if (SymbolIsAliasedWith) continue;
+    }
+    
+    SymbolEntry *NewSymbolEntry =
+        new SymbolEntry(++SymbolOrdinal, Name, Addr, Size, Type);
+    SymbolList.emplace_back(NewSymbolEntry);
     L.push_back(NewSymbolEntry);
+
     if (!isBBSymbol(Name)) {
       NameMap[Name] = L.back();
       NewSymbolEntry->isBBSymbol = false;
@@ -332,7 +299,8 @@ bool PLOProfileWriter::populateSymbolMap() {
     }
   }
 
-  // Now scan all the symbols in address order.
+  // Now scan all the symbols in address order to create function <-> bb
+  // relationship.
   decltype (AddrMap)::iterator LastFuncPos = AddrMap.end();
   for (auto P = AddrMap.begin(), Q = AddrMap.end(); P != Q; ++P) {
     uint64_t Addr = P->first;
@@ -350,9 +318,9 @@ bool PLOProfileWriter::populateSymbolMap() {
         continue;
       // this is a bb symbol, find a wrapping func for it.
       SymbolEntry *ContainingFunc = nullptr;
-      for (auto *FP : LastFuncPos->second) {
+      for (SymbolEntry *FP : LastFuncPos->second) {
         if (FP->isFunction() && !FP->isBBSymbol &&
-            FP->containsAnotherSymbol(S) && S->Name.startswith(FP->Name)) {
+            FP->containsAnotherSymbol(S) && FP->isFunctionForBBName(S->Name)) {
           if (ContainingFunc == nullptr) {
             ContainingFunc = FP;
           } else if (ContainingFunc->Size < S->Size) {
@@ -368,13 +336,15 @@ bool PLOProfileWriter::populateSymbolMap() {
         // 0x12 foo.bb.1  size = 2
         // 0x14 foo.bb.2  size = 0
         // 0x14 bar  <- LastFuncPos set is to bar.
+        // 0x14 bar.bb.1
         // In this scenario, we seek lower address.
         auto T = LastFuncPos;
         while (T != AddrMap.begin()) {
           T = std::prev(T);
           for (auto *KS : T->second) {
             if (KS->isFunction() && !KS->isBBSymbol &&
-                KS->containsAnotherSymbol(S) && S->Name.startswith(KS->Name)) {
+                KS->containsAnotherSymbol(S) &&
+                KS->isFunctionForBBName(S->Name)) {
               ContainingFunc = KS;
               break;
             }
@@ -387,7 +357,7 @@ bool PLOProfileWriter::populateSymbolMap() {
                    << " @ 0x" << hex << S->Addr;
         return false;
       } else {
-        if (!S->Name.startswith(ContainingFunc->Name)) {
+        if (!ContainingFunc->isFunctionForBBName(S->Name)) {
           LOG(ERROR) << "Internal check warning: \n"
                      << "Sym: " << S->Name.str() << "\n"
                      << "Func: " << S->ContainingFuncSymbol->Name.str();
@@ -395,7 +365,6 @@ bool PLOProfileWriter::populateSymbolMap() {
       }
     }
   }
-
   return true;
 }
 
