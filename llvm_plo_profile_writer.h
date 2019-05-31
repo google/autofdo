@@ -87,31 +87,51 @@ class PerfReader;
 class PLOProfileWriter {
 public:
   struct SymbolEntry {
-    SymbolEntry(uint64_t O, const StringRef &N, uint64_t A, uint64_t S)
-        : Ordinal(O), Name(N), Addr(A), Size(S), BBFuncName("") {}
+    SymbolEntry(uint64_t O, const StringRef &N, uint64_t A, uint64_t S,
+                uint8_t T)
+        : Ordinal(O), Name(N), Addr(A), Size(S), Type(T), isBBSymbol(false),
+          ContainingFuncSymbol(nullptr) {}
     ~SymbolEntry() {}
 
     uint64_t Ordinal;
     StringRef Name;
     uint64_t Addr;
     uint64_t Size;
+    uint8_t  Type;
+
     // For basicblock symbols (e.g. "foo.bb.5"), this is the function name
     // "foo". For non basicblock symbols, this is "".
-    StringRef BBFuncName;
+    bool isBBSymbol;
+    SymbolEntry *ContainingFuncSymbol;
 
     // Given a basicblock symbol (e.g. "foo.bb.5"), return bb index "5".
     StringRef getBBIndex() const {
-      assert(!BBFuncName.empty());
-      auto t = BBFuncName.size() + 4; // "4" is for ".bb."
+      assert(isBBSymbol);
+      auto t = ContainingFuncSymbol->Name.size() + 4; // "4" is for ".bb."
       return StringRef(Name.data() + t, Name.size() - t);
     }
 
-    bool conainsAddress(uint64_t A) const {
+    bool containsAddress(uint64_t A) const {
       return Addr <= A && A < Addr + Size;
+    }
+
+    bool containsAnotherSymbol(SymbolEntry *O) const {
+      if (O->Size == 0) {
+        // Note if O's size is 0, we allow O on the end boundary. For example,
+        // if foo.bb.4 is at address 0x10. foo is [0x0, 0x10), we then assume
+        // foo contains foo.bb.4.
+        return this->Addr <= O->Addr && O->Addr <= this->Addr + this->Size;
+      }
+      return containsAddress(O->Addr) &&
+             containsAddress(O->Addr + O->Size - 1);
     }
 
     bool operator < (const SymbolEntry &Other) const {
       return this->Ordinal < Other.Ordinal;
+    }
+
+    bool isFunction() const {
+      return this->Type == llvm::object::SymbolRef::ST_Function;
     }
   };
 
@@ -129,19 +149,17 @@ public:
   // So it appears first in this section.
   unique_ptr<llvm::MemoryBuffer>       BinaryFileContent;
   unique_ptr<llvm::object::ObjectFile> ObjectFile;
-  // Addr -> Symbols mapping. Note that multiple symbols having same address is
-  // common.
+  // All symbol handlers.
   list<unique_ptr<SymbolEntry>>      SymbolList;
   // Symbol start address -> Symbol list.
   map<uint64_t, list<SymbolEntry *>> AddrMap;
-  // Aribitrary address -> symbol list that contains the address.
+  // Address -> symbol list that contains the address.
   map<uint64_t, list<SymbolEntry *>> ResolvedAddrToSymMap;
   map<StringRef, SymbolEntry *>      NameMap;
   // Aggregated branch counters. <from, to> -> count.
-  map<pair<uint64_t, uint64_t>, uint64_t> EdgeCounters;
-  map<pair<list<SymbolEntry *> *, list<SymbolEntry *> *>, uint64_t>
-      FallthroughCounters;
-
+  map<pair<uint64_t, uint64_t>, uint64_t> BranchCounters;
+  map<pair<uint64_t, uint64_t>, uint64_t> FallthroughCounters;
+  
   // Whether it is Position Independent Executable. If so, addresses from perf
   // file must be adjusted to map to symbols.
   bool BinaryIsPIE;
@@ -150,7 +168,7 @@ public:
   // All binary mmaps must have the same BinaryMMapName.
   string                  BinaryMMapName;
   // Nullptr if build id does not exist for BinaryMMapName.
-  unique_ptr<char>        BinaryBuildId;
+  string                  BinaryBuildId;
   bool setupMMaps(quipper::PerfParser &Parser);
   bool setupBinaryBuildId(quipper::PerfReader &R);
 
@@ -172,16 +190,15 @@ public:
   bool initBinaryFile();
   bool populateSymbolMap();
   bool parsePerfData();
+  bool compareBuildId();
   void writeSymbols(ofstream &fout);
   void writeBranches(ofstream &fout);
   void writeFallthroughs(ofstream &fout);
 
   list<PLOProfileWriter::SymbolEntry *> *
-  findSymbolEntryAtAddress(const uint64_t Addr);
+  findSymbolAtAddress(const uint64_t Addr);
 
-  // Whether Name is a bb symbol. If so, return true and set FuncName to the
-  // name of function that contains the symbol.
-  static bool isBBSymbol(const StringRef &Name, StringRef &FuncName);
+  static bool isBBSymbol(const StringRef &Name);
 
   static const uint64_t INVALID_ADDRESS = uint64_t(-1);
 };

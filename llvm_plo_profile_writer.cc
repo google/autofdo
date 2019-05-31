@@ -35,22 +35,20 @@ PLOProfileWriter::PLOProfileWriter(const string &BFN,
 
 PLOProfileWriter::~PLOProfileWriter() {}
 
-bool PLOProfileWriter::isBBSymbol(const StringRef &Name, StringRef &FuncName) {
-  FuncName = "";
+bool PLOProfileWriter::isBBSymbol(const StringRef &Name) {
   auto S1 = Name.rsplit('.');
   if (S1.second.empty()) return false;
   for (const char C : S1.second)
     if (C < '0' || C > '9') return false;
   auto S2 = S1.first.rsplit('.');
   if (S2.second == "bb") {
-    FuncName = S2.first;
     return true;
   }
   return false;
 }
 
 list<PLOProfileWriter::SymbolEntry *> *
-PLOProfileWriter::findSymbolEntryAtAddress(uint64_t OriginAddr) {
+PLOProfileWriter::findSymbolAtAddress(uint64_t OriginAddr) {
   uint64_t Addr = adjustAddressForPIE(OriginAddr);
   if (Addr == INVALID_ADDRESS) return nullptr;
   auto ResolvedResult = ResolvedAddrToSymMap.find(Addr);
@@ -62,12 +60,12 @@ PLOProfileWriter::findSymbolEntryAtAddress(uint64_t OriginAddr) {
   auto R = std::prev(U);
 
   // 95+% of the cases:
-  if (R->second.size() == 1 && R->second.front()->conainsAddress(Addr))
+  if (R->second.size() == 1 && R->second.front()->containsAddress(Addr))
     return &(R->second);
 
   list<SymbolEntry *> Candidates;
   for (auto &SymEnt : R->second)
-    if (SymEnt->conainsAddress(Addr))
+    if (SymEnt->containsAddress(Addr))
       Candidates.emplace_back(SymEnt);
 
   if (Candidates.empty()) return nullptr;
@@ -86,8 +84,8 @@ PLOProfileWriter::findSymbolEntryAtAddress(uint64_t OriginAddr) {
   if (Candidates.size() == 2) {
     auto *Sym = *(Candidates.begin());
     StringRef FuncName;
-    if (isBBSymbol(Sym->Name, FuncName) &&
-        FuncName == (*(Candidates.rbegin()))->Name) {
+    if (Sym->isBBSymbol &&
+        Sym->ContainingFuncSymbol == (*(Candidates.rbegin()))) {
       // Since, Func.Size > Func.bb.1.size, "Func.bb.1" must be the first of
       // "Candidates".
       Candidates.pop_back();
@@ -216,7 +214,8 @@ operator<<(std::ostream &out, const BuildIdWrapper &BW) {
 } // namespace
 
 bool PLOProfileWriter::write() {
-  if (!initBinaryFile() || !populateSymbolMap() || !parsePerfData()) {
+  if (!initBinaryFile() || !populateSymbolMap() || !parsePerfData() ||
+      !compareBuildId()) {
     return false;
   }
   ofstream fout(OutFileName);
@@ -226,7 +225,7 @@ bool PLOProfileWriter::write() {
   }
   writeSymbols(fout);
   writeBranches(fout);
-  writeFallthroughs(fout);
+  // writeFallthroughs(fout);
   return true;
 }
 
@@ -237,14 +236,11 @@ void PLOProfileWriter::writeSymbols(ofstream &fout) {
       SymbolEntry &SE = *SEPtr;
       fout << dec << SE.Ordinal << " "
            << hex << SE.Addr << " " << SE.Size << " ";
-      if (SE.BBFuncName.empty()) {
+      if (!SE.isBBSymbol) {
         fout << "N" << SE.Name.str() << std::endl;
       } else {
-        auto R = NameMap.find(SE.BBFuncName);
-        assert(R != NameMap.end());
-        SymbolEntry *BBFuncSym = R->second;
-        fout << dec << BBFuncSym->Ordinal << "." << SE.getBBIndex().str()
-             << std::endl;
+        fout << dec << SE.ContainingFuncSymbol->Ordinal << "."
+             << SE.getBBIndex().str() << std::endl;
       }
     }
   }
@@ -252,28 +248,33 @@ void PLOProfileWriter::writeSymbols(ofstream &fout) {
 
 void PLOProfileWriter::writeBranches(std::ofstream &fout) {
   fout << "Branches" << std::endl;
-  for (auto &EC : EdgeCounters) {
+  for (auto &EC : BranchCounters) {
     const uint64_t From = EC.first.first;
     const uint64_t To = EC.first.second;
     const uint64_t Cnt = EC.second;
-    auto FromSymHandler = findSymbolEntryAtAddress(From);
-    auto ToSymHandler = findSymbolEntryAtAddress(To);
-    if (FromSymHandler && ToSymHandler && *FromSymHandler != *ToSymHandler) {
-      fout << *FromSymHandler << " " << *ToSymHandler << " " << dec << Cnt
-           << " " << hex << adjustAddressForPIE(From) << " " << hex
-           << adjustAddressForPIE(To) << std::endl;
+    auto FromSymHandler = findSymbolAtAddress(From);
+    auto ToSymHandler = findSymbolAtAddress(To);
+    if (FromSymHandler && ToSymHandler) {
+      fout << *FromSymHandler << " " << *ToSymHandler << " " << dec << Cnt;
+      auto *ToSym = ToSymHandler->front();
+      const uint64_t AdjustedTo = adjustAddressForPIE(To);
+      if ((ToSym->isBBSymbol && ToSym->ContainingFuncSymbol->Addr == AdjustedTo) ||
+      (!ToSym->isBBSymbol && ToSym->Addr == AdjustedTo)) {
+          fout << " C";
+      }
+      fout << std::endl;
     }
   }
 }
 
 void PLOProfileWriter::writeFallthroughs(std::ofstream &fout) {
   fout << "Fallthroughs" << std::endl;
-  for (auto &EC : FallthroughCounters) {
-    const auto *From = EC.first.first;
-    const auto *To = EC.first.second;
-    const uint64_t Cnt = EC.second;
-    fout << dec << *From << " " << *To << " " << Cnt << " " << std::endl;
-  }
+  // for (auto &EC : FallthroughCounters) {
+  //   const auto *From = EC.first.first;
+  //   const auto *To = EC.first.second;
+  //   const uint64_t Cnt = EC.second;
+  //   fout << dec << *From << " " << *To << " " << Cnt << " " << std::endl;
+  // }
 }
 
 bool PLOProfileWriter::initBinaryFile() {
@@ -298,45 +299,6 @@ bool PLOProfileWriter::initBinaryFile() {
   BinaryIsPIE = (ELFObj->getEType() == llvm::ELF::ET_DYN);
   LOG(INFO) << "'" << this->BinaryFileName
                << "' is PIE binary: " << BinaryIsPIE;
-
-  if (!this->BinaryBuildId) return true;
-
-  // Extract build id and compare it against perf build id.
-  bool BuildIdFound = false;
-  bool BuildIdMatch = true;
-  for (auto &SR : ObjectFile->sections()) {
-    llvm::object::ELFSectionRef ESR(SR);
-    StringRef SName;
-    StringRef SContents;
-    if (ESR.getType() == llvm::ELF::SHT_NOTE &&
-        SR.getName(SName).value() == 0 && SName == ".note.gnu.build-id" &&
-        SR.getContents(SContents).value() == 0 &&
-        SContents.size() > quipper::kBuildIDArraySize) {
-      BuildIdFound = true;
-      auto P = SContents.end();
-      auto Q = BinaryBuildId.get() + quipper::kBuildIDArraySize;
-      for (int i = 1; i <= quipper::kBuildIDArraySize; ++i) {
-        if (*(--P) != *(--Q)) {
-          BuildIdMatch = false;
-          break;
-        }
-      }
-      if (BuildIdMatch) {
-        LOG(INFO) << "Found Build Id in binary '" << BinaryFileName
-                  << "': " << BuildIdWrapper(P);
-      }
-    }
-  }
-  if (!BuildIdFound) {
-    LOG(INFO) << "No Build Id found in '" << this->BinaryFileName << "'.";
-  } else {
-    if (BuildIdMatch) {
-      LOG(INFO) << "Binary Build Id and perf data Build Id match.";
-    } else {
-      LOG(ERROR) << "Build Ids do not match.";
-      return false;
-    }
-  }
   return true;
 }
 
@@ -347,25 +309,93 @@ bool PLOProfileWriter::populateSymbolMap() {
     auto AddrR = Sym.getAddress();
     auto SecR = Sym.getSection();
     auto NameR = Sym.getName();
+    auto TypeR = Sym.getType();
 
-    if (!(AddrR && *AddrR && SecR && (*SecR)->isText() && NameR)) continue;
+    if (!(AddrR && *AddrR && SecR && (*SecR)->isText() && NameR && TypeR))
+      continue;
 
     StringRef Name = *NameR;
     uint64_t Addr = *AddrR;
-    if (!Name.endswith(".bbend")) {
-      SymbolEntry *NewSymbolEntry = new SymbolEntry(++SymbolOrdinal, Name, Addr,
-                          llvm::object::ELFSymbolRef(Sym).getSize());
-      SymbolList.emplace_back(NewSymbolEntry);
-      auto &L = AddrMap[Addr];
-      L.push_back(NewSymbolEntry);
-      StringRef BBFuncName;
-      if (isBBSymbol(Name, BBFuncName)) {
-        L.back()->BBFuncName = BBFuncName;
+    uint8_t Type(*TypeR);
+
+    llvm::object::ELFSymbolRef ELFSym(Sym);
+    SymbolEntry *NewSymbolEntry =
+        new SymbolEntry(++SymbolOrdinal, Name, Addr, ELFSym.getSize(), Type);
+    SymbolList.emplace_back(NewSymbolEntry);
+    auto &L = AddrMap[Addr];
+    L.push_back(NewSymbolEntry);
+    if (!isBBSymbol(Name)) {
+      NameMap[Name] = L.back();
+      NewSymbolEntry->isBBSymbol = false;
+    } else {
+      NewSymbolEntry->isBBSymbol = true;
+    }
+  }
+
+  // Now scan all the symbols in address order.
+  decltype (AddrMap)::iterator LastFuncPos = AddrMap.end();
+  for (auto P = AddrMap.begin(), Q = AddrMap.end(); P != Q; ++P) {
+    uint64_t Addr = P->first;
+
+    for (auto *S : P->second) {
+      if (S->isFunction() && !S->isBBSymbol) {
+        LastFuncPos = P;
+        break;
+      }
+    }
+
+    if (LastFuncPos == AddrMap.end())  continue;
+    for (auto *S : P->second) {
+      if (!S->isBBSymbol)
+        continue;
+      // this is a bb symbol, find a wrapping func for it.
+      SymbolEntry *ContainingFunc = nullptr;
+      for (auto *FP : LastFuncPos->second) {
+        if (FP->isFunction() && !FP->isBBSymbol &&
+            FP->containsAnotherSymbol(S) && S->Name.startswith(FP->Name)) {
+          if (ContainingFunc == nullptr) {
+            ContainingFunc = FP;
+          } else if (ContainingFunc->Size < S->Size) {
+            // Already has a containing function, choose the one that is
+            // larger.
+            ContainingFunc = S;
+          }
+        }
+      }
+      if (!ContainingFunc) {
+        // Disambiguate the following case:
+        // 0x10 foo       size = 2
+        // 0x12 foo.bb.1  size = 2
+        // 0x14 foo.bb.2  size = 0
+        // 0x14 bar  <- LastFuncPos set is to bar.
+        // In this scenario, we seek lower address.
+        auto T = LastFuncPos;
+        while (T != AddrMap.begin()) {
+          T = std::prev(T);
+          for (auto *KS : T->second) {
+            if (KS->isFunction() && !KS->isBBSymbol &&
+                KS->containsAnotherSymbol(S) && S->Name.startswith(KS->Name)) {
+              ContainingFunc = KS;
+              break;
+            }
+          }
+        }
+      }
+      S->ContainingFuncSymbol = ContainingFunc;
+      if (S->ContainingFuncSymbol == nullptr) {
+        LOG(ERROR) << "Failed to find function for bb symbol: " << S->Name.str()
+                   << " @ 0x" << hex << S->Addr;
+        return false;
       } else {
-        NameMap[Name] = L.back();
+        if (!S->Name.startswith(ContainingFunc->Name)) {
+          LOG(ERROR) << "Internal check warning: \n"
+                     << "Sym: " << S->Name.str() << "\n"
+                     << "Func: " << S->ContainingFuncSymbol->Name.str();
+        }
       }
     }
   }
+
   return true;
 }
 
@@ -493,17 +523,16 @@ bool PLOProfileWriter::setupBinaryBuildId(quipper::PerfReader &PR) {
   for (const auto &BuildId: PR.build_ids()) {
     if (BuildId.has_filename() && BuildId.has_build_id_hash() &&
         BuildId.filename() == BinaryMMapName) {
-      BinaryBuildId.reset(new char[quipper::kBuildIDArraySize]);
-      memcpy(BinaryBuildId.get(), BuildId.build_id_hash().c_str(),
-             quipper::kBuildIDArraySize);
+      BinaryBuildId = BuildId.build_id_hash();
+      quipper::PerfizeBuildIDString(&BinaryBuildId);
       LOG(INFO) << "Found Build Id in perf data '" << PerfFileName
-                << "': " << BuildId;
+                << "': " << BuildIdWrapper(BinaryBuildId.c_str());
       return true;
     }
   }
   LOG(INFO) << "No Build Id info for '" << this->BinaryFileName
             << "' found in '" << this->PerfFileName << "'.";
-  BinaryBuildId.reset(nullptr);
+  BinaryBuildId = "";
   return false;
 }
 
@@ -512,27 +541,64 @@ void PLOProfileWriter::aggregateLBR(quipper::PerfParser &Parser) {
     quipper::PerfDataProto_PerfEvent *EPtr = PE.event_ptr;
     if (EPtr->event_type_case() ==
         quipper::PerfDataProto_PerfEvent::kSampleEvent) {
-      uint64_t LastFrom = INVALID_ADDRESS;
       auto BRStack = EPtr->sample_event().branch_stack();
       if (BRStack.empty()) continue;
+      uint64_t LastFrom = INVALID_ADDRESS;
       uint64_t LastTo = INVALID_ADDRESS;
       list<SymbolEntry *> *LastToSyms = nullptr;
       for (int P = BRStack.size() - 1; P >= 0; --P) {
         const auto &BE = BRStack.Get(P);
         uint64_t From = BE.from_ip();
         uint64_t To = BE.to_ip();
-        ++(EdgeCounters[std::make_pair(From, To)]);
-
-        auto *FromSyms = findSymbolEntryAtAddress(From);
-        if (LastTo != INVALID_ADDRESS && LastToSyms && FromSyms &&
-            *LastToSyms != *FromSyms) {
-          ++(FallthroughCounters[std::make_pair(LastToSyms, FromSyms)]);
+        ++(BranchCounters[std::make_pair(From, To)]);
+        if (LastTo != INVALID_ADDRESS) {
+          ++(FallthroughCounters[std::make_pair(LastTo, From)]);
         }
         LastTo = To;
-        LastToSyms = findSymbolEntryAtAddress(LastTo);
       }
     }
   }
+}
+
+bool PLOProfileWriter::compareBuildId() {
+  if (this->BinaryBuildId.empty())
+    return true;
+
+  // Extract build id and compare it against perf build id.
+  bool BuildIdFound = false;
+  bool BuildIdMatch = true;
+  for (auto &SR : ObjectFile->sections()) {
+    llvm::object::ELFSectionRef ESR(SR);
+    StringRef SName;
+    StringRef SContents;
+    if (ESR.getType() == llvm::ELF::SHT_NOTE &&
+        SR.getName(SName).value() == 0 && SName == ".note.gnu.build-id" &&
+        SR.getContents(SContents).value() == 0 && SContents.size()) {
+      const unsigned char *P = SContents.bytes_end();
+      while (*(--P) && P >= SContents.bytes_begin())
+        ;
+      if (P < SContents.bytes_begin()) {
+        LOG(INFO) << "Section '.note.gnu.build-id' does not contain valid "
+                      "build id information.";
+        return true;
+      }
+      string BuildId((const char *)(P + 1),
+                     SContents.size() - (P + 1 - SContents.bytes_begin()));
+      quipper::PerfizeBuildIDString(&BuildId);
+      LOG(INFO) << "Found Build Id in binary '" << BinaryFileName
+                << "': " << BuildIdWrapper(BuildId.c_str());
+
+      if (this->BinaryBuildId == BuildId) {
+        LOG(INFO) << "Binary Build Id and perf data Build Id match.";
+        return true;
+      } else {
+        LOG(ERROR) << "Build Ids do not match.";
+        return false;
+      }
+    }
+  }
+  LOG(INFO) << "No Build Id found in '" << this->BinaryFileName << "'.";
+  return true;
 }
 
 #endif
