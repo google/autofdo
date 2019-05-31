@@ -1,6 +1,6 @@
 #include "config.h"
 #if defined(HAVE_LLVM)
-#include "llvm_plo_profile_writer.h"
+#include "llvm_propeller_profile_writer.h"
 
 #include <fstream>
 #include <functional>
@@ -28,14 +28,14 @@ using std::list;
 using std::ofstream;
 using std::string;
 
-PLOProfileWriter::PLOProfileWriter(const string &BFN,
+PropellerProfWriter::PropellerProfWriter(const string &BFN,
                                    const string &PFN,
                                    const string &OFN)
     : BinaryFileName(BFN), PerfFileName(PFN), OutFileName(OFN) {}
 
-PLOProfileWriter::~PLOProfileWriter() {}
+PropellerProfWriter::~PropellerProfWriter() {}
 
-bool PLOProfileWriter::isBBSymbol(const StringRef &Name) {
+bool PropellerProfWriter::isBBSymbol(const StringRef &Name) {
   auto S1 = Name.rsplit('.');
   if (S1.second.empty()) return false;
   for (const char C : S1.second)
@@ -47,8 +47,8 @@ bool PLOProfileWriter::isBBSymbol(const StringRef &Name) {
   return false;
 }
 
-PLOProfileWriter::SymbolEntry *
-PLOProfileWriter::findSymbolAtAddress(uint64_t OriginAddr) {
+PropellerProfWriter::SymbolEntry *
+PropellerProfWriter::findSymbolAtAddress(uint64_t OriginAddr) {
   uint64_t Addr = adjustAddressForPIE(OriginAddr);
   if (Addr == INVALID_ADDRESS) return nullptr;
   auto U = AddrMap.upper_bound(Addr);
@@ -85,8 +85,8 @@ struct HexOut {
 } hex;
 
 struct SymName {
-  SymName(const PLOProfileWriter::SymbolEntry &S) : Symbol(S) {}
-  const PLOProfileWriter::SymbolEntry &Symbol;
+  SymName(const PropellerProfWriter::SymbolEntry &S) : Symbol(S) {}
+  const PropellerProfWriter::SymbolEntry &Symbol;
 
 };
 
@@ -125,7 +125,7 @@ operator<<(std::ostream &out, const BuildIdWrapper &BW) {
 }
 } // namespace
 
-bool PLOProfileWriter::write() {
+bool PropellerProfWriter::write() {
   if (!initBinaryFile() || !populateSymbolMap() || !parsePerfData() ||
       !compareBuildId()) {
     return false;
@@ -142,7 +142,7 @@ bool PLOProfileWriter::write() {
   return true;
 }
 
-void PLOProfileWriter::writeSymbols(ofstream &fout) {
+void PropellerProfWriter::writeSymbols(ofstream &fout) {
   fout << "Symbols" << std::endl;
   for (auto &LE : AddrMap) {
     for (auto &SEPtr : LE.second) {
@@ -159,7 +159,7 @@ void PLOProfileWriter::writeSymbols(ofstream &fout) {
   }
 }
 
-void PLOProfileWriter::writeBranches(std::ofstream &fout) {
+void PropellerProfWriter::writeBranches(std::ofstream &fout) {
   fout << "Branches" << std::endl;
   for (auto &EC : BranchCounters) {
     const uint64_t From = EC.first.first;
@@ -181,7 +181,7 @@ void PLOProfileWriter::writeBranches(std::ofstream &fout) {
   }
 }
 
-void PLOProfileWriter::writeFallthroughs(std::ofstream &fout) {
+void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
   // Instead of sorting "SymbolEntry *" by pointer address, we sort it by it's
   // symbol address, so we get a stable sort.
   struct SymbolEntryPairComp {
@@ -210,7 +210,7 @@ void PLOProfileWriter::writeFallthroughs(std::ofstream &fout) {
          << " " << FC.second << std::endl;
 }
 
-bool PLOProfileWriter::initBinaryFile() {
+bool PropellerProfWriter::initBinaryFile() {
   auto FileOrError = llvm::MemoryBuffer::getFile(BinaryFileName);
   if (!FileOrError) {
       LOG(ERROR) << "Failed to read file '" << BinaryFileName << "'.";
@@ -235,7 +235,7 @@ bool PLOProfileWriter::initBinaryFile() {
   return true;
 }
 
-bool PLOProfileWriter::populateSymbolMap() {
+bool PropellerProfWriter::populateSymbolMap() {
   uint64_t SymbolOrdinal = 0;
   auto Symbols = ObjectFile->symbols();
   for (const auto &Sym : Symbols) {
@@ -362,7 +362,7 @@ bool PLOProfileWriter::populateSymbolMap() {
   return true;
 }
 
-bool PLOProfileWriter::parsePerfData() {
+bool PropellerProfWriter::parsePerfData() {
   quipper::PerfReader PR;
   if (!PR.ReadFile(PerfFileName)) {
     LOG(ERROR) << "Failed to read perf data file: " << PerfFileName;
@@ -387,7 +387,7 @@ bool PLOProfileWriter::parsePerfData() {
   return true;
 }
 
-bool PLOProfileWriter::setupMMaps(quipper::PerfParser &Parser) {
+bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser) {
   // Depends on the binary file name, if
   //   - it is absolute, compares it agains the full path
   //   - it is relative, only compares the file name part
@@ -482,7 +482,7 @@ bool PLOProfileWriter::setupMMaps(quipper::PerfParser &Parser) {
   return true;
 }
 
-bool PLOProfileWriter::setupBinaryBuildId(quipper::PerfReader &PR) {
+bool PropellerProfWriter::setupBinaryBuildId(quipper::PerfReader &PR) {
   for (const auto &BuildId: PR.build_ids()) {
     if (BuildId.has_filename() && BuildId.has_build_id_hash() &&
         BuildId.filename() == BinaryMMapName) {
@@ -499,7 +499,7 @@ bool PLOProfileWriter::setupBinaryBuildId(quipper::PerfReader &PR) {
   return false;
 }
 
-void PLOProfileWriter::aggregateLBR(quipper::PerfParser &Parser) {
+void PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
   for (const auto &PE : Parser.parsed_events()) {
     quipper::PerfDataProto_PerfEvent *EPtr = PE.event_ptr;
     if (EPtr->event_type_case() ==
@@ -523,7 +523,7 @@ void PLOProfileWriter::aggregateLBR(quipper::PerfParser &Parser) {
   }
 }
 
-bool PLOProfileWriter::compareBuildId() {
+bool PropellerProfWriter::compareBuildId() {
   if (this->BinaryBuildId.empty())
     return true;
 

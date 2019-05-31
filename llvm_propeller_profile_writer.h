@@ -94,7 +94,7 @@ class PerfReader;
 // Each line in "Fallthroughs" section contains exactly the same fields as in
 // "Branches" section, except the "C" field.
 
-class PLOProfileWriter {
+class PropellerProfWriter {
 public:
   struct SymbolEntry {
     SymbolEntry(uint64_t O, const StringRef &N, uint64_t A, uint64_t S,
@@ -155,8 +155,8 @@ public:
     }
   };
 
-  PLOProfileWriter(const string &BFN, const string &PFN, const string &OFN);
-  ~PLOProfileWriter();
+  PropellerProfWriter(const string &BFN, const string &PFN, const string &OFN);
+  ~PropellerProfWriter();
 
   bool write();
 

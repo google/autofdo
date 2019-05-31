@@ -22,7 +22,7 @@
 #include "gflags/gflags.h"
 #include "profile_creator.h"
 #include "llvm_profile_writer.h"
-#include "llvm_plo_profile_writer.h"
+#include "llvm_propeller_profile_writer.h"
 
 
 DEFINE_string(profile, "perf.data", "Input profile file name");
@@ -36,7 +36,8 @@ DEFINE_string(gcov, "",
 DEFINE_string(binary, "a.out", "Binary file name");
 DEFINE_string(format, "binary",
               "LLVM profile format to emit. Possible values are 'text' or "
-              "'binary' or 'plo'. The binary format is a more compact representation, "
+              "'binary' or 'propeller'. The binary format is a more compact "
+              "representation, "
               "but the text format is human readable and more likely to be "
               "compatible with older versions of LLVM.");
 
@@ -73,11 +74,11 @@ int main(int argc, char **argv) {
     writer.reset(new autofdo::LLVMProfileWriter(llvm::sampleprof::SPF_Text));
   } else if (FLAGS_format == "binary") {
     writer.reset(new autofdo::LLVMProfileWriter(llvm::sampleprof::SPF_Binary));
-  } else if (FLAGS_format == "plo") {
-    PLOProfileWriter PPWriter(FLAGS_binary, FLAGS_profile, FLAGS_out);
+  } else if (FLAGS_format == "propeller") {
+    PropellerProfWriter PPWriter(FLAGS_binary, FLAGS_profile, FLAGS_out);
     return PPWriter.write() ? 0 : 1;
   } else {
-    LOG(ERROR) << "--format must be one of 'text' or 'binary'";
+    LOG(ERROR) << "--format must be one of 'text', 'binary' or 'properller'.";
     return 1;
   }
 
