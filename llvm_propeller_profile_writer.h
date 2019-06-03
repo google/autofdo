@@ -51,11 +51,11 @@ class PerfReader;
 // 12 101 N__libc_csu_init
 // 9 2 N__libc_csu_fini
 // 10 0 N_fini
-// 17391 19299de0 5e N_ZN9assistantD2Ev/_ZN9assistantD1Ev
-// 17392 19299dff c 17391.1
-// 17393 19299e0b d 17391.2
-// 17394 19299e18 d 17391.3
-// 17395 19299e25 19 17391.4
+// 17391 5e N_ZN9assistantD2Ev/_ZN9assistantD1Ev
+// 17392 c 17391.1
+// 17393 d 17391.2
+// 17394 d 17391.3
+// 17395 19 17391.4
 // Branches
 // 11 5 232381
 // 5 11 234632 C
