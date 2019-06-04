@@ -564,10 +564,11 @@ bool PropellerProfWriter::compareBuildId() {
   for (auto &SR : ObjectFile->sections()) {
     llvm::object::ELFSectionRef ESR(SR);
     StringRef SName;
-    StringRef SContents;
+    auto ExpectedSContents = SR.getContents();
     if (ESR.getType() == llvm::ELF::SHT_NOTE &&
         SR.getName(SName).value() == 0 && SName == ".note.gnu.build-id" &&
-        SR.getContents(SContents).value() == 0 && SContents.size()) {
+        ExpectedSContents && !ExpectedSContents->empty()) {
+      StringRef SContents = *ExpectedSContents;
       const unsigned char *P = SContents.bytes_end();
       while (*(--P) && P >= SContents.bytes_begin())
         ;
