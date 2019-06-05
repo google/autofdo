@@ -161,8 +161,6 @@ public:
 
   SymbolEntry * findSymbolAtAddress(const uint64_t Addr);
 
-  static bool isBBSymbol(const StringRef &Name);
-
   static const uint64_t INVALID_ADDRESS = uint64_t(-1);
 };
 

@@ -35,18 +35,6 @@ PropellerProfWriter::PropellerProfWriter(const string &BFN,
 
 PropellerProfWriter::~PropellerProfWriter() {}
 
-bool PropellerProfWriter::isBBSymbol(const StringRef &Name) {
-  auto S1 = Name.rsplit('.');
-  if (S1.second.empty()) return false;
-  for (const char C : S1.second)
-    if (C < '0' || C > '9') return false;
-  auto S2 = S1.first.rsplit('.');
-  if (S2.second == "bb") {
-    return true;
-  }
-  return false;
-}
-
 SymbolEntry *
 PropellerProfWriter::findSymbolAtAddress(uint64_t OriginAddr) {
   uint64_t Addr = adjustAddressForPIE(OriginAddr);
@@ -180,7 +168,7 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
       SymbolEntry &SE = *SEPtr;
       SE.Ordinal = ++SymbolOrdinal;
       fout << SymOrdinalF(SE) << " " << SymSizeF(SE) << " ";
-      if (SE.isBBSymbol) {
+      if (SE.BBTag) {
         fout << SymOrdinalF(*(SE.ContainingFunc)) << "."
              << SE.getBBIndex().str() << std::endl;
       } else {
@@ -202,9 +190,9 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       fout << SymOrdinalF(*FromSym) << " " << SymOrdinalF(*ToSym) << " "
            << CountF(Cnt);
       const uint64_t AdjustedTo = adjustAddressForPIE(To);
-      if ((ToSym->isBBSymbol &&
+      if ((ToSym->BBTag &&
            ToSym->ContainingFunc->Addr == AdjustedTo) ||
-          (!ToSym->isBBSymbol && ToSym->isFunction() &&
+          (!ToSym->BBTag && ToSym->isFunction() &&
            ToSym->Addr == AdjustedTo)) {
         fout << " C";
       }
@@ -293,7 +281,8 @@ bool PropellerProfWriter::populateSymbolMap() {
       for (auto *S : L) {
         if (S->Size == Size) {
           // Make sure Name and Aliased name are both BB or both NON-BB.
-          if (isBBSymbol(S->Name) != isBBSymbol(Name)) {
+          if (SymbolEntry::isBBSymbol(S->Name) !=
+              SymbolEntry::isBBSymbol(Name)) {
             LOG(ERROR)
                 << "Fatal: incompatible symbols have same addr and size: '"
                 << S->Name.str() << "' and '" << Name.str() << "'.";
@@ -317,7 +306,7 @@ bool PropellerProfWriter::populateSymbolMap() {
         new SymbolEntry(0, Name, SymbolEntry::AliasesTy(), Addr, Size, Type);
     SymbolList.emplace_back(NewSymbolEntry);
     L.push_back(NewSymbolEntry);
-    NewSymbolEntry->isBBSymbol = isBBSymbol(Name);
+    NewSymbolEntry->BBTag = SymbolEntry::isBBSymbol(Name);
   }
 
   // Now scan all the symbols in address order to create function <-> bb
@@ -325,7 +314,7 @@ bool PropellerProfWriter::populateSymbolMap() {
   decltype (AddrMap)::iterator LastFuncPos = AddrMap.end();
   for (auto P = AddrMap.begin(), Q = AddrMap.end(); P != Q; ++P) {
     for (auto *S : P->second) {
-      if (S->isFunction() && !S->isBBSymbol) {
+      if (S->isFunction() && !S->BBTag) {
         LastFuncPos = P;
         break;
       }
@@ -333,12 +322,12 @@ bool PropellerProfWriter::populateSymbolMap() {
     if (LastFuncPos == AddrMap.end())  continue;
 
     for (auto *S : P->second) {
-      if (!S->isBBSymbol)
+      if (!S->BBTag)
         continue;
       // this is a bb symbol, find a wrapping func for it.
       SymbolEntry *ContainingFunc = nullptr;
       for (SymbolEntry *FP : LastFuncPos->second) {
-        if (FP->isFunction() && !FP->isBBSymbol &&
+        if (FP->isFunction() && !FP->BBTag &&
             FP->containsAnotherSymbol(S) && FP->isFunctionForBBName(S->Name)) {
           if (ContainingFunc == nullptr) {
             ContainingFunc = FP;
@@ -367,7 +356,7 @@ bool PropellerProfWriter::populateSymbolMap() {
         while (T != AddrMap.begin()) {
           T = std::prev(T);
           for (auto *KS : T->second) {
-            if (KS->isFunction() && !KS->isBBSymbol &&
+            if (KS->isFunction() && !KS->BBTag &&
                 KS->containsAnotherSymbol(S) &&
                 KS->isFunctionForBBName(S->Name)) {
               ContainingFunc = KS;
