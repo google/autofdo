@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 
+#include "lld/Common/PropellerCommon.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Object/ObjectFile.h"
@@ -22,6 +23,7 @@ using std::pair;
 using std::string;
 using std::unique_ptr;
 
+using lld::propeller::SymbolEntry;
 using llvm::SmallVector;
 using llvm::StringRef;
 
@@ -36,26 +38,29 @@ class PerfReader;
 // A sample output is like below:
 //
 // Symbols
-// 15 0 N_init
-// 13 43 N_start
-// 1 0 Nderegister_tm_clones
-// 2 0 Nregister_tm_clones
-// 3 0 N__do_global_dtors_aux
-// 4 0 Nframe_dummy
-// 11 44 Ncompute_flag
-// 14 124 Nmain
-// 5 15 14.1
-// 6 40 14.2
-// 7 11 14.3
-// 8 10 14.4
-// 12 101 N__libc_csu_init
-// 9 2 N__libc_csu_fini
-// 10 0 N_fini
-// 17391 5e N_ZN9assistantD2Ev/_ZN9assistantD1Ev
-// 17392 c 17391.1
-// 17393 d 17391.2
-// 17394 d 17391.3
-// 17395 19 17391.4
+// 1 0 N.init/_init
+// 2 0 N.plt
+// 3 0 N.plt.got
+// 4 0 N.text
+// 5 2b N_start
+// 6 0 Nderegister_tm_clones
+// 7 0 Nregister_tm_clones
+// 8 0 N__do_global_dtors_aux
+// 9 0 Nframe_dummy
+// 10 2c Ncompute_flag
+// 11 7c Nmain
+// 12 f 11.1
+// 13 28 11.2
+// 14 b 11.3
+// 15 a 11.4
+// 16 65 N__libc_csu_init
+// 17 2 N__libc_csu_fini
+// 18 0 N.fini/_fini
+// 19 5e N_ZN9assistantD2Ev/_ZN9assistantD1Ev
+// 20 c 19.1
+// 21 d 19.2
+// 22 d 19.3
+// 23 19 19.4
 // Branches
 // 11 5 232381
 // 5 11 234632 C
@@ -73,7 +78,7 @@ class PerfReader;
 // The file consists of 3 parts, "Symbols" and "Branches".
 //
 // Each line in "Symbols" section contains the following field:
-//   index    - in decimal, unique for each symbol
+//   index    - in decimal, unique for each symbol, start from 1
 //   size     - in hex, without "0x"
 //   name     - either starts with "N" or a digit. In the former case,
 //              everything after N is the symbol name. In the latter case, it's
@@ -83,6 +88,7 @@ class PerfReader;
 //              symbol main. Also note, symbols could have aliases, in such
 //              case, aliases are concatenated with the original name with a
 //              '/'. For example, symbol 17391 contains 2 aliases.
+// Note, the symbols listed are in strict non-decreasing address order.
 //
 // Each line in "Branches" section contains the following field:
 //   from     - sym_index, in decimal
@@ -95,65 +101,7 @@ class PerfReader;
 
 class PropellerProfWriter {
 public:
-  struct SymbolEntry {
-    SymbolEntry(uint64_t O, const StringRef &N, uint64_t A, uint64_t S,
-                uint8_t T)
-        : Ordinal(O), Name(N), Aliases(), Addr(A), Size(S), Type(T),
-          isBBSymbol(false), ContainingFunc(nullptr) {}
-    ~SymbolEntry() {}
-
-    uint64_t Ordinal;
-    StringRef Name;
-    SmallVector<StringRef, 3> Aliases;
-    uint64_t Addr;
-    uint64_t Size;
-    uint8_t  Type;
-
-    // For basicblock symbols (e.g. "foo.bb.5"), this is the function name
-    // "foo". For non basicblock symbols, this is "".
-    bool isBBSymbol;
-    SymbolEntry *ContainingFunc;
-
-    // Given a basicblock symbol (e.g. "foo.bb.5"), return bb index "5".
-    // Need to be changed if we use another bb label schema.
-    StringRef getBBIndex() const {
-      assert(isBBSymbol);
-      return Name.rsplit('.').second;
-    }
-
-    bool containsAddress(uint64_t A) const {
-      return Addr <= A && A < Addr + Size;
-    }
-
-    bool containsAnotherSymbol(SymbolEntry *O) const {
-      if (O->Size == 0) {
-        // Note if O's size is 0, we allow O on the end boundary. For example,
-        // if foo.bb.4 is at address 0x10. foo is [0x0, 0x10), we then assume
-        // foo contains foo.bb.4.
-        return this->Addr <= O->Addr && O->Addr <= this->Addr + this->Size;
-      }
-      return containsAddress(O->Addr) &&
-             containsAddress(O->Addr + O->Size - 1);
-    }
-
-    bool operator < (const SymbolEntry &Other) const {
-      return this->Ordinal < Other.Ordinal;
-    }
-
-    bool isFunction() const {
-      return this->Type == llvm::object::SymbolRef::ST_Function;
-    }
-
-    // This might be changed if we use a different bb name scheme.
-    bool isFunctionForBBName(StringRef BBName) {
-      if (BBName.startswith(Name)) return true;
-      for (auto N : Aliases) {
-        if (BBName.startswith(N)) return true;
-      }
-      return false;
-    }
-  };
-
+  
   PropellerProfWriter(const string &BFN, const string &PFN, const string &OFN);
   ~PropellerProfWriter();
 

@@ -47,7 +47,7 @@ bool PropellerProfWriter::isBBSymbol(const StringRef &Name) {
   return false;
 }
 
-PropellerProfWriter::SymbolEntry *
+SymbolEntry *
 PropellerProfWriter::findSymbolAtAddress(uint64_t OriginAddr) {
   uint64_t Addr = adjustAddressForPIE(OriginAddr);
   if (Addr == INVALID_ADDRESS) return nullptr;
@@ -85,20 +85,20 @@ struct HexOut {
 } hex;
 
 struct SymBaseF {
-  SymBaseF(const PropellerProfWriter::SymbolEntry &S) : Symbol(S) {}
-  const PropellerProfWriter::SymbolEntry &Symbol;
+  SymBaseF(const SymbolEntry &S) : Symbol(S) {}
+  const SymbolEntry &Symbol;
 };
 
 struct SymNameF : public SymBaseF {
-  SymNameF(const PropellerProfWriter::SymbolEntry &S) : SymBaseF(S) {}
+  SymNameF(const SymbolEntry &S) : SymBaseF(S) {}
 };
 
 struct SymOrdinalF : public SymBaseF {
-  SymOrdinalF(const PropellerProfWriter::SymbolEntry &S) : SymBaseF(S) {}
+  SymOrdinalF(const SymbolEntry &S) : SymBaseF(S) {}
 };
 
 struct SymSizeF : public SymBaseF {
-  SymSizeF(const PropellerProfWriter::SymbolEntry &S) : SymBaseF(S) {}
+  SymSizeF(const SymbolEntry &S) : SymBaseF(S) {}
 };
 
 struct CountF {
@@ -173,10 +173,12 @@ bool PropellerProfWriter::write() {
 }
 
 void PropellerProfWriter::writeSymbols(ofstream &fout) {
+  uint64_t SymbolOrdinal = 0;
   fout << "Symbols" << std::endl;
   for (auto &LE : AddrMap) {
     for (auto &SEPtr : LE.second) {
       SymbolEntry &SE = *SEPtr;
+      SE.Ordinal = ++SymbolOrdinal;
       fout << SymOrdinalF(SE) << " " << SymSizeF(SE) << " ";
       if (SE.isBBSymbol) {
         fout << SymOrdinalF(*(SE.ContainingFunc)) << "."
@@ -267,7 +269,6 @@ bool PropellerProfWriter::initBinaryFile() {
 }
 
 bool PropellerProfWriter::populateSymbolMap() {
-  uint64_t SymbolOrdinal = 0;
   auto Symbols = ObjectFile->symbols();
   for (const auto &Sym : Symbols) {
     auto AddrR = Sym.getAddress();
@@ -311,9 +312,9 @@ bool PropellerProfWriter::populateSymbolMap() {
       }
       if (SymbolIsAliasedWith) continue;
     }
-    
+
     SymbolEntry *NewSymbolEntry =
-        new SymbolEntry(++SymbolOrdinal, Name, Addr, Size, Type);
+        new SymbolEntry(0, Name, SymbolEntry::AliasesTy(), Addr, Size, Type);
     SymbolList.emplace_back(NewSymbolEntry);
     L.push_back(NewSymbolEntry);
     NewSymbolEntry->isBBSymbol = isBBSymbol(Name);
