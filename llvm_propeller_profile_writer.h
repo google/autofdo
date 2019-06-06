@@ -57,23 +57,19 @@ class PerfReader;
 // 17 2 N__libc_csu_fini
 // 18 0 N.fini/_fini
 // 19 5e N_ZN9assistantD2Ev/_ZN9assistantD1Ev
-// 20 c 19.1
-// 21 d 19.2
-// 22 d 19.3
-// 23 19 19.4
 // Branches
-// 11 5 232381
-// 5 11 234632 C
-// 5 7 143535
-// 7 5 226796
+// 10 12 232590 R
+// 12 10 234842 C
+// 12 14 143608
+// 14 12 227040
 // Fallthroughs
-// 5 5 362482
-// 5 7 77142
-// 5 11 2201
-// 7 5 1446
-// 7 7 140643
-// 11 5 2221
-// 11 11 225042
+// 10 10 225131
+// 10 12 2255
+// 12 10 2283
+// 12 12 362886
+// 12 14 77103
+// 14 12 1376
+// 14 14 140856
 //
 // The file consists of 3 parts, "Symbols" and "Branches".
 //
@@ -94,7 +90,8 @@ class PerfReader;
 //   from     - sym_index, in decimal
 //   to       - sym_index, in decimal
 //   cnt      - counter, in decimal
-//   C        - a field indicate this is a function call, instead of a jmp.
+//   C/R      - a field indicate whether this is a function call or a return,
+//              could be empty if it's just a normal branch.
 //
 // Each line in "Fallthroughs" section contains exactly the same fields as in
 // "Branches" section, except the "C" field.
