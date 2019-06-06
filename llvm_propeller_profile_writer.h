@@ -123,7 +123,22 @@ public:
   // Aggregated branch counters. <from, to> -> count.
   map<pair<uint64_t, uint64_t>, uint64_t> BranchCounters;
   map<pair<uint64_t, uint64_t>, uint64_t> FallthroughCounters;
-  
+
+  // Instead of sorting "SymbolEntry *" by pointer address, we sort it by it's
+  // symbol address, so we get a stable sort.
+  struct SymbolEntryPairComp {
+    using KeyT = pair<SymbolEntry *, SymbolEntry *>;
+    bool operator()(const KeyT &K1, const KeyT &K2) const {
+      if (K1.first->Addr == K2.first->Addr) {
+        return K1.second->Addr < K2.second->Addr;
+      }
+      return K1.first->Addr < K2.first->Addr;
+    }
+  };
+
+  map<pair<SymbolEntry *, SymbolEntry *>, uint64_t, SymbolEntryPairComp>
+      CountersBySymbol;
+
   // Whether it is Position Independent Executable. If so, addresses from perf
   // file must be adjusted to map to symbols.
   bool BinaryIsPIE;

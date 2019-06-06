@@ -186,10 +186,28 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
     const uint64_t Cnt = EC.second;
     auto *FromSym = findSymbolAtAddress(From);
     auto *ToSym = findSymbolAtAddress(To);
+    const uint64_t AdjustedTo = adjustAddressForPIE(To);
     if (FromSym && ToSym) {
+      /* If a return jumps to an address associated with a BB symbol ToSym,
+       * then find the actual callsite symbol which is the symbol right
+       * before ToSym. */
+      if (ToSym->BBTag &&
+          (FromSym->ContainingFunc->Addr != ToSym->ContainingFunc->Addr) &&
+          ToSym->ContainingFunc->Addr != AdjustedTo &&
+          AdjustedTo == ToSym->Addr) { /* implies an inter-procedural return to the end of a basic block */
+        auto *CallSiteSym = findSymbolAtAddress(To-1);
+        LOG(INFO) << std::hex << "Return From: 0x" << From << " To: 0x" << To
+                  << " Callsite symbol: 0x" << (CallSiteSym ? CallSiteSym->Addr : 0x0)
+                  << "\n" << std::dec;
+        if (CallSiteSym && CallSiteSym->BBTag){
+          /* Account for the fall-through between CallSiteSym and ToSym. */
+          CountersBySymbol[std::make_pair(CallSiteSym, ToSym)] += Cnt;
+          /* Reassign ToSym to be the actuall callsite symbol entry. */
+          ToSym = CallSiteSym;
+        }
+      }
       fout << SymOrdinalF(*FromSym) << " " << SymOrdinalF(*ToSym) << " "
            << CountF(Cnt);
-      const uint64_t AdjustedTo = adjustAddressForPIE(To);
       if ((ToSym->BBTag &&
            ToSym->ContainingFunc->Addr == AdjustedTo) ||
           (!ToSym->BBTag && ToSym->isFunction() &&
@@ -202,19 +220,6 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
 }
 
 void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
-  // Instead of sorting "SymbolEntry *" by pointer address, we sort it by it's
-  // symbol address, so we get a stable sort.
-  struct SymbolEntryPairComp {
-    using KeyT = pair<SymbolEntry *, SymbolEntry *>;
-    bool operator()(const KeyT &K1, const KeyT &K2) const {
-      if (K1.first->Addr == K2.first->Addr) {
-        return K1.second->Addr < K2.second->Addr;
-      }
-      return K1.first->Addr < K2.first->Addr;
-    }
-  };
-  map<pair<SymbolEntry *, SymbolEntry *>, uint64_t, SymbolEntryPairComp>
-      CountersBySymbol;
   for (auto &CA : FallthroughCounters) {
     const uint64_t Cnt = CA.second;
     auto *FromSym = this->findSymbolAtAddress(CA.first.first);
@@ -322,8 +327,10 @@ bool PropellerProfWriter::populateSymbolMap() {
     if (LastFuncPos == AddrMap.end())  continue;
 
     for (auto *S : P->second) {
-      if (!S->BBTag)
+      if (!S->BBTag){
+        S->ContainingFunc = S;
         continue;
+      }
       // this is a bb symbol, find a wrapping func for it.
       SymbolEntry *ContainingFunc = nullptr;
       for (SymbolEntry *FP : LastFuncPos->second) {
@@ -529,7 +536,6 @@ void PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
       if (BRStack.empty()) continue;
       uint64_t LastFrom = INVALID_ADDRESS;
       uint64_t LastTo = INVALID_ADDRESS;
-      list<SymbolEntry *> *LastToSyms = nullptr;
       for (int P = BRStack.size() - 1; P >= 0; --P) {
         const auto &BE = BRStack.Get(P);
         uint64_t From = BE.from_ip();
