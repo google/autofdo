@@ -164,9 +164,29 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
   uint64_t SymbolOrdinal = 0;
   fout << "Symbols" << std::endl;
   for (auto &LE : AddrMap) {
-    for (auto &SEPtr : LE.second) {
+    // Tricky case here:
+    // In the same address we have:
+    //    foo.bb.1
+    //    foo
+    // So we first output foo.bb.1, and at this time
+    //   foo.bb.1->containingFunc->Index == 0.
+    // We output 0.1, wrong!.
+    // To handle this, we sort LE by BBTag:
+    if (LE.second.size() > 1) {
+      LE.second.sort([](SymbolEntry *S1, SymbolEntry *S2) {
+        if (S1->BBTag != S2->BBTag) {
+          return !S1->BBTag;
+        }
+        // order irrelevant, but choose a stable relation.
+        return S1->Name < S2->Name;
+      });
+    }
+    // Then apply ordial to all before accessing.
+    for (auto *SEPtr : LE.second) {
+      SEPtr->Ordinal = ++SymbolOrdinal;
+    }
+    for (auto *SEPtr : LE.second) {
       SymbolEntry &SE = *SEPtr;
-      SE.Ordinal = ++SymbolOrdinal;
       fout << SymOrdinalF(SE) << " " << SymSizeF(SE) << " ";
       if (SE.BBTag) {
         fout << SymOrdinalF(*(SE.ContainingFunc)) << "."
@@ -195,6 +215,11 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
           (!ToSym->BBTag && ToSym->isFunction() &&
            ToSym->Addr == AdjustedTo)) {
         fout << " C";
+      } else if (AdjustedTo > ToSym->Addr) {
+        // Transfer to the middle of a basic block, usually a return, either a
+        // normal one or a return from recursive call, but could it be a dynamic
+        // jump?
+        fout << " R";
       }
       fout << std::endl;
     }
@@ -307,7 +332,7 @@ bool PropellerProfWriter::populateSymbolMap() {
     SymbolList.emplace_back(NewSymbolEntry);
     L.push_back(NewSymbolEntry);
     NewSymbolEntry->BBTag = SymbolEntry::isBBSymbol(Name);
-  }
+  }  // End of iterating all symbols.
 
   // Now scan all the symbols in address order to create function <-> bb
   // relationship.
@@ -529,13 +554,12 @@ void PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
       if (BRStack.empty()) continue;
       uint64_t LastFrom = INVALID_ADDRESS;
       uint64_t LastTo = INVALID_ADDRESS;
-      list<SymbolEntry *> *LastToSyms = nullptr;
       for (int P = BRStack.size() - 1; P >= 0; --P) {
         const auto &BE = BRStack.Get(P);
         uint64_t From = BE.from_ip();
         uint64_t To = BE.to_ip();
         ++(BranchCounters[std::make_pair(From, To)]);
-        if (LastTo != INVALID_ADDRESS) {
+        if (LastTo != INVALID_ADDRESS && LastTo <= From) {
           ++(FallthroughCounters[std::make_pair(LastTo, From)]);
         }
         LastTo = To;
