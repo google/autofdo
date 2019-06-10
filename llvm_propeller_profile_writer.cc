@@ -216,9 +216,11 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
           ToSym->ContainingFunc->Addr != AdjustedTo &&
           AdjustedTo == ToSym->Addr) { /* implies an inter-procedural return to the end of a basic block */
         auto *CallSiteSym = findSymbolAtAddress(To-1);
+        /*
         LOG(INFO) << std::hex << "Return From: 0x" << From << " To: 0x" << To
                   << " Callsite symbol: 0x" << (CallSiteSym ? CallSiteSym->Addr : 0x0)
                   << "\n" << std::dec;
+                  */
         if (CallSiteSym && CallSiteSym->BBTag){
           /* Account for the fall-through between CallSiteSym and ToSym. */
           CountersBySymbol[std::make_pair(CallSiteSym, ToSym)] += Cnt;
@@ -565,11 +567,16 @@ void PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
         const auto &BE = BRStack.Get(P);
         uint64_t From = BE.from_ip();
         uint64_t To = BE.to_ip();
+        if(P==0 && From==LastFrom && To==LastTo){
+          LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex << From << "-> 0x" << To << std::dec << "\n";
+          continue;
+        }
         ++(BranchCounters[std::make_pair(From, To)]);
         if (LastTo != INVALID_ADDRESS && LastTo <= From) {
           ++(FallthroughCounters[std::make_pair(LastTo, From)]);
         }
         LastTo = To;
+        LastFrom = From;
       }
     }
   }
