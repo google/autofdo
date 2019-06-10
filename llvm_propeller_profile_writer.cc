@@ -189,8 +189,10 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
       SymbolEntry &SE = *SEPtr;
       fout << SymOrdinalF(SE) << " " << SymSizeF(SE) << " ";
       if (SE.BBTag) {
-        fout << SymOrdinalF(*(SE.ContainingFunc)) << "."
-             << SE.getBBIndex().str() << std::endl;
+        fout << SymOrdinalF(*(SE.ContainingFunc)) << ".";
+        StringRef BBIndex = SE.Name;
+        fout << dec << (uint64_t)(BBIndex.bytes_end() - BBIndex.bytes_begin())
+             << std::endl;
       } else {
         fout << "N" << SymNameF(SE) << std::endl;
       }
@@ -214,12 +216,14 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       if (ToSym->BBTag &&
           (FromSym->ContainingFunc->Addr != ToSym->ContainingFunc->Addr) &&
           ToSym->ContainingFunc->Addr != AdjustedTo &&
-          AdjustedTo == ToSym->Addr) { /* implies an inter-procedural return to the end of a basic block */
-        auto *CallSiteSym = findSymbolAtAddress(To-1);
-        LOG(INFO) << std::hex << "Return From: 0x" << From << " To: 0x" << To
-                  << " Callsite symbol: 0x" << (CallSiteSym ? CallSiteSym->Addr : 0x0)
-                  << "\n" << std::dec;
-        if (CallSiteSym && CallSiteSym->BBTag){
+          AdjustedTo == ToSym->Addr) { /* implies an inter-procedural return to
+                                          the end of a basic block */
+        auto *CallSiteSym = findSymbolAtAddress(To - 1);
+        // LOG(INFO) << std::hex << "Return From: 0x" << From << " To: 0x" << To
+        //           << " Callsite symbol: 0x"
+        //           << (CallSiteSym ? CallSiteSym->Addr : 0x0) << "\n"
+        //           << std::dec;
+        if (CallSiteSym && CallSiteSym->BBTag) {
           /* Account for the fall-through between CallSiteSym and ToSym. */
           CountersBySymbol[std::make_pair(CallSiteSym, ToSym)] += Cnt;
           /* Reassign ToSym to be the actuall callsite symbol entry. */
@@ -313,10 +317,7 @@ bool PropellerProfWriter::populateSymbolMap() {
           // Make sure Name and Aliased name are both BB or both NON-BB.
           if (SymbolEntry::isBBSymbol(S->Name) !=
               SymbolEntry::isBBSymbol(Name)) {
-            LOG(ERROR)
-                << "Fatal: incompatible symbols have same addr and size: '"
-                << S->Name.str() << "' and '" << Name.str() << "'.";
-            return false;
+            continue;
           }
           S->Aliases.push_back(Name);
           if (!S->isFunction() &&
@@ -410,12 +411,17 @@ bool PropellerProfWriter::populateSymbolMap() {
           return false;
         }
       }
+      // Replace the whole name (e.g. "1.bb.foo" with "1" only);
+      StringRef BName;
+      SymbolEntry::isBBSymbol(S->Name, nullptr, &BName);
+      S->Name = BName;
     }
   }
   return true;
 }
 
 bool PropellerProfWriter::parsePerfData() {
+  fprintf(stderr, "Parse perf data...\n");
   quipper::PerfReader PR;
   if (!PR.ReadFile(PerfFileName)) {
     LOG(ERROR) << "Failed to read perf data file: " << PerfFileName;
