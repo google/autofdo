@@ -564,18 +564,25 @@ void PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
     if (EPtr->event_type_case() ==
         quipper::PerfDataProto_PerfEvent::kSampleEvent) {
       auto BRStack = EPtr->sample_event().branch_stack();
-      if (BRStack.empty()) continue;
+      if (BRStack.empty())
+        continue;
       uint64_t LastFrom = INVALID_ADDRESS;
       uint64_t LastTo = INVALID_ADDRESS;
       for (int P = BRStack.size() - 1; P >= 0; --P) {
         const auto &BE = BRStack.Get(P);
         uint64_t From = BE.from_ip();
         uint64_t To = BE.to_ip();
+        if (P == 0 && From == LastFrom && To == LastTo) {
+          LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex << From
+                    << "-> 0x" << To << std::dec << "\n";
+          continue;
+        }
         ++(BranchCounters[std::make_pair(From, To)]);
         if (LastTo != INVALID_ADDRESS && LastTo <= From) {
           ++(FallthroughCounters[std::make_pair(LastTo, From)]);
         }
         LastTo = To;
+        LastFrom = From;
       }
     }
   }
