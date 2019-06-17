@@ -7,6 +7,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -20,6 +21,7 @@ using std::list;
 using std::map;
 using std::ofstream;
 using std::pair;
+using std::set;
 using std::string;
 using std::unique_ptr;
 
@@ -107,7 +109,8 @@ public:
  private:
   const string BinaryFileName;
   const string PerfFileName;
-  const string OutFileName;
+  string PropOutFileName;
+  string ListOutFileName;
 
   // BinaryFileContent must be the last one to be destroyed.
   // So it appears first in this section.
@@ -135,6 +138,9 @@ public:
 
   map<pair<SymbolEntry *, SymbolEntry *>, uint64_t, SymbolEntryPairComp>
       CountersBySymbol;
+
+  // Functions that profiles, only used when ListOutFileName is given.
+  set<StringRef> FuncsWithProf;
 
   // Whether it is Position Independent Executable. If so, addresses from perf
   // file must be adjusted to map to symbols.

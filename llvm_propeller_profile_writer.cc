@@ -28,10 +28,22 @@ using std::list;
 using std::ofstream;
 using std::string;
 
-PropellerProfWriter::PropellerProfWriter(const string &BFN,
-                                   const string &PFN,
-                                   const string &OFN)
-    : BinaryFileName(BFN), PerfFileName(PFN), OutFileName(OFN) {}
+PropellerProfWriter::PropellerProfWriter(const string &BFN, const string &PFN,
+                                         const string &OFN)
+    : BinaryFileName(BFN), PerfFileName(PFN), ListOutFileName("") {
+  // Now we accept 2 file names from "OutFileName" e.g.
+  // "a.prop,a.funclist", if 2nd file name is present, we dump funclist to
+  // that file.
+  auto I = OFN.find(",");
+  if (I != std::string::npos) {
+    PropOutFileName = OFN.substr(0, I);
+    if (I + 1 < OFN.size()) {
+      ListOutFileName = OFN.substr(I + 1);
+    }
+  } else {
+    PropOutFileName = std::move(OFN);
+  }
+}
 
 PropellerProfWriter::~PropellerProfWriter() {}
 
@@ -148,15 +160,28 @@ bool PropellerProfWriter::write() {
       !compareBuildId()) {
     return false;
   }
-  ofstream fout(OutFileName);
+
+  ofstream fout(PropOutFileName);
   if (fout.bad()) {
-    LOG(ERROR) << "Failed to open '" << OutFileName << "' for writing.";
+    LOG(ERROR) << "Failed to open '" << PropOutFileName << "' for writing.";
     return false;
   }
   writeSymbols(fout);
   writeBranches(fout);
   writeFallthroughs(fout);
-  LOG(INFO) << "Wrote propeller profile to " << OutFileName;
+  LOG(INFO) << "Wrote propeller profile to " << PropOutFileName;
+
+  if(!FuncsWithProf.empty()) {
+    ofstream flist(ListOutFileName);
+    if (flist.bad()) {
+      LOG(ERROR) << "Failed to open '" << ListOutFileName << "' for writing.";
+      return false;
+    }
+    for (auto &F : FuncsWithProf) {
+      flist << F.str() << std::endl;
+    }
+    LOG(INFO) << "Wrote func list file to " << ListOutFileName;
+  }
   return true;
 }
 
@@ -202,6 +227,14 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
 
 void PropellerProfWriter::writeBranches(std::ofstream &fout) {
   fout << "Branches" << std::endl;
+  bool  ListOutFileNameEmpty = ListOutFileName.empty();
+  auto recordFuncsWithProf = [ListOutFileNameEmpty, this](SymbolEntry *S) {
+    if (ListOutFileNameEmpty || !S || !(S->ContainingFunc) ||
+        S->ContainingFunc->Name.empty())
+      return;
+    // Dups are properly handled by set.
+    FuncsWithProf.insert(S->ContainingFunc->Name);
+  };
   for (auto &EC : BranchCounters) {
     const uint64_t From = EC.first.first;
     const uint64_t To = EC.first.second;
@@ -209,6 +242,8 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
     auto *FromSym = findSymbolAtAddress(From);
     auto *ToSym = findSymbolAtAddress(To);
     const uint64_t AdjustedTo = adjustAddressForPIE(To);
+    recordFuncsWithProf(FromSym);
+    recordFuncsWithProf(ToSym);
     if (FromSym && ToSym) {
       /* If a return jumps to an address associated with a BB symbol ToSym,
        * then find the actual callsite symbol which is the symbol right
@@ -421,7 +456,6 @@ bool PropellerProfWriter::populateSymbolMap() {
 }
 
 bool PropellerProfWriter::parsePerfData() {
-  fprintf(stderr, "Parse perf data...\n");
   quipper::PerfReader PR;
   if (!PR.ReadFile(PerfFileName)) {
     LOG(ERROR) << "Failed to read perf data file: " << PerfFileName;
@@ -573,8 +607,8 @@ void PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
         uint64_t From = BE.from_ip();
         uint64_t To = BE.to_ip();
         if (P == 0 && From == LastFrom && To == LastTo) {
-          LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex << From
-                    << "-> 0x" << To << std::dec << "\n";
+          // LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex << From
+          //           << "-> 0x" << To << std::dec << "\n";
           continue;
         }
         ++(BranchCounters[std::make_pair(From, To)]);
