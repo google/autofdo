@@ -39,6 +39,9 @@ class PerfReader;
 
 // A sample output is like below:
 //
+// !func1
+// !func2
+// !func3
 // Symbols
 // 1 0 N.init/_init
 // 2 0 N.plt
@@ -73,7 +76,12 @@ class PerfReader;
 // 14 12 1376
 // 14 14 140856
 //
-// The file consists of 3 parts, "Symbols" and "Branches".
+// The file consists of 4 parts, "Symbols", "Branches", "Fallthroughs" and
+// Funclist.
+//
+// Funclist contains lines that starts with "!", and everything following that
+// will be the function name that's to be consumed by compiler (for bb section
+// generation purpose).
 //
 // Each line in "Symbols" section contains the following field:
 //   index    - in decimal, unique for each symbol, start from 1
@@ -109,8 +117,7 @@ public:
  private:
   const string BinaryFileName;
   const string PerfFileName;
-  string PropOutFileName;
-  string ListOutFileName;
+  const string PropOutFileName;
 
   // BinaryFileContent must be the last one to be destroyed.
   // So it appears first in this section.
@@ -173,6 +180,7 @@ public:
   bool populateSymbolMap();
   bool parsePerfData();
   bool compareBuildId();
+  void writeFuncList(ofstream &fout);
   void writeSymbols(ofstream &fout);
   void writeBranches(ofstream &fout);
   void writeFallthroughs(ofstream &fout);

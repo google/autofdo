@@ -30,20 +30,7 @@ using std::string;
 
 PropellerProfWriter::PropellerProfWriter(const string &BFN, const string &PFN,
                                          const string &OFN)
-    : BinaryFileName(BFN), PerfFileName(PFN), ListOutFileName("") {
-  // Now we accept 2 file names from "OutFileName" e.g.
-  // "a.prop,a.funclist", if 2nd file name is present, we dump funclist to
-  // that file.
-  auto I = OFN.find(",");
-  if (I != std::string::npos) {
-    PropOutFileName = OFN.substr(0, I);
-    if (I + 1 < OFN.size()) {
-      ListOutFileName = OFN.substr(I + 1);
-    }
-  } else {
-    PropOutFileName = std::move(OFN);
-  }
-}
+    : BinaryFileName(BFN), PerfFileName(PFN), PropOutFileName(OFN) {}
 
 PropellerProfWriter::~PropellerProfWriter() {}
 
@@ -166,23 +153,20 @@ bool PropellerProfWriter::write() {
     LOG(ERROR) << "Failed to open '" << PropOutFileName << "' for writing.";
     return false;
   }
+
   writeSymbols(fout);
   writeBranches(fout);
   writeFallthroughs(fout);
+  writeFuncList(fout);
   LOG(INFO) << "Wrote propeller profile to " << PropOutFileName;
-
-  if(!FuncsWithProf.empty()) {
-    ofstream flist(ListOutFileName);
-    if (flist.bad()) {
-      LOG(ERROR) << "Failed to open '" << ListOutFileName << "' for writing.";
-      return false;
-    }
-    for (auto &F : FuncsWithProf) {
-      flist << F.str() << std::endl;
-    }
-    LOG(INFO) << "Wrote func list file to " << ListOutFileName;
-  }
   return true;
+}
+
+void PropellerProfWriter::writeFuncList(ofstream &fout) {
+  for (auto &F : FuncsWithProf) {
+    fout << "!" << F.str() << std::endl;
+  }
+  fout << "!" << std::endl;
 }
 
 void PropellerProfWriter::writeSymbols(ofstream &fout) {
@@ -227,13 +211,11 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
 
 void PropellerProfWriter::writeBranches(std::ofstream &fout) {
   fout << "Branches" << std::endl;
-  bool  ListOutFileNameEmpty = ListOutFileName.empty();
-  auto recordFuncsWithProf = [ListOutFileNameEmpty, this](SymbolEntry *S) {
-    if (ListOutFileNameEmpty || !S || !(S->ContainingFunc) ||
-        S->ContainingFunc->Name.empty())
+  auto recordFuncsWithProf = [this](SymbolEntry *S) {
+    if (!S || !(S->ContainingFunc) || S->ContainingFunc->Name.empty())
       return;
     // Dups are properly handled by set.
-    FuncsWithProf.insert(S->ContainingFunc->Name);
+    this->FuncsWithProf.insert(S->ContainingFunc->Name);
   };
   for (auto &EC : BranchCounters) {
     const uint64_t From = EC.first.first;
