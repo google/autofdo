@@ -9,7 +9,10 @@
 #include <list>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <utility>
+
+#include "gflags/gflags.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -23,9 +26,13 @@
 #include "third_party/perf_data_converter/src/quipper/perf_parser.h"
 #include "third_party/perf_data_converter/src/quipper/perf_reader.h"
 
+DEFINE_string(match_mmap_file, "", "Match mmap event file path.");
+DEFINE_bool(ignore_build_id, false, "Ignore build id match.");
+
 using llvm::StringRef;
 using std::list;
 using std::ofstream;
+using std::pair;
 using std::string;
 
 PropellerProfWriter::PropellerProfWriter(const string &BFN, const string &PFN,
@@ -143,8 +150,8 @@ operator<<(std::ostream &out, const BuildIdWrapper &BW) {
 } // namespace
 
 bool PropellerProfWriter::write() {
-  if (!initBinaryFile() || !populateSymbolMap() || !parsePerfData() ||
-      !compareBuildId()) {
+  if (!initBinaryFile() || !findBinaryBuildId() || !populateSymbolMap() ||
+      !parsePerfData()) {
     return false;
   }
 
@@ -158,7 +165,11 @@ bool PropellerProfWriter::write() {
   writeBranches(fout);
   writeFallthroughs(fout);
   writeFuncList(fout);
-  LOG(INFO) << "Wrote propeller profile to " << PropOutFileName;
+  LOG(INFO) << "Wrote propeller profile (" << this->PerfDataFileParsed
+            << " file(s), " << this->SymbolsWritten << " syms, "
+            << this->BranchesWritten << " branches, "
+            << this->FallthroughsWritten << " fallthroughs) to "
+            << PropOutFileName;
   return true;
 }
 
@@ -170,6 +181,7 @@ void PropellerProfWriter::writeFuncList(ofstream &fout) {
 }
 
 void PropellerProfWriter::writeSymbols(ofstream &fout) {
+  this->SymbolsWritten = 0;
   uint64_t SymbolOrdinal = 0;
   fout << "Symbols" << std::endl;
   for (auto &LE : AddrMap) {
@@ -197,6 +209,7 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
     for (auto *SEPtr : LE.second) {
       SymbolEntry &SE = *SEPtr;
       fout << SymOrdinalF(SE) << " " << SymSizeF(SE) << " ";
+      ++this->SymbolsWritten;
       if (SE.BBTag) {
         fout << SymOrdinalF(*(SE.ContainingFunc)) << ".";
         StringRef BBIndex = SE.Name;
@@ -210,6 +223,7 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
 }
 
 void PropellerProfWriter::writeBranches(std::ofstream &fout) {
+  this->BranchesWritten = 0;
   fout << "Branches" << std::endl;
   auto recordFuncsWithProf = [this](SymbolEntry *S) {
     if (!S || !(S->ContainingFunc) || S->ContainingFunc->Name.empty())
@@ -261,6 +275,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
         fout << " R";
       }
       fout << std::endl;
+      ++this->BranchesWritten;
     }
   }
 }
@@ -280,6 +295,7 @@ void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
     fout << SymOrdinalF(*(FC.first.first)) << " "
          << SymOrdinalF(*(FC.first.second)) << " " << CountF(FC.second)
          << std::endl;
+  this->FallthroughsWritten = CountersBySymbol.size();
 }
 
 bool PropellerProfWriter::initBinaryFile() {
@@ -361,6 +377,7 @@ bool PropellerProfWriter::populateSymbolMap() {
   // relationship.
   decltype (AddrMap)::iterator LastFuncPos = AddrMap.end();
   for (auto P = AddrMap.begin(), Q = AddrMap.end(); P != Q; ++P) {
+    bool debug = (P->first == 0x000000083c867d);
     for (auto *S : P->second) {
       if (S->isFunction() && !S->BBTag) {
         LastFuncPos = P;
@@ -368,7 +385,6 @@ bool PropellerProfWriter::populateSymbolMap() {
       }
     }
     if (LastFuncPos == AddrMap.end())  continue;
-
     for (auto *S : P->second) {
       if (!S->BBTag){
         S->ContainingFunc = S;
@@ -378,7 +394,7 @@ bool PropellerProfWriter::populateSymbolMap() {
       SymbolEntry *ContainingFunc = nullptr;
       for (SymbolEntry *FP : LastFuncPos->second) {
         if (FP->isFunction() && !FP->BBTag &&
-            FP->containsAnotherSymbol(S) && FP->isFunctionForBBName(S->Name)) {
+            /*  FP->containsAnotherSymbol(S) && */ FP->isFunctionForBBName(S->Name)) {
           if (ContainingFunc == nullptr) {
             ContainingFunc = FP;
           } else {
@@ -417,9 +433,11 @@ bool PropellerProfWriter::populateSymbolMap() {
       }
       S->ContainingFunc = ContainingFunc;
       if (S->ContainingFunc == nullptr) {
-        LOG(ERROR) << "Failed to find function for bb symbol: " << S->Name.str()
-                   << " @ 0x" << hex << S->Addr;
-        return false;
+        LOG(ERROR) << "Warning: failed to find function for bb symbol, symbol "
+                      "is dropped: "
+                   << S->Name.str() << " @ 0x" << hex << S->Addr;
+        AddrMap.erase(P--);
+        break;
       } else {
         if (!ContainingFunc->isFunctionForBBName(S->Name)) {
           LOG(ERROR) << "Internal check warning: \n"
@@ -428,41 +446,61 @@ bool PropellerProfWriter::populateSymbolMap() {
           return false;
         }
       }
-      // Replace the whole name (e.g. "1.bb.foo" with "1" only);
+      // Replace the whole name (e.g. "aaaa.BB.foo" with "aaaa" only);
       StringRef BName;
       SymbolEntry::isBBSymbol(S->Name, nullptr, &BName);
       S->Name = BName;
-    }
-  }
+    }  // End of iterating P->second
+  }  // End of iterating AddrMap.
   return true;
 }
 
 bool PropellerProfWriter::parsePerfData() {
+  this->PerfDataFileParsed = 0;
+  StringRef FN(PerfFileName);
+  while (!FN.empty()) {
+    StringRef PerfName;
+    std::tie(PerfName, FN) = FN.split(',');
+    if (!parsePerfData(PerfName.str())) {
+      return false;
+    }
+    ++this->PerfDataFileParsed;
+  }
+  LOG(INFO) << "Processed " << this->PerfDataFileParsed << " perf file(s).";
+  return true;
+}
+
+bool PropellerProfWriter::parsePerfData(const string &PName) {
   quipper::PerfReader PR;
-  if (!PR.ReadFile(PerfFileName)) {
-    LOG(ERROR) << "Failed to read perf data file: " << PerfFileName;
+  if (!PR.ReadFile(PName)) {
+    LOG(ERROR) << "Failed to read perf data file: " << PName;
     return false;
   }
 
   quipper::PerfParser Parser(&PR);
   if (!Parser.ParseRawEvents()) {
-    LOG(ERROR) << "Failed to parse perf raw events.";
+    LOG(ERROR) << "Failed to parse perf raw events for perf file: " << PName;
     return false;
   }
 
-  if (!setupMMaps(Parser)) {
+  if (!FLAGS_ignore_build_id) {
+    if (!setupBinaryMMapName(PR, PName)) {
+      return false;
+    }
+  }
+
+  if (!setupMMaps(Parser, PName)) {
     LOG(ERROR) << "Failed to find perf mmaps for binary '" << BinaryFileName
                << "'.";
     return false;
   }
-
-  setupBinaryBuildId(PR);
-
+ 
   aggregateLBR(Parser);
   return true;
 }
 
-bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser) {
+bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
+                                     const string &PName) {
   // Depends on the binary file name, if
   //   - it is absolute, compares it agains the full path
   //   - it is relative, only compares the file name part
@@ -490,9 +528,11 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser) {
     static StringRef NameOnlyPathChanger(const string &S) {
       return llvm::sys::path::filename(StringRef(S));
     }
-  } CompFunc(this->BinaryFileName);
+  } CompFunc(FLAGS_match_mmap_file.empty()
+                 ? (this->BinaryMMapName.empty() ? BinaryFileName
+                                                 : this->BinaryMMapName)
+                 : FLAGS_match_mmap_file);
 
-  this->BinaryMMapName = "";
   for (const auto &PE : Parser.parsed_events()) {
     quipper::PerfDataProto_PerfEvent *EPtr = PE.event_ptr;
     if (EPtr->event_type_case() != quipper::PerfDataProto_PerfEvent::kMmapEvent)
@@ -511,7 +551,8 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser) {
       LOG(ERROR) << "'" << BinaryFileName
                  << "' is not specific enough. It matches both '"
                  << BinaryMMapName << "' and '" << MMapFileName
-                 << "' in the perf data file. Consider using absolute "
+                 << "' in the perf data file '" << PName
+                 << "'. Consider using absolute "
                     "file name.";
       return false;
     }
@@ -538,39 +579,49 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser) {
       BinaryMMaps[LoadAddr] = LoadSize;
     } else {
       LOG(ERROR) << "Found conflict MMap event: [" << hex << LoadAddr << ", "
-                 << hex << LoadAddr + LoadSize << ").";
+                 << hex << LoadAddr + LoadSize << ") in '" << PName << "'.";
       return false;
     }
   }  // End of iterating mmap events.
 
   if (BinaryMMaps.empty()) {
-    LOG(ERROR) << "Failed to find mmap entry for '" << BinaryFileName << "'. '"
-               << PerfFileName << "' does not match '" << BinaryFileName
-               << "'.";
+    LOG(ERROR) << "Failed to find '" << PName << "' mmap entry for '"
+               << BinaryFileName << "'. ";
     return false;
   }
   for (auto &M : BinaryMMaps) {
-    LOG(INFO) << "Find mmap for binary: '" << BinaryFileName
-              << "', start mapping address=" << hex << M.first
+    LOG(INFO) << "Found '" << PName << "' mmap for binary: '"
+              << BinaryFileName << "', start mapping address=" << hex << M.first
               << ", mapped size=" << M.second << ".";
   }
   return true;
 }
 
-bool PropellerProfWriter::setupBinaryBuildId(quipper::PerfReader &PR) {
-  for (const auto &BuildId: PR.build_ids()) {
-    if (BuildId.has_filename() && BuildId.has_build_id_hash() &&
-        BuildId.filename() == BinaryMMapName) {
-      BinaryBuildId = BuildId.build_id_hash();
-      quipper::PerfizeBuildIDString(&BinaryBuildId);
-      LOG(INFO) << "Found Build Id in perf data '" << PerfFileName
-                << "': " << BuildIdWrapper(BinaryBuildId.c_str());
-      return true;
+bool PropellerProfWriter::setupBinaryMMapName(quipper::PerfReader &PR,
+                                              const string &PName) {
+  this->BinaryMMapName = "";
+  if (FLAGS_ignore_build_id || this->BinaryBuildId.empty()) {
+    return true;
+  }
+  list<pair<string, string>> ExistingBuildIds;
+  for (const auto &BuildId : PR.build_ids()) {
+    if (BuildId.has_filename() && BuildId.has_build_id_hash()) {
+      string PerfBuildId = BuildId.build_id_hash();
+      quipper::PerfizeBuildIDString(&PerfBuildId);
+      ExistingBuildIds.emplace_back(BuildId.filename(), PerfBuildId);
+      if (PerfBuildId == this->BinaryBuildId) {
+        this->BinaryMMapName = BuildId.filename();
+        LOG(INFO) << "Found file with matching BuildId in perf file '" << PName
+                  << "': " << this->BinaryMMapName;
+        return true;
+      }
     }
   }
-  LOG(INFO) << "No Build Id info for '" << this->BinaryFileName
-            << "' found in '" << this->PerfFileName << "'.";
-  BinaryBuildId = "";
+  LOG(INFO) << "No file with matching BuildId in perf data '" << PName
+            << "', which contains the following <file, buildid>:";
+  for (auto &P : ExistingBuildIds) {
+    LOG(INFO) << "\t" << P.first << ": " << BuildIdWrapper(P.second.c_str());
+  }
   return false;
 }
 
@@ -604,13 +655,11 @@ void PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
   }
 }
 
-bool PropellerProfWriter::compareBuildId() {
-  if (this->BinaryBuildId.empty())
+bool PropellerProfWriter::findBinaryBuildId() {
+  this->BinaryBuildId = "";
+  if (FLAGS_ignore_build_id)
     return true;
-
-  // Extract build id and compare it against perf build id.
   bool BuildIdFound = false;
-  bool BuildIdMatch = true;
   for (auto &SR : ObjectFile->sections()) {
     llvm::object::ELFSectionRef ESR(SR);
     StringRef SName;
@@ -619,31 +668,22 @@ bool PropellerProfWriter::compareBuildId() {
         SR.getName(SName).value() == 0 && SName == ".note.gnu.build-id" &&
         ExpectedSContents && !ExpectedSContents->empty()) {
       StringRef SContents = *ExpectedSContents;
-      const unsigned char *P = SContents.bytes_end();
-      while (*(--P) && P >= SContents.bytes_begin())
-        ;
-      if (P < SContents.bytes_begin()) {
+      const unsigned char *P = SContents.bytes_begin() + 0x10;
+      if (P >= SContents.bytes_end()) {
         LOG(INFO) << "Section '.note.gnu.build-id' does not contain valid "
                       "build id information.";
         return true;
       }
-      string BuildId((const char *)(P + 1),
-                     SContents.size() - (P + 1 - SContents.bytes_begin()));
+      string BuildId((const char *)P, SContents.size() - 0x10);
       quipper::PerfizeBuildIDString(&BuildId);
+      this->BinaryBuildId = BuildId;
       LOG(INFO) << "Found Build Id in binary '" << BinaryFileName
                 << "': " << BuildIdWrapper(BuildId.c_str());
-
-      if (this->BinaryBuildId == BuildId) {
-        LOG(INFO) << "Binary Build Id and perf data Build Id match.";
-        return true;
-      } else {
-        LOG(ERROR) << "Build Ids do not match.";
-        return false;
-      }
+      return true;
     }
   }
   LOG(INFO) << "No Build Id found in '" << this->BinaryFileName << "'.";
-  return true;
+  return true;  // always returns true
 }
 
 #endif

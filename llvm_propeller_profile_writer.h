@@ -158,8 +158,13 @@ public:
   string                  BinaryMMapName;
   // Nullptr if build id does not exist for BinaryMMapName.
   string                  BinaryBuildId;
-  bool setupMMaps(quipper::PerfParser &Parser);
-  bool setupBinaryBuildId(quipper::PerfReader &R);
+  int32_t                 PerfDataFileParsed;
+  uint64_t                SymbolsWritten;
+  uint64_t                BranchesWritten;
+  uint64_t                FallthroughsWritten;
+  bool findBinaryBuildId();
+  bool setupMMaps(quipper::PerfParser &Parser, const string &PName);
+  bool setupBinaryMMapName(quipper::PerfReader &R, const string &PName);
 
   uint64_t findLoadAddress(uint64_t Addr) const {
     for (auto &P : BinaryMMaps)
@@ -179,7 +184,7 @@ public:
   bool initBinaryFile();
   bool populateSymbolMap();
   bool parsePerfData();
-  bool compareBuildId();
+  bool parsePerfData(const string &PName);
   void writeFuncList(ofstream &fout);
   void writeSymbols(ofstream &fout);
   void writeBranches(ofstream &fout);

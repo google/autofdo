@@ -24,7 +24,6 @@
 #include "llvm_profile_writer.h"
 #include "llvm_propeller_profile_writer.h"
 
-
 DEFINE_string(profile, "perf.data", "Input profile file name");
 DEFINE_string(profiler, "perf",
               "Input profile type. Possible values: perf, text, or prefetch");
