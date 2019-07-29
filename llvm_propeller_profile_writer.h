@@ -106,6 +106,23 @@ class PerfReader;
 // Each line in "Fallthroughs" section contains exactly the same fields as in
 // "Branches" section, except the "C" field.
 
+class MMapEntry {
+  public:
+    MMapEntry(uint64_t Addr, uint64_t Size, uint64_t PgOff)
+        : LoadAddr(Addr), LoadSize(Size), PageOffset(PgOff) {}
+    ~MMapEntry() {}
+
+    uint64_t LoadAddr;
+    uint64_t LoadSize;
+    uint64_t PageOffset;
+
+    uint64_t getEndAddr() const { return LoadAddr + LoadSize; }
+
+    bool operator < (const MMapEntry &M) const {
+      return this->LoadAddr < M.LoadAddr;
+    }
+};
+
 class PropellerProfWriter {
 public:
   
@@ -122,38 +139,42 @@ public:
   // BinaryFileContent must be the last one to be destroyed.
   // So it appears first in this section.
   unique_ptr<llvm::MemoryBuffer>       BinaryFileContent;
-  unique_ptr<llvm::object::ObjectFile> ObjectFile;
+  unique_ptr<llvm::object::ObjectFile> ObjFile;
   // All symbol handlers.
-  list<unique_ptr<SymbolEntry>>      SymbolList;
+  map<StringRef, unique_ptr<SymbolEntry>> SymbolNameMap;
   // Symbol start address -> Symbol list.
   map<uint64_t, list<SymbolEntry *>> AddrMap;
-  // Aggregated branch counters. <from, to> -> count.
-  map<pair<uint64_t, uint64_t>, uint64_t> BranchCounters;
-  map<pair<uint64_t, uint64_t>, uint64_t> FallthroughCounters;
+  using CounterTy = map<pair<uint64_t, uint64_t>, uint64_t>;
+  map<uint64_t, CounterTy> BranchCountersByPid;
+  map<uint64_t, CounterTy> FallthroughCountersByPid;
+  map<uint64_t, uint64_t>  PhdrLoadMap;  // Only used when binary is PIE.
 
   // Instead of sorting "SymbolEntry *" by pointer address, we sort it by it's
-  // symbol address, so we get a stable sort.
+  // symbol address and symbol ordinal, so we get a stable sort.
   struct SymbolEntryPairComp {
     using KeyT = pair<SymbolEntry *, SymbolEntry *>;
     bool operator()(const KeyT &K1, const KeyT &K2) const {
-      if (K1.first->Addr == K2.first->Addr) {
+      if (K1.first->Addr != K2.first->Addr)
+        return K1.first->Addr < K2.first->Addr;
+      if (K1.second->Addr != K2.second->Addr)
         return K1.second->Addr < K2.second->Addr;
-      }
-      return K1.first->Addr < K2.first->Addr;
+      return K1.first->Ordinal == K2.first->Ordinal
+                 ? K1.second->Ordinal < K2.second->Ordinal
+                 : K1.first->Ordinal < K2.first->Ordinal;
     }
   };
 
   map<pair<SymbolEntry *, SymbolEntry *>, uint64_t, SymbolEntryPairComp>
       CountersBySymbol;
 
-  // Functions that profiles, only used when ListOutFileName is given.
+  // Functions that have profiles.
   set<StringRef> FuncsWithProf;
 
   // Whether it is Position Independent Executable. If so, addresses from perf
   // file must be adjusted to map to symbols.
   bool BinaryIsPIE;
-  // MMap entries, load Addr -> Size.
-  map<uint64_t, uint64_t> BinaryMMaps;
+  // MMap entries, pid -> BinaryLoadMap
+  map<uint64_t, set<MMapEntry>> BinaryMMapByPid;
   // All binary mmaps must have the same BinaryMMapName.
   string                  BinaryMMapName;
   // Nullptr if build id does not exist for BinaryMMapName.
@@ -165,18 +186,26 @@ public:
   bool findBinaryBuildId();
   bool setupMMaps(quipper::PerfParser &Parser, const string &PName);
   bool setupBinaryMMapName(quipper::PerfReader &R, const string &PName);
+  bool checkBinaryMMapConfliction(uint64_t LoadAddr, uint64_t LoadSize,
+                                  uint64_t PageOffset, set<MMapEntry> &M);
 
-  uint64_t findLoadAddress(uint64_t Addr) const {
-    for (auto &P : BinaryMMaps)
-      if (P.first <= Addr && Addr < P.first + P.second) return P.first;
-    return INVALID_ADDRESS;
-  }
-
-  uint64_t adjustAddressForPIE(uint64_t Addr) const {
-      uint64_t LoadAddress = findLoadAddress(Addr);
-      if (LoadAddress == INVALID_ADDRESS) return INVALID_ADDRESS;
-      if (BinaryIsPIE) return Addr - LoadAddress;
-      return Addr;
+  uint64_t adjustAddressForPIE(uint64_t Pid, uint64_t Addr) const {
+    auto I = BinaryMMapByPid.find(Pid);
+    if (I == BinaryMMapByPid.end()) {
+      return INVALID_ADDRESS;
+    }
+    const MMapEntry *MMap{nullptr};
+    for (const MMapEntry &P : I->second)
+      if (P.LoadAddr <= Addr && Addr < P.LoadAddr + P.LoadSize)
+        MMap = &P;
+    if (!MMap) {
+      // fprintf(stderr, "!!! %ld 0x%lx 0x%lx\n", Pid, Addr);
+      return INVALID_ADDRESS;
+    }
+    if (BinaryIsPIE) {
+      return Addr - MMap->LoadAddr + MMap->PageOffset;
+    }
+    return Addr;
   }
 
   void aggregateLBR(quipper::PerfParser &Parser);
@@ -190,7 +219,7 @@ public:
   void writeBranches(ofstream &fout);
   void writeFallthroughs(ofstream &fout);
 
-  SymbolEntry * findSymbolAtAddress(const uint64_t Addr);
+  SymbolEntry * findSymbolAtAddress(uint64_t Pid, uint64_t Addr);
 
   static const uint64_t INVALID_ADDRESS = uint64_t(-1);
 };
