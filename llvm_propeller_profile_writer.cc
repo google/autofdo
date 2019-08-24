@@ -496,9 +496,9 @@ bool PropellerProfWriter::populateSymbolMap() {
 
     auto ExistingNameR = SymbolNameMap.find(Name);
     if (ExistingNameR != SymbolNameMap.end()) {
-      // LOG(ERROR) << "Dropped duplicate symbol \"" << Name.str() << "\". "
-      //            << "Consider using \"-funique-internal-funcnames\" to "
-      //               "dedupe internal function names.";
+      // LOG(INFO) << "Dropped duplicate symbol \"" << Name.str() << "\". "
+      //           << "Consider using \"-funique-internal-funcnames\" to "
+      //              "dedupe internal function names.";
       auto ExistingLI = AddrMap.find(ExistingNameR->second->Addr);
       if (ExistingLI != AddrMap.end()) {
         ExistingLI->second.remove_if(
@@ -537,7 +537,7 @@ bool PropellerProfWriter::populateSymbolMap() {
       SymbolEntry *ContainingFunc = nullptr;
       for (SymbolEntry *FP : LastFuncPos->second) {
         if (FP->isFunction() && !FP->BBTag &&
-            /*  FP->containsAnotherSymbol(S) && */
+            FP->containsAnotherSymbol(S) &&
             FP->isFunctionForBBName(S->Name)) {
           if (ContainingFunc == nullptr) {
             ContainingFunc = FP;
@@ -563,9 +563,12 @@ bool PropellerProfWriter::populateSymbolMap() {
         // 0x14 bar.bb.1
         // In this scenario, we seek lower address.
         auto T = LastFuncPos;
+        int FunctionSymbolSeen = 0;
         while (T != AddrMap.begin()) {
           T = std::prev(T);
+          bool isFunction = false;
           for (auto *KS : T->second) {
+            isFunction |= KS->isFunction();
             if (KS->isFunction() && !KS->BBTag &&
                 KS->containsAnotherSymbol(S) &&
                 KS->isFunctionForBBName(S->Name)) {
@@ -573,12 +576,15 @@ bool PropellerProfWriter::populateSymbolMap() {
               break;
             }
           }
+          FunctionSymbolSeen += isFunction ? 1 : 0;
+          // Only go back for at most 2 function symbols.
+          if (FunctionSymbolSeen > 2) break;
         }
       }
       S->ContainingFunc = ContainingFunc;
       if (S->ContainingFunc == nullptr) {
-        // LOG(ERROR) << "Dropped bb symbol without any wrapping function: \""
-        //            << S->Name.str() << "\" @ " << hex0x << S->Addr;
+        LOG(ERROR) << "Dropped bb symbol without any wrapping function: \""
+                   << S->Name.str() << "\" @ " << hex0x << S->Addr;
         ++BBSymbolDropped;
         AddrMap.erase(P--);
         break;
@@ -680,13 +686,6 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
                                                  : this->BinaryMMapName)
                  : FLAGS_match_mmap_file);
 
-  auto OutputMMEntryHelper = [](std::ostream &OS,
-                                const MMapEntry &ME) -> std::ostream & {
-    return OS << "[" << hex0x << ME.LoadAddr << ", " << hex0x << ME.getEndAddr()
-              << "] (PgOff=" << hex0x << ME.PageOffset << ", Size=" << hex0x
-              << ME.LoadSize << ")";
-  };
-
   for (const auto &PE : Parser.parsed_events()) {
     quipper::PerfDataProto_PerfEvent *EPtr = PE.event_ptr;
     if (EPtr->event_type_case() != quipper::PerfDataProto_PerfEvent::kMmapEvent)
@@ -720,18 +719,14 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
     uint64_t MPid = BinaryIsPIE ? MMap.pid() : 0;
     set<MMapEntry> &LoadMap = BinaryMMapByPid[MPid];
     // Check for mmap conflicts.
-    if (LoadMap.empty() ||
-        checkBinaryMMapConfliction(LoadAddr, LoadSize, PageOffset, LoadMap)) {
-      auto Result = LoadMap.emplace(LoadAddr, LoadSize, PageOffset);
-      (void)Result;
-      assert(Result.second);
-    } else {
+    if (!checkBinaryMMapConflictionAndEmplace(LoadAddr, LoadSize, PageOffset,
+                                              LoadMap)) {
       stringstream SS;
-      OutputMMEntryHelper(SS << "Found conflict MMap event: ",
-                          {LoadAddr, LoadSize, PageOffset})
-          << ". Existing MMap entries: " << std::endl;
+      SS << "Found conflict MMap event: "
+         << MMapEntry{LoadAddr, LoadSize, PageOffset}
+         << ". Existing MMap entries: " << std::endl;
       for (auto &EM : LoadMap) {
-        OutputMMEntryHelper(SS << "\t", EM) << std::endl;
+        SS << "\t" << EM << std::endl;
       }
       LOG(ERROR) << SS.str();
       return false;
@@ -743,7 +738,7 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
           [](uint64_t V, const decltype(BinaryMMapByPid)::value_type &S)
               -> uint64_t { return V + S.second.size(); })) {
     LOG(ERROR) << "Failed to find MMap entries in '" << PName << "' for '"
-               << BinaryFileName << "'. ";
+               << BinaryFileName << "'.";
     return false;
   }
   for (auto &M : BinaryMMapByPid) {
@@ -752,17 +747,16 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
        << "', pid=" << dec << M.first << " (0 for non-pie executables)"
        << std::endl;
     for (auto &N : M.second) {
-      OutputMMEntryHelper(SS << "\t", N) << std::endl;
+      SS << "\t" << N << std::endl;
     }
     LOG(INFO) << SS.str();
   }
   return true;
 }
 
-bool PropellerProfWriter::checkBinaryMMapConfliction(uint64_t LoadAddr,
-                                                     uint64_t LoadSize,
-                                                     uint64_t PageOffset,
-                                                     set<MMapEntry> &M) {
+bool PropellerProfWriter::checkBinaryMMapConflictionAndEmplace(
+    uint64_t LoadAddr, uint64_t LoadSize, uint64_t PageOffset,
+    set<MMapEntry> &M) {
   for (const MMapEntry &E : M) {
     if (E.LoadAddr == LoadAddr && E.LoadSize == LoadSize &&
         E.PageOffset == PageOffset)
@@ -771,6 +765,8 @@ bool PropellerProfWriter::checkBinaryMMapConfliction(uint64_t LoadAddr,
           (E.LoadAddr + E.LoadSize <= LoadAddr)))
       return false;
   }
+  auto R = M.emplace(LoadAddr, LoadSize, PageOffset);
+  assert(R.second);
   return true;
 }
 
@@ -849,9 +845,14 @@ bool PropellerProfWriter::findBinaryBuildId() {
   for (auto &SR : ObjFile->sections()) {
     llvm::object::ELFSectionRef ESR(SR);
     StringRef SName;
+    auto ExSecRefName = SR.getName();
+    if (ExSecRefName) {
+      SName = *ExSecRefName;
+    } else {
+      continue;
+    }
     auto ExpectedSContents = SR.getContents();
-    if (ESR.getType() == llvm::ELF::SHT_NOTE &&
-        SR.getName(SName).value() == 0 && SName == ".note.gnu.build-id" &&
+    if (ESR.getType() == llvm::ELF::SHT_NOTE && SName == ".note.gnu.build-id" &&
         ExpectedSContents && !ExpectedSContents->empty()) {
       StringRef SContents = *ExpectedSContents;
       const unsigned char *P = SContents.bytes_begin() + 0x10;

@@ -186,8 +186,10 @@ public:
   bool findBinaryBuildId();
   bool setupMMaps(quipper::PerfParser &Parser, const string &PName);
   bool setupBinaryMMapName(quipper::PerfReader &R, const string &PName);
-  bool checkBinaryMMapConfliction(uint64_t LoadAddr, uint64_t LoadSize,
-                                  uint64_t PageOffset, set<MMapEntry> &M);
+  bool checkBinaryMMapConflictionAndEmplace(uint64_t LoadAddr,
+                                            uint64_t LoadSize,
+                                            uint64_t PageOffset,
+                                            set<MMapEntry> &M);
 
   uint64_t adjustAddressForPIE(uint64_t Pid, uint64_t Addr) const {
     auto I = BinaryMMapByPid.find(Pid);
