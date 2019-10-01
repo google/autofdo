@@ -39,9 +39,6 @@ class PerfReader;
 
 // A sample output is like below:
 //
-// !func1
-// !func2
-// !func3
 // Symbols
 // 1 0 N.init/_init
 // 2 0 N.plt
@@ -75,6 +72,9 @@ class PerfReader;
 // 12 14 77103
 // 14 12 1376
 // 14 14 140856
+// !func1
+// !func2
+// !func3
 //
 // The file consists of 4 parts, "Symbols", "Branches", "Fallthroughs" and
 // Funclist.
@@ -105,6 +105,9 @@ class PerfReader;
 //
 // Each line in "Fallthroughs" section contains exactly the same fields as in
 // "Branches" section, except the "C" field.
+//
+// Each line that starts with "!" is followed by a function name, for
+// which, bb sections will be generated.
 
 class MMapEntry {
   public:
@@ -216,6 +219,7 @@ public:
   bool populateSymbolMap();
   bool parsePerfData();
   bool parsePerfData(const string &PName);
+  void writeOuts(ofstream &fout);
   void writeFuncList(ofstream &fout);
   void writeSymbols(ofstream &fout);
   void writeBranches(ofstream &fout);

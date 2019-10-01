@@ -182,6 +182,7 @@ bool PropellerProfWriter::write() {
     return false;
   }
 
+  writeOuts(fout);
   writeSymbols(fout);
   writeBranches(fout);
   writeFallthroughs(fout);
@@ -192,6 +193,15 @@ bool PropellerProfWriter::write() {
             << this->FallthroughsWritten << " fallthroughs) to "
             << PropOutFileName;
   return true;
+}
+
+void PropellerProfWriter::writeOuts(ofstream &fout) {
+  for (const auto &v :
+       set<string>{FLAGS_match_mmap_file, BinaryMMapName, BinaryFileName}) {
+    if (!v.empty()) {
+      fout << "@" << llvm::sys::path::filename(v).str() << std::endl;
+    }
+  }
 }
 
 void PropellerProfWriter::writeFuncList(ofstream &fout) {
