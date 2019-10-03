@@ -192,6 +192,34 @@ bool PropellerProfWriter::write() {
             << this->BranchesWritten << " branches, "
             << this->FallthroughsWritten << " fallthroughs) to "
             << PropOutFileName;
+
+  uint64_t TotalBBsWithinFuncsWithProf = 0;
+  for (auto &SE: FuncsWithProf) {
+    auto I = this->SymbolNameMap.find(SE);
+    if (I != this->SymbolNameMap.end()) {
+      auto *SEPtr = I->second.get();
+      if (!SEPtr->BBTag) {
+        TotalBBsWithinFuncsWithProf += this->FuncBBCounter[SEPtr->Ordinal];
+      }
+    }
+  }
+  uint64_t TotalFuncs = 0;
+  uint64_t TotalBBsAll = 0;
+  for (auto &P : this->SymbolNameMap) {
+    SymbolEntry *S = P.second.get();
+    if (S->BBTag) {
+      ++TotalBBsAll;
+    } else {
+      ++TotalFuncs;
+    }
+  }
+  uint64_t BBsWithProf = this->BBsWithProf.size();
+  LOG(INFO) << "Total funs: " << TotalFuncs
+            << ", total funcs w/ prof: " << FuncsWithProf.size()
+            << ", total BBs: " << TotalBBsAll
+            << ", total BBs within hot funcs: "
+            << TotalBBsWithinFuncsWithProf
+            << ", total BBs with prof: " << BBsWithProf;
   return true;
 }
 
@@ -246,6 +274,7 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
         StringRef BBIndex = SE.Name;
         fout << dec << (uint64_t)(BBIndex.bytes_end() - BBIndex.bytes_begin())
              << std::endl;
+        ++this->FuncBBCounter[SE.ContainingFunc->Ordinal];
       } else {
         fout << "N" << SymNameF(SE) << std::endl;
       }
@@ -261,6 +290,9 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       return;
     // Dups are properly handled by set.
     this->FuncsWithProf.insert(S->ContainingFunc->Name);
+    if (S->BBTag) {
+      this->BBsWithProf.insert(S->Ordinal);
+    }
   };
 
   using BrCntSummationKey = tuple<SymbolEntry *, SymbolEntry *, char>;

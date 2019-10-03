@@ -172,6 +172,7 @@ public:
 
   // Functions that have profiles.
   set<StringRef> FuncsWithProf;
+  set<uint64_t>  BBsWithProf;
 
   // Whether it is Position Independent Executable. If so, addresses from perf
   // file must be adjusted to map to symbols.
@@ -186,6 +187,7 @@ public:
   uint64_t                SymbolsWritten;
   uint64_t                BranchesWritten;
   uint64_t                FallthroughsWritten;
+  map<uint64_t, uint64_t> FuncBBCounter; // How many bb for each func.
   bool findBinaryBuildId();
   bool setupMMaps(quipper::PerfParser &Parser, const string &PName);
   bool setupBinaryMMapName(quipper::PerfReader &R, const string &PName);
