@@ -32,7 +32,7 @@ using llvm::StringRef;
 namespace quipper {
 class PerfParser;
 class PerfReader;
-}
+}  // namespace quipper
 
 // This class, given binary and perf.data file paths, writes profile data
 // that are to be consumed by plo optimizer.
@@ -110,25 +110,24 @@ class PerfReader;
 // which, bb sections will be generated.
 
 class MMapEntry {
-  public:
-    MMapEntry(uint64_t Addr, uint64_t Size, uint64_t PgOff)
-        : LoadAddr(Addr), LoadSize(Size), PageOffset(PgOff) {}
-    ~MMapEntry() {}
+ public:
+  MMapEntry(uint64_t Addr, uint64_t Size, uint64_t PgOff)
+      : LoadAddr(Addr), LoadSize(Size), PageOffset(PgOff) {}
+  ~MMapEntry() {}
 
-    uint64_t LoadAddr;
-    uint64_t LoadSize;
-    uint64_t PageOffset;
+  uint64_t LoadAddr;
+  uint64_t LoadSize;
+  uint64_t PageOffset;
 
-    uint64_t getEndAddr() const { return LoadAddr + LoadSize; }
+  uint64_t getEndAddr() const { return LoadAddr + LoadSize; }
 
-    bool operator < (const MMapEntry &M) const {
-      return this->LoadAddr < M.LoadAddr;
-    }
+  bool operator<(const MMapEntry &M) const {
+    return this->LoadAddr < M.LoadAddr;
+  }
 };
 
 class PropellerProfWriter {
-public:
-  
+ public:
   PropellerProfWriter(const string &BFN, const string &PFN, const string &OFN);
   ~PropellerProfWriter();
 
@@ -141,7 +140,7 @@ public:
 
   // BinaryFileContent must be the last one to be destroyed.
   // So it appears first in this section.
-  unique_ptr<llvm::MemoryBuffer>       BinaryFileContent;
+  unique_ptr<llvm::MemoryBuffer> BinaryFileContent;
   unique_ptr<llvm::object::ObjectFile> ObjFile;
   // All symbol handlers.
   map<StringRef, unique_ptr<SymbolEntry>> SymbolNameMap;
@@ -150,7 +149,7 @@ public:
   using CounterTy = map<pair<uint64_t, uint64_t>, uint64_t>;
   map<uint64_t, CounterTy> BranchCountersByPid;
   map<uint64_t, CounterTy> FallthroughCountersByPid;
-  map<uint64_t, uint64_t>  PhdrLoadMap;  // Only used when binary is PIE.
+  map<uint64_t, uint64_t> PhdrLoadMap;  // Only used when binary is PIE.
 
   // Instead of sorting "SymbolEntry *" by pointer address, we sort it by it's
   // symbol address and symbol ordinal, so we get a stable sort.
@@ -170,9 +169,16 @@ public:
   map<pair<SymbolEntry *, SymbolEntry *>, uint64_t, SymbolEntryPairComp>
       CountersBySymbol;
 
-  // Functions that have profiles.
-  set<StringRef> FuncsWithProf;
-  set<uint64_t>  BBsWithProf;
+  // Group all bb symbols under their wrapping functions, and order function
+  // groups by names.
+  struct SymGroupComparator {
+    bool operator()(SymbolEntry *S1, SymbolEntry *S2) const {
+      if (S1->ContainingFunc->Name != S2->ContainingFunc->Name)
+        return S1->ContainingFunc->Name < S2->ContainingFunc->Name;
+      return S1->Ordinal < S2->Ordinal;
+    }
+  };
+  set<SymbolEntry *, SymGroupComparator> HotSymbols;
 
   // Whether it is Position Independent Executable. If so, addresses from perf
   // file must be adjusted to map to symbols.
@@ -180,14 +186,14 @@ public:
   // MMap entries, pid -> BinaryLoadMap
   map<uint64_t, set<MMapEntry>> BinaryMMapByPid;
   // All binary mmaps must have the same BinaryMMapName.
-  string                  BinaryMMapName;
+  string BinaryMMapName;
   // Nullptr if build id does not exist for BinaryMMapName.
-  string                  BinaryBuildId;
-  int32_t                 PerfDataFileParsed;
-  uint64_t                SymbolsWritten;
-  uint64_t                BranchesWritten;
-  uint64_t                FallthroughsWritten;
-  map<uint64_t, uint64_t> FuncBBCounter; // How many bb for each func.
+  string BinaryBuildId;
+  int32_t PerfDataFileParsed;
+  uint64_t SymbolsWritten;
+  uint64_t BranchesWritten;
+  uint64_t FallthroughsWritten;
+  map<uint64_t, uint64_t> FuncBBCounter;  // How many bb for each func.
   bool findBinaryBuildId();
   bool setupMMaps(quipper::PerfParser &Parser, const string &PName);
   bool setupBinaryMMapName(quipper::PerfReader &R, const string &PName);
@@ -201,8 +207,7 @@ public:
     if (I == BinaryMMapByPid.end()) return INVALID_ADDRESS;
     const MMapEntry *MMap = nullptr;
     for (const MMapEntry &P : I->second)
-      if (P.LoadAddr <= Addr && Addr < P.LoadAddr + P.LoadSize)
-        MMap = &P;
+      if (P.LoadAddr <= Addr && Addr < P.LoadAddr + P.LoadSize) MMap = &P;
     if (!MMap) {
       // fprintf(stderr, "!!! %ld 0x%lx\n", Pid, Addr);
       return INVALID_ADDRESS;
@@ -220,12 +225,13 @@ public:
   bool parsePerfData();
   bool parsePerfData(const string &PName);
   void writeOuts(ofstream &fout);
-  void writeFuncList(ofstream &fout);
+  void writeHotFuncAndBBList(ofstream &fout);
   void writeSymbols(ofstream &fout);
   void writeBranches(ofstream &fout);
   void writeFallthroughs(ofstream &fout);
+  void summarize();
 
-  SymbolEntry * findSymbolAtAddress(uint64_t Pid, uint64_t Addr);
+  SymbolEntry *findSymbolAtAddress(uint64_t Pid, uint64_t Addr);
 
   static const uint64_t INVALID_ADDRESS = uint64_t(-1);
 };

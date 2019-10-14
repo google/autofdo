@@ -31,18 +31,18 @@ DEFINE_string(match_mmap_file, "", "Match mmap event file path.");
 DEFINE_bool(ignore_build_id, false, "Ignore build id match.");
 
 using llvm::dyn_cast;
-using llvm::object::ELFFile;
-using llvm::object::ELFObjectFileBase;
-using llvm::object::ELFObjectFile;
-using llvm::object::ObjectFile;
 using llvm::StringRef;
+using llvm::object::ELFFile;
+using llvm::object::ELFObjectFile;
+using llvm::object::ELFObjectFileBase;
+using llvm::object::ObjectFile;
 using std::list;
+using std::make_pair;
 using std::ofstream;
 using std::pair;
 using std::string;
 using std::stringstream;
 using std::tuple;
-using std::make_pair;
 
 PropellerProfWriter::PropellerProfWriter(const string &BFN, const string &PFN,
                                          const string &OFN)
@@ -50,8 +50,8 @@ PropellerProfWriter::PropellerProfWriter(const string &BFN, const string &PFN,
 
 PropellerProfWriter::~PropellerProfWriter() {}
 
-SymbolEntry *
-PropellerProfWriter::findSymbolAtAddress(uint64_t Pid, uint64_t OriginAddr) {
+SymbolEntry *PropellerProfWriter::findSymbolAtAddress(uint64_t Pid,
+                                                      uint64_t OriginAddr) {
   uint64_t Addr = adjustAddressForPIE(Pid, OriginAddr);
   if (Addr == INVALID_ADDRESS) return nullptr;
   auto U = AddrMap.upper_bound(Addr);
@@ -64,15 +64,13 @@ PropellerProfWriter::findSymbolAtAddress(uint64_t Pid, uint64_t OriginAddr) {
 
   list<SymbolEntry *> Candidates;
   for (auto &SymEnt : R->second)
-    if (SymEnt->containsAddress(Addr))
-      Candidates.emplace_back(SymEnt);
+    if (SymEnt->containsAddress(Addr)) Candidates.emplace_back(SymEnt);
 
   if (Candidates.empty()) return nullptr;
 
-   // Sort candidates by symbol size.
+  // Sort candidates by symbol size.
   Candidates.sort([](const SymbolEntry *S1, const SymbolEntry *S2) {
-    if (S1->Size != S2->Size)
-      return S1->Size < S2->Size;
+    if (S1->Size != S2->Size) return S1->Size < S2->Size;
     return S1->Name < S2->Name;
   });
 
@@ -108,17 +106,27 @@ struct SymSizeF : public SymBaseF {
 };
 
 struct CountF {
-  CountF(uint64_t C) : Cnt(C) {};
-
+  CountF(uint64_t C) : Cnt(C){};
   uint64_t Cnt;
+};
+
+struct CommaF {
+  CommaF(uint64_t v) : value(v) {}
+  uint64_t value;
+};
+
+struct PercentageF {
+  PercentageF(double d) : value(d) {}
+  PercentageF(uint64_t a, uint64_t b) : value((double)a / (double)b) {}
+  double value;
 };
 
 struct BuildIdWrapper {
   BuildIdWrapper(const quipper::PerfDataProto_PerfBuildID &BuildId)
       : Data(BuildId.build_id_hash().c_str()) {}
-  
+
   BuildIdWrapper(const char *P) : Data(P) {}
-    
+
   const char *Data;
 };
 
@@ -137,8 +145,7 @@ static std::ostream &operator<<(std::ostream &out, const struct Hex0xOut &) {
 static std::ostream &operator<<(std::ostream &out, const SymNameF &NameF) {
   auto &Sym = NameF.Symbol;
   out << Sym.Name.str();
-  for (auto A : Sym.Aliases)
-    out << "/" << A.str();
+  for (auto A : Sym.Aliases) out << "/" << A.str();
   return out;
 }
 
@@ -168,7 +175,34 @@ static std::ostream &operator<<(std::ostream &out, const BuildIdWrapper &BW) {
   }
   return out;
 }
-} // namespace
+
+// Output integer numbers in "," separated format.
+static std::ostream &operator<<(std::ostream &out, const CommaF &CF) {
+  std::list<int> seg;
+  uint64_t value = CF.value;
+  while (value) {
+    seg.insert(seg.begin(), value % 1000);
+    value /= 1000;
+  }
+  if (seg.empty()) seg.insert(seg.begin(), 0);
+  auto OF = out.fill();
+  auto OW = out.width();
+  auto i = seg.begin();
+  out << std::setfill('\0') << *i;
+  for (++i; i != seg.end(); ++i)
+    out << "," << std::setw(3) << std::setfill('0') << *i;
+  out.fill(OF);
+  out.width(OW);
+  return out;
+}
+
+static std::ostream &operator<<(std::ostream &out, const PercentageF &PF) {
+  out << std::setprecision(3);
+  out << (PF.value * 100) << '%';
+  return out;
+}
+
+}  // namespace
 
 bool PropellerProfWriter::write() {
   if (!initBinaryFile() || !findBinaryBuildId() || !populateSymbolMap() ||
@@ -186,61 +220,76 @@ bool PropellerProfWriter::write() {
   writeSymbols(fout);
   writeBranches(fout);
   writeFallthroughs(fout);
-  writeFuncList(fout);
-  LOG(INFO) << "Wrote propeller profile (" << this->PerfDataFileParsed
-            << " file(s), " << this->SymbolsWritten << " syms, "
-            << this->BranchesWritten << " branches, "
-            << this->FallthroughsWritten << " fallthroughs) to "
-            << PropOutFileName;
+  writeHotFuncAndBBList(fout);
+
+  summarize();
+  return true;
+}
+
+void PropellerProfWriter::summarize() {
+  LOG(INFO) << "Wrote propeller profile (" << PerfDataFileParsed << " file(s), "
+            << CommaF(SymbolsWritten) << " syms, " << CommaF(BranchesWritten)
+            << " branches, " << CommaF(FallthroughsWritten)
+            << " fallthroughs) to " << PropOutFileName;
 
   uint64_t TotalBBsWithinFuncsWithProf = 0;
-  for (auto &SE: FuncsWithProf) {
-    auto I = this->SymbolNameMap.find(SE);
+  uint64_t NumBBsWithProf = 0;
+  uint64_t NumFuncsWithProf = 0;
+  for (auto &SE : HotSymbols) {
+    if (SE->BBTag) {
+      ++NumBBsWithProf;
+      continue;
+    }
+    auto I = this->SymbolNameMap.find(SE->Name);
     if (I != this->SymbolNameMap.end()) {
+      ++NumFuncsWithProf;
       auto *SEPtr = I->second.get();
-      if (!SEPtr->BBTag) {
-        TotalBBsWithinFuncsWithProf += this->FuncBBCounter[SEPtr->Ordinal];
-      }
+      TotalBBsWithinFuncsWithProf += FuncBBCounter[SEPtr->Ordinal];
     }
   }
   uint64_t TotalFuncs = 0;
   uint64_t TotalBBsAll = 0;
   for (auto &P : this->SymbolNameMap) {
     SymbolEntry *S = P.second.get();
-    if (S->BBTag) {
+    if (S->BBTag)
       ++TotalBBsAll;
-    } else {
+    else
       ++TotalFuncs;
-    }
   }
-  uint64_t BBsWithProf = this->BBsWithProf.size();
-  LOG(INFO) << "Total function: " << TotalFuncs
-            << ", total function with prof: " << FuncsWithProf.size() << " ("
-            << std::setprecision(3) << FuncsWithProf.size() * 100 / TotalFuncs
-            << "%)"
-            << ", total BB: " << TotalBBsAll
-            << ", total BB within hot funcs: " << TotalBBsWithinFuncsWithProf
-            << ", total BB with prof: " << BBsWithProf << " ("
-            << std::setprecision(3) << BBsWithProf * 100 / TotalBBsAll << "%)";
-  return true;
+  LOG(INFO) << CommaF(TotalFuncs) << " functions, " << CommaF(NumFuncsWithProf)
+            << " functions with prof ("
+            << PercentageF(NumFuncsWithProf, TotalFuncs) << ")"
+            << ", " << CommaF(TotalBBsAll) << " BBs (average "
+            << TotalBBsAll / TotalFuncs << " BBs per func), "
+            << CommaF(TotalBBsWithinFuncsWithProf) << " BBs within hot funcs ("
+            << PercentageF(TotalBBsWithinFuncsWithProf, TotalBBsAll) << "), "
+            << CommaF(NumBBsWithProf) << " BBs with prof ("
+            << PercentageF(NumBBsWithProf, TotalBBsAll) << ").";
 }
 
 void PropellerProfWriter::writeOuts(ofstream &fout) {
   set<string> paths{FLAGS_match_mmap_file, BinaryMMapName, BinaryFileName};
   set<string> nameMatches;
   for (const auto &v : paths)
-    if (!v.empty())
-      nameMatches.insert(llvm::sys::path::filename(v).str());
+    if (!v.empty()) nameMatches.insert(llvm::sys::path::filename(v).str());
 
   for (const auto &v : nameMatches)
     if (!v.empty()) fout << "@" << v << std::endl;
 }
 
-void PropellerProfWriter::writeFuncList(ofstream &fout) {
-  for (auto &F : FuncsWithProf) {
-    fout << "!" << F.str() << std::endl;
-  }
-  fout << "!" << std::endl;
+void PropellerProfWriter::writeHotFuncAndBBList(ofstream &fout) {
+  SymbolEntry *LastFuncSymbol = nullptr;
+  for (auto *SE : HotSymbols)
+    if (SE->BBTag) {
+      if (LastFuncSymbol != SE->ContainingFunc) {
+        fout << "!" << SymNameF(*(SE->ContainingFunc)) << std::endl;
+        LastFuncSymbol = SE->ContainingFunc;
+      }
+      fout << "!" << SE->Name.size() << std::endl;
+    } else {
+      fout << "!" << SymNameF(*SE) << std::endl;
+      LastFuncSymbol = SE;
+    }
 }
 
 void PropellerProfWriter::writeSymbols(ofstream &fout) {
@@ -278,7 +327,7 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
         StringRef BBIndex = SE.Name;
         fout << dec << (uint64_t)(BBIndex.bytes_end() - BBIndex.bytes_begin())
              << std::endl;
-        ++this->FuncBBCounter[SE.ContainingFunc->Ordinal];
+        ++FuncBBCounter[SE.ContainingFunc->Ordinal];
       } else {
         fout << "N" << SymNameF(SE) << std::endl;
       }
@@ -289,14 +338,10 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
 void PropellerProfWriter::writeBranches(std::ofstream &fout) {
   this->BranchesWritten = 0;
   fout << "Branches" << std::endl;
-  auto recordFuncsWithProf = [this](SymbolEntry *S) {
-    if (!S || !(S->ContainingFunc) || S->ContainingFunc->Name.empty())
-      return;
+  auto recordHotSymbol = [this](SymbolEntry *S) {
+    if (!S || !(S->ContainingFunc) || S->ContainingFunc->Name.empty()) return;
     // Dups are properly handled by set.
-    this->FuncsWithProf.insert(S->ContainingFunc->Name);
-    if (S->BBTag) {
-      this->BBsWithProf.insert(S->Ordinal);
-    }
+    HotSymbols.insert(S);
   };
 
   using BrCntSummationKey = tuple<SymbolEntry *, SymbolEntry *, char>;
@@ -309,8 +354,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       std::tie(From2, To2, T2) = K2;
       if (From1->Ordinal != From2->Ordinal)
         return From1->Ordinal < From2->Ordinal;
-      if (To1->Ordinal != To2->Ordinal)
-        return To1->Ordinal < To2->Ordinal;
+      if (To1->Ordinal != To2->Ordinal) return To1->Ordinal < To2->Ordinal;
       return T1 < T2;
     }
   };
@@ -321,7 +365,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
   uint64_t TotalCounters = 0;
   uint64_t CountersNotAddressed = 0;
 
-  for (auto &BCPid: BranchCountersByPid) {
+  for (auto &BCPid : BranchCountersByPid) {
     const uint64_t Pid = BCPid.first;
     auto &BC = BCPid.second;
     for (auto &EC : BC) {
@@ -332,8 +376,8 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       auto *ToSym = findSymbolAtAddress(Pid, To);
       const uint64_t AdjustedTo = adjustAddressForPIE(Pid, To);
 
-      recordFuncsWithProf(FromSym);
-      recordFuncsWithProf(ToSym);
+      recordHotSymbol(FromSym);
+      recordHotSymbol(ToSym);
 
       TotalCounters += Cnt;
       if (!FromSym || !ToSym) CountersNotAddressed += Cnt;
@@ -393,9 +437,9 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
     ++this->BranchesWritten;
   }
 
-  LOG(INFO) << CountersNotAddressed << " of " << TotalCounters
+  LOG(INFO) << CommaF(CountersNotAddressed) << " of " << CommaF(TotalCounters)
             << " branch entries are not mapped (" << std::setprecision(3)
-            << CountersNotAddressed * 100 / TotalCounters << "%).";
+            << PercentageF(CountersNotAddressed, TotalCounters) << ").";
 }
 
 void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
@@ -448,7 +492,7 @@ bool fillELFPhdr(llvm::object::ELFObjectFileBase *EBFile,
   }
   stringstream SS;
   SS << "Loadable and executable segments:\n";
-  for (auto &Seg: PhdrLoadMap) {
+  for (auto &Seg : PhdrLoadMap) {
     SS << "\tvaddr=" << hex0x << Seg.first << ", memsz=" << hex0x << Seg.second
        << std::endl;
   }
@@ -459,8 +503,8 @@ bool fillELFPhdr(llvm::object::ELFObjectFileBase *EBFile,
 bool PropellerProfWriter::initBinaryFile() {
   auto FileOrError = llvm::MemoryBuffer::getFile(BinaryFileName);
   if (!FileOrError) {
-      LOG(ERROR) << "Failed to read file '" << BinaryFileName << "'.";
-      return false;
+    LOG(ERROR) << "Failed to read file '" << BinaryFileName << "'.";
+    return false;
   }
   this->BinaryFileContent = std::move(*FileOrError);
 
@@ -575,7 +619,7 @@ bool PropellerProfWriter::populateSymbolMap() {
   // Now scan all the symbols in address order to create function <-> bb
   // relationship.
   uint64_t BBSymbolDropped = 0;
-  decltype (AddrMap)::iterator LastFuncPos = AddrMap.end();
+  decltype(AddrMap)::iterator LastFuncPos = AddrMap.end();
   for (auto P = AddrMap.begin(), Q = AddrMap.end(); P != Q; ++P) {
     for (auto *S : P->second) {
       if (S->isFunction() && !S->BBTag) {
@@ -583,17 +627,16 @@ bool PropellerProfWriter::populateSymbolMap() {
         break;
       }
     }
-    if (LastFuncPos == AddrMap.end())  continue;
+    if (LastFuncPos == AddrMap.end()) continue;
     for (auto *S : P->second) {
-      if (!S->BBTag){
+      if (!S->BBTag) {
         S->ContainingFunc = S;
         continue;
       }
       // This is a bb symbol, find a wrapping func for it.
       SymbolEntry *ContainingFunc = nullptr;
       for (SymbolEntry *FP : LastFuncPos->second) {
-        if (FP->isFunction() && !FP->BBTag &&
-            FP->containsAnotherSymbol(S) &&
+        if (FP->isFunction() && !FP->BBTag && FP->containsAnotherSymbol(S) &&
             FP->isFunctionForBBName(S->Name)) {
           if (ContainingFunc == nullptr) {
             ContainingFunc = FP;
@@ -657,10 +700,10 @@ bool PropellerProfWriter::populateSymbolMap() {
       SymbolEntry::isBBSymbol(S->Name, nullptr, &BName);
       S->Name = BName;
     }  // End of iterating P->second
-  }  // End of iterating AddrMap.
-  if (BBSymbolDropped) {
-    LOG(INFO) << "Dropped " << dec << BBSymbolDropped << " bb symbol(s).";
-  }
+  }    // End of iterating AddrMap.
+  if (BBSymbolDropped)
+    LOG(INFO) << "Dropped " << dec << CommaF(BBSymbolDropped)
+              << " bb symbol(s).";
   return true;
 }
 
@@ -675,7 +718,7 @@ bool PropellerProfWriter::parsePerfData() {
     }
     ++this->PerfDataFileParsed;
   }
-  LOG(INFO) << "Processed " << this->PerfDataFileParsed << " perf file(s).";
+  LOG(INFO) << "Processed " << PerfDataFileParsed << " perf file(s).";
   return true;
 }
 
@@ -704,7 +747,7 @@ bool PropellerProfWriter::parsePerfData(const string &PName) {
                << "'.";
     return false;
   }
- 
+
   return aggregateLBR(Parser);
 }
 
@@ -866,8 +909,7 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
       auto &SEvent = EPtr->sample_event();
       if (!SEvent.has_pid()) continue;
       auto BRStack = SEvent.branch_stack();
-      if (BRStack.empty())
-        continue;
+      if (BRStack.empty()) continue;
       uint64_t Pid = BinaryIsPIE ? SEvent.pid() : 0;
       if (BinaryMMapByPid.find(Pid) == BinaryMMapByPid.end()) continue;
       auto &BranchCounters = BranchCountersByPid[Pid];
@@ -898,15 +940,14 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
                << " record(s) found), cannot continue.";
     return false;
   } else {
-    LOG(INFO) << "Processed " << brstackCount << " lbr records.";
+    LOG(INFO) << "Processed " << CommaF(brstackCount) << " lbr records.";
   }
   return true;
 }
 
 bool PropellerProfWriter::findBinaryBuildId() {
   this->BinaryBuildId = "";
-  if (FLAGS_ignore_build_id)
-    return true;
+  if (FLAGS_ignore_build_id) return true;
   bool BuildIdFound = false;
   for (auto &SR : ObjFile->sections()) {
     llvm::object::ELFSectionRef ESR(SR);
@@ -924,7 +965,7 @@ bool PropellerProfWriter::findBinaryBuildId() {
       const unsigned char *P = SContents.bytes_begin() + 0x10;
       if (P >= SContents.bytes_end()) {
         LOG(INFO) << "Section '.note.gnu.build-id' does not contain valid "
-                      "build id information.";
+                     "build id information.";
         return true;
       }
       string BuildId((const char *)P, SContents.size() - 0x10);
@@ -935,7 +976,7 @@ bool PropellerProfWriter::findBinaryBuildId() {
       return true;
     }
   }
-  LOG(INFO) << "No Build Id found in '" << this->BinaryFileName << "'.";
+  LOG(INFO) << "No Build Id found in '" << BinaryFileName << "'.";
   return true;  // always returns true
 }
 
