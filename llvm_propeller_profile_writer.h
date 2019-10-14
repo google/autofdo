@@ -198,15 +198,13 @@ public:
 
   uint64_t adjustAddressForPIE(uint64_t Pid, uint64_t Addr) const {
     auto I = BinaryMMapByPid.find(Pid);
-    if (I == BinaryMMapByPid.end()) {
-      return INVALID_ADDRESS;
-    }
-    const MMapEntry *MMap{nullptr};
+    if (I == BinaryMMapByPid.end()) return INVALID_ADDRESS;
+    const MMapEntry *MMap = nullptr;
     for (const MMapEntry &P : I->second)
       if (P.LoadAddr <= Addr && Addr < P.LoadAddr + P.LoadSize)
         MMap = &P;
     if (!MMap) {
-      // fprintf(stderr, "!!! %ld 0x%lx 0x%lx\n", Pid, Addr);
+      // fprintf(stderr, "!!! %ld 0x%lx\n", Pid, Addr);
       return INVALID_ADDRESS;
     }
     if (BinaryIsPIE) {
@@ -215,7 +213,7 @@ public:
     return Addr;
   }
 
-  void aggregateLBR(quipper::PerfParser &Parser);
+  bool aggregateLBR(quipper::PerfParser &Parser);
 
   bool initBinaryFile();
   bool populateSymbolMap();

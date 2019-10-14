@@ -214,22 +214,26 @@ bool PropellerProfWriter::write() {
     }
   }
   uint64_t BBsWithProf = this->BBsWithProf.size();
-  LOG(INFO) << "Total funs: " << TotalFuncs
-            << ", total funcs w/ prof: " << FuncsWithProf.size()
-            << ", total BBs: " << TotalBBsAll
-            << ", total BBs within hot funcs: "
-            << TotalBBsWithinFuncsWithProf
-            << ", total BBs with prof: " << BBsWithProf;
+  LOG(INFO) << "Total function: " << TotalFuncs
+            << ", total function with prof: " << FuncsWithProf.size() << " ("
+            << std::setprecision(3) << FuncsWithProf.size() * 100 / TotalFuncs
+            << "%)"
+            << ", total BB: " << TotalBBsAll
+            << ", total BB within hot funcs: " << TotalBBsWithinFuncsWithProf
+            << ", total BB with prof: " << BBsWithProf << " ("
+            << std::setprecision(3) << BBsWithProf * 100 / TotalBBsAll << "%)";
   return true;
 }
 
 void PropellerProfWriter::writeOuts(ofstream &fout) {
-  for (const auto &v :
-       set<string>{FLAGS_match_mmap_file, BinaryMMapName, BinaryFileName}) {
-    if (!v.empty()) {
-      fout << "@" << llvm::sys::path::filename(v).str() << std::endl;
-    }
-  }
+  set<string> paths{FLAGS_match_mmap_file, BinaryMMapName, BinaryFileName};
+  set<string> nameMatches;
+  for (const auto &v : paths)
+    if (!v.empty())
+      nameMatches.insert(llvm::sys::path::filename(v).str());
+
+  for (const auto &v : nameMatches)
+    if (!v.empty()) fout << "@" << v << std::endl;
 }
 
 void PropellerProfWriter::writeFuncList(ofstream &fout) {
@@ -314,6 +318,9 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       map<BrCntSummationKey, uint64_t, BrCntSummationKeyComp>;
   BrCntSummationTy BrCntSummation;
 
+  uint64_t TotalCounters = 0;
+  uint64_t CountersNotAddressed = 0;
+
   for (auto &BCPid: BranchCountersByPid) {
     const uint64_t Pid = BCPid.first;
     auto &BC = BCPid.second;
@@ -324,9 +331,12 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       auto *FromSym = findSymbolAtAddress(Pid, From);
       auto *ToSym = findSymbolAtAddress(Pid, To);
       const uint64_t AdjustedTo = adjustAddressForPIE(Pid, To);
-      
+
       recordFuncsWithProf(FromSym);
       recordFuncsWithProf(ToSym);
+
+      TotalCounters += Cnt;
+      if (!FromSym || !ToSym) CountersNotAddressed += Cnt;
       if (FromSym && ToSym) {
         /* If a return jumps to an address associated with a BB symbol ToSym,
          * then find the actual callsite symbol which is the symbol right
@@ -382,6 +392,10 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
     fout << std::endl;
     ++this->BranchesWritten;
   }
+
+  LOG(INFO) << CountersNotAddressed << " of " << TotalCounters
+            << " branch entries are not mapped (" << std::setprecision(3)
+            << CountersNotAddressed * 100 / TotalCounters << "%).";
 }
 
 void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
@@ -477,7 +491,7 @@ bool PropellerProfWriter::initBinaryFile() {
     }
   }
   LOG(INFO) << "'" << this->BinaryFileName
-               << "' is PIE binary: " << BinaryIsPIE;
+            << "' is PIE binary: " << BinaryIsPIE;
   return true;
 }
 
@@ -575,7 +589,7 @@ bool PropellerProfWriter::populateSymbolMap() {
         S->ContainingFunc = S;
         continue;
       }
-      // this is a bb symbol, find a wrapping func for it.
+      // This is a bb symbol, find a wrapping func for it.
       SymbolEntry *ContainingFunc = nullptr;
       for (SymbolEntry *FP : LastFuncPos->second) {
         if (FP->isFunction() && !FP->BBTag &&
@@ -586,7 +600,7 @@ bool PropellerProfWriter::populateSymbolMap() {
           } else {
             // Already has a containing function, so we have at least 2
             // different functions with different sizes but start at the same
-            // address, impossible.
+            // address, impossible?
             LOG(ERROR) << "Analyzing failure: at address 0x" << hex
                        << LastFuncPos->first
                        << ", there are 2 different functions: "
@@ -674,7 +688,8 @@ bool PropellerProfWriter::parsePerfData(const string &PName) {
 
   quipper::PerfParser Parser(&PR);
   if (!Parser.ParseRawEvents()) {
-    LOG(ERROR) << "Failed to parse perf raw events for perf file: " << PName;
+    LOG(ERROR) << "Failed to parse perf raw events for perf file: '" << PName
+               << "'.";
     return false;
   }
 
@@ -690,8 +705,7 @@ bool PropellerProfWriter::parsePerfData(const string &PName) {
     return false;
   }
  
-  aggregateLBR(Parser);
-  return true;
+  return aggregateLBR(Parser);
 }
 
 bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
@@ -843,7 +857,8 @@ bool PropellerProfWriter::setupBinaryMMapName(quipper::PerfReader &PR,
   return false;
 }
 
-void PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
+bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
+  uint64_t brstackCount = 0;
   for (const auto &PE : Parser.parsed_events()) {
     quipper::PerfDataProto_PerfEvent *EPtr = PE.event_ptr;
     if (EPtr->event_type_case() ==
@@ -854,11 +869,12 @@ void PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
       if (BRStack.empty())
         continue;
       uint64_t Pid = BinaryIsPIE ? SEvent.pid() : 0;
+      if (BinaryMMapByPid.find(Pid) == BinaryMMapByPid.end()) continue;
       auto &BranchCounters = BranchCountersByPid[Pid];
       auto &FallthroughCounters = FallthroughCountersByPid[Pid];
-      if (BinaryMMapByPid.find(Pid) == BinaryMMapByPid.end()) continue;
       uint64_t LastFrom = INVALID_ADDRESS;
       uint64_t LastTo = INVALID_ADDRESS;
+      brstackCount += BRStack.size();
       for (int P = BRStack.size() - 1; P >= 0; --P) {
         const auto &BE = BRStack.Get(P);
         uint64_t From = BE.from_ip();
@@ -877,6 +893,14 @@ void PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
       }
     }
   }
+  if (brstackCount < 100) {
+    LOG(ERROR) << "Too few brstack records (only " << brstackCount
+               << " record(s) found), cannot continue.";
+    return false;
+  } else {
+    LOG(INFO) << "Processed " << brstackCount << " lbr records.";
+  }
+  return true;
 }
 
 bool PropellerProfWriter::findBinaryBuildId() {
