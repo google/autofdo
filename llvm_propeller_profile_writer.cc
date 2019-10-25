@@ -234,18 +234,12 @@ void PropellerProfWriter::summarize() {
 
   uint64_t TotalBBsWithinFuncsWithProf = 0;
   uint64_t NumBBsWithProf = 0;
-  uint64_t NumFuncsWithProf = 0;
+  set<uint64_t> FuncsWithProf;
   for (auto &SE : HotSymbols) {
-    if (SE->BBTag) {
+    if (FuncsWithProf.insert(SE->ContainingFunc->Ordinal).second)
+      TotalBBsWithinFuncsWithProf += FuncBBCounter[SE->ContainingFunc->Ordinal];
+    if (SE->BBTag)
       ++NumBBsWithProf;
-      continue;
-    }
-    auto I = this->SymbolNameMap.find(SE->Name);
-    if (I != this->SymbolNameMap.end()) {
-      ++NumFuncsWithProf;
-      auto *SEPtr = I->second.get();
-      TotalBBsWithinFuncsWithProf += FuncBBCounter[SEPtr->Ordinal];
-    }
   }
   uint64_t TotalFuncs = 0;
   uint64_t TotalBBsAll = 0;
@@ -256,14 +250,16 @@ void PropellerProfWriter::summarize() {
     else
       ++TotalFuncs;
   }
-  LOG(INFO) << CommaF(TotalFuncs) << " functions, " << CommaF(NumFuncsWithProf)
-            << " functions with prof ("
-            << PercentageF(NumFuncsWithProf, TotalFuncs) << ")"
+  LOG(INFO) << CommaF(TotalFuncs) << " functions, "
+            << CommaF(FuncsWithProf.size()) << " functions with prof ("
+            << PercentageF(FuncsWithProf.size(), TotalFuncs) << ")"
             << ", " << CommaF(TotalBBsAll) << " BBs (average "
             << TotalBBsAll / TotalFuncs << " BBs per func), "
             << CommaF(TotalBBsWithinFuncsWithProf) << " BBs within hot funcs ("
             << PercentageF(TotalBBsWithinFuncsWithProf, TotalBBsAll) << "), "
-            << CommaF(NumBBsWithProf) << " BBs with prof ("
+            << CommaF(NumBBsWithProf)
+            << " BBs with prof (DOES NOT include BBs that are on the path of "
+               "fallthroughs, "
             << PercentageF(NumBBsWithProf, TotalBBsAll) << ").";
 }
 
@@ -285,7 +281,7 @@ void PropellerProfWriter::writeHotFuncAndBBList(ofstream &fout) {
         fout << "!" << SymNameF(*(SE->ContainingFunc)) << std::endl;
         LastFuncSymbol = SE->ContainingFunc;
       }
-      fout << "!" << SE->Name.size() << std::endl;
+      fout << "!!" << SE->Name.size() << std::endl;
     } else {
       fout << "!" << SymNameF(*SE) << std::endl;
       LastFuncSymbol = SE;
@@ -563,6 +559,11 @@ bool PropellerProfWriter::populateSymbolMap() {
     bool isBB = SymbolEntry::isBBSymbol(Name, &BBFunctionName);
 
     if (!isFunction && !isBB) continue;
+    if (isFunction && Size == 0) {
+      // LOG(INFO) << "Dropped zero-sized function symbol '" << Name.str() <<
+      // "'.";
+      continue;
+    }
     if (ExcludedSymbols.find(isBB ? BBFunctionName : Name) !=
         ExcludedSymbols.end()) {
       continue;
@@ -594,12 +595,15 @@ bool PropellerProfWriter::populateSymbolMap() {
       if (SymbolIsAliasedWith) continue;
     }
 
-    auto ExistingNameR = SymbolNameMap.find(Name);
+    // Delete symbol with same name from SymbolNameMap and AddrMap.
+    map<StringRef, unique_ptr<SymbolEntry>>::iterator ExistingNameR =
+        SymbolNameMap.find(Name);
     if (ExistingNameR != SymbolNameMap.end()) {
-      // LOG(INFO) << "Dropped duplicate symbol \"" << Name.str() << "\". "
-      //           << "Consider using \"-funique-internal-funcnames\" to "
-      //              "dedupe internal function names.";
-      auto ExistingLI = AddrMap.find(ExistingNameR->second->Addr);
+      LOG(INFO) << "Dropped duplicate symbol \"" << Name.str() << "\". "
+                << "Consider using \"-funique-internal-funcnames\" to "
+                   "dedupe internal function names.";
+      map<uint64_t, list<SymbolEntry *>>::iterator ExistingLI =
+          AddrMap.find(ExistingNameR->second->Addr);
       if (ExistingLI != AddrMap.end()) {
         ExistingLI->second.remove_if(
             [&Name](SymbolEntry *S) { return S->Name == Name; });
@@ -621,15 +625,25 @@ bool PropellerProfWriter::populateSymbolMap() {
   uint64_t BBSymbolDropped = 0;
   decltype(AddrMap)::iterator LastFuncPos = AddrMap.end();
   for (auto P = AddrMap.begin(), Q = AddrMap.end(); P != Q; ++P) {
+    int FuncCount = 0;
     for (auto *S : P->second) {
       if (S->isFunction() && !S->BBTag) {
+        if (++FuncCount > 1) {
+          // 2 different functions start at the same address, but with different
+          // sizes, this is not supported.
+          LOG(ERROR)
+              << "Analyzing failure: at address 0x" << hex << P->first
+              << ", there are more than 1 functions that have different sizes.";
+          return false;
+        }
         LastFuncPos = P;
-        break;
       }
     }
+
     if (LastFuncPos == AddrMap.end()) continue;
     for (auto *S : P->second) {
       if (!S->BBTag) {
+        // Set a function's wrapping function to itself.
         S->ContainingFunc = S;
         continue;
       }
@@ -695,9 +709,46 @@ bool PropellerProfWriter::populateSymbolMap() {
           return false;
         }
       }
+      
+      // Now here is the tricky thing to fix:
+      //    Wrapping func _zfooc2/_zfooc1/_zfooc3
+      //    bbname: a.BB._zfooc1
+      //
+      // We want to make sure the primary name (the name first appears in the
+      // alias) matches the bb name, so we change the wrapping func aliases to:
+      //    _zfooc1/_zfooc2/_zfooc3
+      // By doing this, the wrapping func matches "a.BB._zfooc1" correctly.
+      //
+      if (!ContainingFunc->Aliases.empty()) {
+        auto A = S->Name.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
+        auto ExpectFuncName = A.second;
+        auto &Aliases = ContainingFunc->Aliases;
+        if (ExpectFuncName != ContainingFunc->Name) {
+          SymbolEntry::AliasesTy::iterator P, Q;
+          for (P = Aliases.begin(), Q = Aliases.end(); P != Q; ++P)
+            if (*P == ExpectFuncName) break;
+
+          if (P == Q) {
+            LOG(ERROR) << "Internal check error: bb symbol '" << S->Name.str()
+                       << "' does not have a valid wrapping function.";
+            return false;
+          }
+          StringRef OldName = ContainingFunc->Name;
+          ContainingFunc->Name = *P;
+          Aliases.erase(P);
+          Aliases.push_back(OldName);
+        }
+      }
+
       // Replace the whole name (e.g. "aaaa.BB.foo" with "aaaa" only);
-      StringRef BName;
-      SymbolEntry::isBBSymbol(S->Name, nullptr, &BName);
+      StringRef FName, BName;
+      bool R = SymbolEntry::isBBSymbol(S->Name, &FName, &BName);
+      (void)(R);
+      assert(R);
+      if (FName != S->ContainingFunc->Name) {
+        LOG(ERROR) << "Internal check error: bb symbol '" << S->Name.str()
+                       << "' does not have a valid wrapping function.";
+      }
       S->Name = BName;
     }  // End of iterating P->second
   }    // End of iterating AddrMap.
