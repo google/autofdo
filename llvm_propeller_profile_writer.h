@@ -10,6 +10,7 @@
 #include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "lld/Common/PropellerCommon.h"
 #include "llvm/ADT/SmallVector.h"
@@ -167,7 +168,7 @@ class PropellerProfWriter {
   };
 
   map<pair<SymbolEntry *, SymbolEntry *>, uint64_t, SymbolEntryPairComp>
-      CountersBySymbol;
+      FallthroughCountersBySymbol;
 
   // Group all bb symbols under their wrapping functions, and order function
   // groups by names.
@@ -193,6 +194,10 @@ class PropellerProfWriter {
   uint64_t SymbolsWritten;
   uint64_t BranchesWritten;
   uint64_t FallthroughsWritten;
+  uint64_t ExtraBBsIncludedInFallthroughs;
+  uint64_t TotalCounters;
+  uint64_t CountersNotAddressed;
+  uint64_t CrossFunctionCounters;
   map<uint64_t, uint64_t> FuncBBCounter;  // How many bb for each func.
   bool findBinaryBuildId();
   bool setupMMaps(quipper::PerfParser &Parser, const string &PName);
@@ -219,6 +224,8 @@ class PropellerProfWriter {
   }
 
   bool aggregateLBR(quipper::PerfParser &Parser);
+  bool calculateBBPath(SymbolEntry *From, SymbolEntry *To,
+                       std::vector<SymbolEntry *> &Result);
 
   bool initBinaryFile();
   bool populateSymbolMap();

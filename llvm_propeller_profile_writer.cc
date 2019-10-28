@@ -12,6 +12,7 @@
 #include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "gflags/gflags.h"
 
@@ -105,6 +106,10 @@ struct SymSizeF : public SymBaseF {
   SymSizeF(const SymbolEntry &S) : SymBaseF(S) {}
 };
 
+struct SymShortF : public SymBaseF {
+  SymShortF(const SymbolEntry &S) : SymBaseF(S) {}
+};
+
 struct CountF {
   CountF(uint64_t C) : Cnt(C){};
   uint64_t Cnt;
@@ -144,8 +149,16 @@ static std::ostream &operator<<(std::ostream &out, const struct Hex0xOut &) {
 
 static std::ostream &operator<<(std::ostream &out, const SymNameF &NameF) {
   auto &Sym = NameF.Symbol;
-  out << Sym.Name.str();
-  for (auto A : Sym.Aliases) out << "/" << A.str();
+  auto SimplifiedName = [&Sym](StringRef Name) -> std::string {
+    if (Sym.BBTag)
+      return std::to_string(Name.split(lld::propeller::BASIC_BLOCK_SEPARATOR)
+                                .first.size()) +
+             ".BB." + Sym.ContainingFunc->Name.str();
+
+    return Name.str();
+  };
+  out << SimplifiedName(Sym.Name);
+  for (auto A : Sym.Aliases) out << "/" << SimplifiedName(A);
   return out;
 }
 
@@ -156,6 +169,11 @@ static std::ostream &operator<<(std::ostream &out,
 
 static std::ostream &operator<<(std::ostream &out, const SymSizeF &SizeF) {
   return out << hex << SizeF.Symbol.Size;
+}
+
+static std::ostream &operator<<(std::ostream &out, const SymShortF &SymSF) {
+  return out << "symbol '" << SymNameF(SymSF.Symbol) << "@" << hex0x
+             << SymSF.Symbol.Addr << "'";
 }
 
 static std::ostream &operator<<(std::ostream &out, const CountF &CountF) {
@@ -232,6 +250,14 @@ void PropellerProfWriter::summarize() {
             << " branches, " << CommaF(FallthroughsWritten)
             << " fallthroughs) to " << PropOutFileName;
 
+  LOG(INFO) << CommaF(CountersNotAddressed) << " of " << CommaF(TotalCounters)
+            << " branch entries are not mapped (" << std::setprecision(3)
+            << PercentageF(CountersNotAddressed, TotalCounters) << ").";
+
+  LOG(INFO) << CommaF(CrossFunctionCounters) << " of " << CommaF(TotalCounters)
+            << " branch entries are cross function. (" << std::setprecision(3)
+            << PercentageF(CrossFunctionCounters, TotalCounters) << ").";
+
   uint64_t TotalBBsWithinFuncsWithProf = 0;
   uint64_t NumBBsWithProf = 0;
   set<uint64_t> FuncsWithProf;
@@ -257,10 +283,11 @@ void PropellerProfWriter::summarize() {
             << TotalBBsAll / TotalFuncs << " BBs per func), "
             << CommaF(TotalBBsWithinFuncsWithProf) << " BBs within hot funcs ("
             << PercentageF(TotalBBsWithinFuncsWithProf, TotalBBsAll) << "), "
-            << CommaF(NumBBsWithProf)
-            << " BBs with prof (DOES NOT include BBs that are on the path of "
-               "fallthroughs, "
-            << PercentageF(NumBBsWithProf, TotalBBsAll) << ").";
+            << CommaF(NumBBsWithProf) << " BBs with prof (include "
+            << CommaF(ExtraBBsIncludedInFallthroughs)
+            << " BBs that are on the path of "
+               "fallthroughs, total accounted for "
+            << PercentageF(NumBBsWithProf, TotalBBsAll) << " of all BBs).";
 }
 
 void PropellerProfWriter::writeOuts(ofstream &fout) {
@@ -358,9 +385,9 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       map<BrCntSummationKey, uint64_t, BrCntSummationKeyComp>;
   BrCntSummationTy BrCntSummation;
 
-  uint64_t TotalCounters = 0;
-  uint64_t CountersNotAddressed = 0;
-
+  TotalCounters = 0;
+  CountersNotAddressed = 0;
+  CrossFunctionCounters = 0;
   for (auto &BCPid : BranchCountersByPid) {
     const uint64_t Pid = BCPid.first;
     auto &BC = BCPid.second;
@@ -378,6 +405,8 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       TotalCounters += Cnt;
       if (!FromSym || !ToSym) CountersNotAddressed += Cnt;
       if (FromSym && ToSym) {
+        if (FromSym->ContainingFunc != ToSym->ContainingFunc)
+          CrossFunctionCounters += Cnt;
         /* If a return jumps to an address associated with a BB symbol ToSym,
          * then find the actual callsite symbol which is the symbol right
          * before ToSym. */
@@ -394,7 +423,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
           //           << std::dec;
           if (CallSiteSym && CallSiteSym->BBTag) {
             /* Account for the fall-through between CallSiteSym and ToSym. */
-            CountersBySymbol[make_pair(CallSiteSym, ToSym)] += Cnt;
+            FallthroughCountersBySymbol[make_pair(CallSiteSym, ToSym)] += Cnt;
             /* Reassign ToSym to be the actuall callsite symbol entry. */
             ToSym = CallSiteSym;
           }
@@ -432,10 +461,60 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
     fout << std::endl;
     ++this->BranchesWritten;
   }
+}
 
-  LOG(INFO) << CommaF(CountersNotAddressed) << " of " << CommaF(TotalCounters)
-            << " branch entries are not mapped (" << std::setprecision(3)
-            << PercentageF(CountersNotAddressed, TotalCounters) << ").";
+// Compute all BBs from "From" -> "To", and place them in "Path".
+bool PropellerProfWriter::calculateBBPath(SymbolEntry *From, SymbolEntry *To,
+                                          std::vector<SymbolEntry *> &Path) {
+  if (From == To) return true;
+  if (From->Addr > To->Addr) {
+    LOG(FATAL) << "*** Internal error: fallthrough path start address is "
+                  "larger than end address. ***";
+    return false;
+  }
+  auto P = AddrMap.find(From->Addr), Q = AddrMap.find(To->Addr),
+       E = AddrMap.end();
+  if (P == E || Q == E) {
+    LOG(FATAL) << "*** Internal error: invalid symbol in fallthrough pair. ***";
+    return false;
+  }
+  if (From->ContainingFunc != To->ContainingFunc) {
+    LOG(ERROR) << "fallthrough (" << SymShortF(*From) << " -> "
+               << SymShortF(*To)
+               << ") does not start and end within the same faunction.";
+    return false;
+  }
+  auto Func = From->ContainingFunc;
+  auto I = P;
+  for (++I; I != Q && I != E; ++I) {
+    SymbolEntry *LastFoundSymbol = nullptr;
+    for (auto *SE : I->second) {
+      if (SE->BBTag && SE->ContainingFunc == Func) {
+        if (LastFoundSymbol) {
+          LOG(ERROR) << "fallthrough (" << SymShortF(*From) << " -> "
+                     << SymShortF(*To) << ") contains ambiguous "
+                     << SymShortF(*SE) << " and " << SymShortF(*LastFoundSymbol)
+                     << ".";
+        }
+        // Mark both ambiguous bbs as touched.
+        Path.emplace_back(SE);
+        LastFoundSymbol = SE;
+      }
+    }
+    if (!LastFoundSymbol) {
+      LOG(ERROR) << "failed to find a BB for "
+                 << "fallthrough (" << SymShortF(*From) << " -> "
+                 << SymShortF(*To) << "), the last found BB is "
+                 << SymShortF(*(*Path.rbegin()));
+      return false;
+    }
+    if (Path.size() >= 200) {
+      LOG(ERROR) << "too many BBs along fallthrough (" << SymShortF(*From)
+                 << " -> " << SymShortF(*To) << "), probably a bug.";
+      return false;
+    }
+  }
+  return true;
 }
 
 void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
@@ -446,17 +525,24 @@ void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
       auto *FromSym = this->findSymbolAtAddress(Pid, CA.first.first);
       auto *ToSym = this->findSymbolAtAddress(Pid, CA.first.second);
       if (FromSym && ToSym) {
-        CountersBySymbol[std::make_pair(FromSym, ToSym)] += Cnt;
+        FallthroughCountersBySymbol[std::make_pair(FromSym, ToSym)] += Cnt;
       }
     }
   }
 
   fout << "Fallthroughs" << std::endl;
-  for (auto &FC : CountersBySymbol)
+  ExtraBBsIncludedInFallthroughs = 0;
+  for (auto &FC : FallthroughCountersBySymbol) {
+    std::vector<SymbolEntry *> Path;
+    if (calculateBBPath(FC.first.first, FC.first.second, Path))
+      for (auto *S : Path)
+        ExtraBBsIncludedInFallthroughs += HotSymbols.insert(S).second ? 1 : 0;
+
     fout << SymOrdinalF(*(FC.first.first)) << " "
          << SymOrdinalF(*(FC.first.second)) << " " << CountF(FC.second)
          << std::endl;
-  this->FallthroughsWritten = CountersBySymbol.size();
+  }
+  this->FallthroughsWritten = FallthroughCountersBySymbol.size();
 }
 
 template <class ELFT>
