@@ -92,14 +92,25 @@ struct Hex0xOut {
 struct SymBaseF {
   SymBaseF(const SymbolEntry &S) : Symbol(S) {}
   const SymbolEntry &Symbol;
+
+  static SymbolEntry dummySymbolEntry;
 };
+
+SymbolEntry SymBaseF::dummySymbolEntry(0, "", SymbolEntry::AliasesTy(),
+                                       0, 0,  0);
 
 struct SymNameF : public SymBaseF {
   SymNameF(const SymbolEntry &S) : SymBaseF(S) {}
+  SymNameF(const SymbolEntry *S) : SymBaseF(*S) {}
+  SymNameF(const StringRef &N)
+      : SymBaseF(SymBaseF::dummySymbolEntry), Name(N) {}
+
+  StringRef Name;
 };
 
 struct SymOrdinalF : public SymBaseF {
   SymOrdinalF(const SymbolEntry &S) : SymBaseF(S) {}
+  SymOrdinalF(const SymbolEntry *S) : SymBaseF(*S) {}
 };
 
 struct SymSizeF : public SymBaseF {
@@ -108,6 +119,7 @@ struct SymSizeF : public SymBaseF {
 
 struct SymShortF : public SymBaseF {
   SymShortF(const SymbolEntry &S) : SymBaseF(S) {}
+  SymShortF(const SymbolEntry *S) : SymBaseF(*S) {}
 };
 
 struct CountF {
@@ -123,6 +135,10 @@ struct CommaF {
 struct PercentageF {
   PercentageF(double d) : value(d) {}
   PercentageF(uint64_t a, uint64_t b) : value((double)a / (double)b) {}
+  template<class C>
+  PercentageF(C &c, uint64_t b) : value((double)c.size() / (double)b) {}
+  template<class C, class D>
+  PercentageF(C &c, D &d) : value((double)c.size() / (double)d.size()) {}
   double value;
 };
 
@@ -149,16 +165,18 @@ static std::ostream &operator<<(std::ostream &out, const struct Hex0xOut &) {
 
 static std::ostream &operator<<(std::ostream &out, const SymNameF &NameF) {
   auto &Sym = NameF.Symbol;
-  auto SimplifiedName = [&Sym](StringRef Name) -> std::string {
-    if (Sym.BBTag)
-      return std::to_string(Name.split(lld::propeller::BASIC_BLOCK_SEPARATOR)
-                                .first.size()) +
-             ".BB." + Sym.ContainingFunc->Name.str();
-
-    return Name.str();
+  auto SimplifiedName = [&Sym](StringRef nameRef) -> std::string {
+    auto nameSplit = nameRef.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
+    if (!nameSplit.second.empty())
+      return std::to_string(nameSplit.first.size()) +
+             nameRef.substr(nameSplit.first.size()).str();
+    return nameRef.str();
   };
-  out << SimplifiedName(Sym.Name);
-  for (auto A : Sym.Aliases) out << "/" << SimplifiedName(A);
+  if (NameF.Name.empty()) {
+    out << SimplifiedName(Sym.Name);
+    for (auto A : Sym.Aliases) out << "/" << SimplifiedName(A);
+  } else
+    out << SimplifiedName(NameF.Name);
   return out;
 }
 
@@ -278,7 +296,7 @@ void PropellerProfWriter::summarize() {
   }
   LOG(INFO) << CommaF(TotalFuncs) << " functions, "
             << CommaF(FuncsWithProf.size()) << " functions with prof ("
-            << PercentageF(FuncsWithProf.size(), TotalFuncs) << ")"
+            << PercentageF(FuncsWithProf, TotalFuncs) << ")"
             << ", " << CommaF(TotalBBsAll) << " BBs (average "
             << TotalBBsAll / TotalFuncs << " BBs per func), "
             << CommaF(TotalBBsWithinFuncsWithProf) << " BBs within hot funcs ("
@@ -305,12 +323,12 @@ void PropellerProfWriter::writeHotFuncAndBBList(ofstream &fout) {
   for (auto *SE : HotSymbols)
     if (SE->BBTag) {
       if (LastFuncSymbol != SE->ContainingFunc) {
-        fout << "!" << SymNameF(*(SE->ContainingFunc)) << std::endl;
+        fout << "!" << SymNameF(SE->ContainingFunc) << std::endl;
         LastFuncSymbol = SE->ContainingFunc;
       }
       fout << "!!" << SE->Name.size() << std::endl;
     } else {
-      fout << "!" << SymNameF(*SE) << std::endl;
+      fout << "!" << SymNameF(SE) << std::endl;
       LastFuncSymbol = SE;
     }
 }
@@ -346,7 +364,7 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
       fout << SymOrdinalF(SE) << " " << SymSizeF(SE) << " ";
       ++this->SymbolsWritten;
       if (SE.BBTag) {
-        fout << SymOrdinalF(*(SE.ContainingFunc)) << ".";
+        fout << SymOrdinalF(SE.ContainingFunc) << ".";
         StringRef BBIndex = SE.Name;
         fout << dec << (uint64_t)(BBIndex.bytes_end() - BBIndex.bytes_begin())
              << std::endl;
@@ -388,6 +406,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
   TotalCounters = 0;
   CountersNotAddressed = 0;
   CrossFunctionCounters = 0;
+  // {pid: {<from, to>: count}}
   for (auto &BCPid : BranchCountersByPid) {
     const uint64_t Pid = BCPid.first;
     auto &BC = BCPid.second;
@@ -453,7 +472,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
     char Type;
     std::tie(FromSym, ToSym, Type) = BrEnt.first;
     uint64_t Cnt = BrEnt.second;
-    fout << SymOrdinalF(*FromSym) << " " << SymOrdinalF(*ToSym) << " "
+    fout << SymOrdinalF(FromSym) << " " << SymOrdinalF(ToSym) << " "
          << CountF(Cnt);
     if (Type != ' ') {
       fout << ' ' << Type;
@@ -463,9 +482,10 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
   }
 }
 
-// Compute all BBs from "From" -> "To", and place them in "Path".
-bool PropellerProfWriter::calculateBBPath(SymbolEntry *From, SymbolEntry *To,
-                                          std::vector<SymbolEntry *> &Path) {
+// Compute fallthrough BBs from "From" -> "To", and place them in "Path".
+// ("From" and "To" are excluded)
+bool PropellerProfWriter::calculateFallthroughBBs(
+    SymbolEntry *From, SymbolEntry *To, std::vector<SymbolEntry *> &Path) {
   if (From == To) return true;
   if (From->Addr > To->Addr) {
     LOG(FATAL) << "*** Internal error: fallthrough path start address is "
@@ -479,8 +499,8 @@ bool PropellerProfWriter::calculateBBPath(SymbolEntry *From, SymbolEntry *To,
     return false;
   }
   if (From->ContainingFunc != To->ContainingFunc) {
-    LOG(ERROR) << "fallthrough (" << SymShortF(*From) << " -> "
-               << SymShortF(*To)
+    LOG(ERROR) << "fallthrough (" << SymShortF(From) << " -> "
+               << SymShortF(To)
                << ") does not start and end within the same faunction.";
     return false;
   }
@@ -491,9 +511,9 @@ bool PropellerProfWriter::calculateBBPath(SymbolEntry *From, SymbolEntry *To,
     for (auto *SE : I->second) {
       if (SE->BBTag && SE->ContainingFunc == Func) {
         if (LastFoundSymbol) {
-          LOG(ERROR) << "fallthrough (" << SymShortF(*From) << " -> "
-                     << SymShortF(*To) << ") contains ambiguous "
-                     << SymShortF(*SE) << " and " << SymShortF(*LastFoundSymbol)
+          LOG(ERROR) << "fallthrough (" << SymShortF(From) << " -> "
+                     << SymShortF(To) << ") contains ambiguous "
+                     << SymShortF(SE) << " and " << SymShortF(LastFoundSymbol)
                      << ".";
         }
         // Mark both ambiguous bbs as touched.
@@ -504,13 +524,13 @@ bool PropellerProfWriter::calculateBBPath(SymbolEntry *From, SymbolEntry *To,
     if (!LastFoundSymbol) {
       LOG(ERROR) << "failed to find a BB for "
                  << "fallthrough (" << SymShortF(*From) << " -> "
-                 << SymShortF(*To) << "), the last found BB is "
-                 << SymShortF(*(*Path.rbegin()));
+                 << SymShortF(To) << "), the last found BB is "
+                 << SymShortF(*Path.rbegin());
       return false;
     }
     if (Path.size() >= 200) {
-      LOG(ERROR) << "too many BBs along fallthrough (" << SymShortF(*From)
-                 << " -> " << SymShortF(*To) << "), probably a bug.";
+      LOG(ERROR) << "too many BBs along fallthrough (" << SymShortF(From)
+                 << " -> " << SymShortF(To) << "), probably a bug.";
       return false;
     }
   }
@@ -518,15 +538,15 @@ bool PropellerProfWriter::calculateBBPath(SymbolEntry *From, SymbolEntry *To,
 }
 
 void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
+  // CAPid: {pid, <<from_addr, to_addr>, counter>}
   for (auto &CAPid : FallthroughCountersByPid) {
     uint64_t Pid = CAPid.first;
     for (auto &CA : CAPid.second) {
       const uint64_t Cnt = CA.second;
-      auto *FromSym = this->findSymbolAtAddress(Pid, CA.first.first);
-      auto *ToSym = this->findSymbolAtAddress(Pid, CA.first.second);
-      if (FromSym && ToSym) {
+      auto *FromSym = findSymbolAtAddress(Pid, CA.first.first);
+      auto *ToSym = findSymbolAtAddress(Pid, CA.first.second);
+      if (FromSym && ToSym)
         FallthroughCountersBySymbol[std::make_pair(FromSym, ToSym)] += Cnt;
-      }
     }
   }
 
@@ -534,9 +554,14 @@ void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
   ExtraBBsIncludedInFallthroughs = 0;
   for (auto &FC : FallthroughCountersBySymbol) {
     std::vector<SymbolEntry *> Path;
-    if (calculateBBPath(FC.first.first, FC.first.second, Path))
+    SymbolEntry *fallthroughFrom = FC.first.first,
+                *fallthroughTo = FC.first.second;
+    if (fallthroughFrom != fallthroughTo &&
+        calculateFallthroughBBs(fallthroughFrom, fallthroughTo, Path)) {
+      TotalCounters += (Path.size() + 1) * FC.second;
       for (auto *S : Path)
         ExtraBBsIncludedInFallthroughs += HotSymbols.insert(S).second ? 1 : 0;
+    }
 
     fout << SymOrdinalF(*(FC.first.first)) << " "
          << SymOrdinalF(*(FC.first.second)) << " " << CountF(FC.second)
@@ -685,7 +710,8 @@ bool PropellerProfWriter::populateSymbolMap() {
     map<StringRef, unique_ptr<SymbolEntry>>::iterator ExistingNameR =
         SymbolNameMap.find(Name);
     if (ExistingNameR != SymbolNameMap.end()) {
-      LOG(INFO) << "Dropped duplicate symbol \"" << Name.str() << "\". "
+      LOG(INFO) << "Dropped duplicate symbol \""
+                << SymNameF(*(ExistingNameR->second)) << "\". "
                 << "Consider using \"-funique-internal-funcnames\" to "
                    "dedupe internal function names.";
       map<uint64_t, list<SymbolEntry *>>::iterator ExistingLI =
@@ -747,8 +773,8 @@ bool PropellerProfWriter::populateSymbolMap() {
             LOG(ERROR) << "Analyzing failure: at address 0x" << hex
                        << LastFuncPos->first
                        << ", there are 2 different functions: "
-                       << ContainingFunc->Name.str() << " and "
-                       << FP->Name.str();
+                       << SymNameF(ContainingFunc) << " and "
+                       << SymNameF(FP);
             return false;
           }
         }
@@ -783,15 +809,15 @@ bool PropellerProfWriter::populateSymbolMap() {
       S->ContainingFunc = ContainingFunc;
       if (S->ContainingFunc == nullptr) {
         LOG(ERROR) << "Dropped bb symbol without any wrapping function: \""
-                   << S->Name.str() << "\" @ " << hex0x << S->Addr;
+                   << SymShortF(S) << "\"";
         ++BBSymbolDropped;
         AddrMap.erase(P--);
         break;
       } else {
         if (!ContainingFunc->isFunctionForBBName(S->Name)) {
           LOG(ERROR) << "Internal check warning: \n"
-                     << "Sym: " << S->Name.str() << "\n"
-                     << "Func: " << S->ContainingFunc->Name.str();
+                     << "Sym: " << SymShortF(S) << "\n"
+                     << "Func: " << SymShortF(S->ContainingFunc);
           return false;
         }
       }
@@ -1064,9 +1090,8 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
           continue;
         }
         ++(BranchCounters[make_pair(From, To)]);
-        if (LastTo != INVALID_ADDRESS && LastTo <= From) {
+        if (LastTo != INVALID_ADDRESS && LastTo <= From)
           ++(FallthroughCounters[make_pair(LastTo, From)]);
-        }
         LastTo = To;
         LastFrom = From;
       }
@@ -1076,9 +1101,8 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
     LOG(ERROR) << "Too few brstack records (only " << brstackCount
                << " record(s) found), cannot continue.";
     return false;
-  } else {
-    LOG(INFO) << "Processed " << CommaF(brstackCount) << " lbr records.";
   }
+  LOG(INFO) << "Processed " << CommaF(brstackCount) << " lbr records.";
   return true;
 }
 

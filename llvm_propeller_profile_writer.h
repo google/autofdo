@@ -224,8 +224,8 @@ class PropellerProfWriter {
   }
 
   bool aggregateLBR(quipper::PerfParser &Parser);
-  bool calculateBBPath(SymbolEntry *From, SymbolEntry *To,
-                       std::vector<SymbolEntry *> &Result);
+  bool calculateFallthroughBBs(SymbolEntry *From, SymbolEntry *To,
+                               std::vector<SymbolEntry *> &Result);
 
   bool initBinaryFile();
   bool populateSymbolMap();
