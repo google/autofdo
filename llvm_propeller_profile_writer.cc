@@ -524,8 +524,7 @@ bool PropellerProfWriter::calculateFallthroughBBs(
     if (!LastFoundSymbol) {
       LOG(ERROR) << "failed to find a BB for "
                  << "fallthrough (" << SymShortF(*From) << " -> "
-                 << SymShortF(To) << "), the last found BB is "
-                 << SymShortF(*Path.rbegin());
+                 << SymShortF(To) << ").";
       return false;
     }
     if (Path.size() >= 200) {
