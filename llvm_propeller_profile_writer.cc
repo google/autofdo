@@ -2,6 +2,11 @@
 #if defined(HAVE_LLVM)
 #include "llvm_propeller_profile_writer.h"
 
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include <fstream>
 #include <functional>
 #include <iomanip>
@@ -246,19 +251,52 @@ bool PropellerProfWriter::write() {
     return false;
   }
 
-  ofstream fout(PropOutFileName);
-  if (fout.bad()) {
-    LOG(ERROR) << "Failed to open '" << PropOutFileName << "' for writing.";
-    return false;
+  std::fstream::pos_type partBegin, partEnd, partNew;
+  {
+    ofstream fout(PropOutFileName);
+    if (fout.bad()) {
+      LOG(ERROR) << "Failed to open '" << PropOutFileName << "' for writing.";
+      return false;
+    }
+    writeOuts(fout);
+    partNew = fout.tellp();
+    writeSymbols(fout);
+    writeBranches(fout);
+    writeFallthroughs(fout);
+    partBegin = fout.tellp();
+    writeHotFuncAndBBList(fout);
+    partEnd = fout.tellp();
   }
-
-  writeOuts(fout);
-  writeSymbols(fout);
-  writeBranches(fout);
-  writeFallthroughs(fout);
-  writeHotFuncAndBBList(fout);
-
+  // This must be done after "fout" is closed.
+  if (!reorderSections(partBegin, partEnd, partNew)) {
+    LOG(ERROR)
+        << "Warn: failed to reorder propeller section, performance may suffer.";
+  }
   summarize();
+  return true;
+}
+
+// Move everything [partBegin, partEnd) -> partBegin.
+bool PropellerProfWriter::reorderSections(int64_t partBegin, int64_t partEnd,
+                                          int64_t partNew) {
+  struct FdWrapper {
+    FdWrapper(int fd) : v(fd) {}
+    ~FdWrapper() { if (v != -1) close(v); }
+    int v;
+  };
+  auto partLength = partEnd - partBegin;
+  FdWrapper fd(open(PropOutFileName.c_str(), O_RDWR));
+  if (fd.v == -1) return false;
+  unique_ptr<char> tmp(new char[partLength]);
+  if (!tmp) return false;
+  char *fileMem =
+      static_cast<char *>(mmap(NULL, partEnd, PROT_WRITE, MAP_SHARED, fd.v, 0));
+  if (MAP_FAILED == fileMem) return false;
+  memcpy(tmp.get(), fileMem + partBegin, partLength);
+  memmove(fileMem + partLength + partNew, fileMem + partNew,
+          partBegin - partNew);
+  memcpy(fileMem + partNew, tmp.get(), partLength);
+  munmap(fileMem, partEnd);
   return true;
 }
 
@@ -1083,11 +1121,15 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
         const auto &BE = BRStack.Get(P);
         uint64_t From = BE.from_ip();
         uint64_t To = BE.to_ip();
-        if (P == 0 && From == LastFrom && To == LastTo) {
-          // LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex << From
-          //           << "-> 0x" << To << std::dec << "\n";
-          continue;
-        }
+        // TODO: LBR sometimes duplicates the first entry by mistake. For now we
+        // treat these to be true entries.
+        
+        // if (P == 0 && From == LastFrom && To == LastTo) {
+        //   // LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
+        //   From
+        //   //           << "-> 0x" << To << std::dec << "\n";
+        //   continue;
+        // }
         ++(BranchCounters[make_pair(From, To)]);
         if (LastTo != INVALID_ADDRESS && LastTo <= From)
           ++(FallthroughCounters[make_pair(LastTo, From)]);

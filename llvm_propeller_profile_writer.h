@@ -232,10 +232,11 @@ class PropellerProfWriter {
   bool parsePerfData();
   bool parsePerfData(const string &PName);
   void writeOuts(ofstream &fout);
-  void writeHotFuncAndBBList(ofstream &fout);
   void writeSymbols(ofstream &fout);
   void writeBranches(ofstream &fout);
   void writeFallthroughs(ofstream &fout);
+  void writeHotFuncAndBBList(ofstream &fout);
+  bool reorderSections(int64_t partBegin, int64_t partEnd, int64_t partNew);
   void summarize();
 
   SymbolEntry *findSymbolAtAddress(uint64_t Pid, uint64_t Addr);
