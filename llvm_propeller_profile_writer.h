@@ -198,6 +198,8 @@ class PropellerProfWriter {
   uint64_t TotalCounters;
   uint64_t CountersNotAddressed;
   uint64_t CrossFunctionCounters;
+  uint64_t FallthroughStartEndInDifferentFuncs;
+  uint64_t FallthroughCalculationNumber;
   map<uint64_t, uint64_t> FuncBBCounter;  // How many bb for each func.
   bool findBinaryBuildId();
   bool setupMMaps(quipper::PerfParser &Parser, const string &PName);
