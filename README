@@ -8,7 +8,7 @@ line flags. However, the outputs are incompatible. You cannot
 use the profile generated for GCC in LLVM and vice-versa.
 
 Install dependencies:
-	sudo apt-get -y install autoconf automake git libelf-dev libssl-dev pkg-config
+	sudo apt-get -y install autoconf automake git libelf-dev libssl-dev pkg-config libtool
 
 Clone the repository using the following command:
 	git clone --recursive https://github.com/google/autofdo.git
