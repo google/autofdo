@@ -4,9 +4,12 @@
 #define _LLVM_PLO_PROFILE_WRITER_H_
 
 #include <fstream>
+#include <iostream>
 #include <list>
 #include <map>
 #include <memory>
+#include <ostream>
+#include <queue>
 #include <set>
 #include <string>
 #include <utility>
@@ -20,11 +23,16 @@
 
 using std::list;
 using std::map;
+using std::multiset;
+using std::ostream;
 using std::ofstream;
 using std::pair;
+using std::priority_queue;
 using std::set;
 using std::string;
+using std::tuple;
 using std::unique_ptr;
+using std::vector;
 
 using lld::propeller::SymbolEntry;
 using llvm::SmallVector;
@@ -124,6 +132,115 @@ class MMapEntry {
 
   bool operator<(const MMapEntry &M) const {
     return this->LoadAddr < M.LoadAddr;
+  }
+};
+
+class Path;
+
+ostream & operator << (ostream &out, const Path &p);
+
+class PropellerProfWriter;
+extern uint64_t merged;
+class Path {
+ public:
+  using Key = tuple<uint64_t, uint64_t, uint64_t>;
+
+  explicit Path(Path &&p)
+      : syms(std::move(p.syms)), cnts(std::move(p.cnts)), weight(p.weight) {}
+  explicit Path(vector<SymbolEntry *> &&O)
+      : syms(O), cnts(O.size(), 1), weight(O.size()) {}
+
+  bool operator<(const Path &p2) const {
+    return Key(syms[0]->Ordinal, syms[1]->Ordinal, syms[2]->Ordinal) <
+           Key(p2.syms[0]->Ordinal, p2.syms[1]->Ordinal, p2.syms[2]->Ordinal);
+  }
+
+  bool mergeableWith(const Path &p) const {
+    for (auto I = syms.begin(), J = syms.end(), P = p.syms.begin(),
+              Q = p.syms.end();
+         I != J && P != Q; ++I, ++P)
+      if ((*I)->Ordinal != (*P)->Ordinal) return false;
+    return true;
+  }
+
+  bool merge(Path &p) {
+    // std::cerr << "Merging " << std::endl;
+    // std::cerr << "\t" << *this << std::endl;
+    // std::cerr << "\t" << p << std::endl;
+    auto I = syms.begin(), J = syms.end(), P = p.syms.begin(), Q = p.syms.end();
+    auto C = cnts.begin(), D = cnts.end(), E = p.cnts.begin(), F = p.cnts.end();
+    for (; I != J && P != Q && C != D && E != F; ++I, ++P, ++C, ++E) *C += *E;
+    if (I == J) {
+      // "p" is longer than this, append p's syms and cnts to this.
+      syms.insert(J, P, Q);
+      cnts.insert(D, E, F);
+    } else {
+      // nothing to do
+      ;
+    }
+    this->weight += p.weight;
+    // std::cerr << "Into " << std::endl;
+    // std::cerr << "\t" << *this << std::endl;
+    ++merged;
+    return true;
+  }
+
+  bool expandToIncludeFallthroughs(PropellerProfWriter &PPWriter);
+
+  Key pathKey() const {
+    return Key(syms[0]->Ordinal, syms[1]->Ordinal, syms[2]->Ordinal);
+  }
+
+  vector<SymbolEntry *> syms;
+  vector<uint64_t> cnts;
+  uint64_t weight;
+};
+
+class PathProfile {
+ public:
+  using PathsTy = std::multimap<Path::Key, Path>;
+  using PathsIterator = PathsTy::iterator;
+
+  PathsTy Paths;
+
+  struct PathComparator {
+    bool operator()(Path *p1, Path *p2) const {
+      return p1->weight < p2->weight;
+    }
+  };
+
+  using MaxPathsTy = multiset<Path *, PathComparator>;
+  MaxPathsTy MaxPaths;
+
+  bool addSymSeq(vector<SymbolEntry *> &symSequence);
+
+  const static int MIN_LENGTH = 3;
+
+  const static int KEEP_MAX_PATHS = 500;
+
+ private:
+  // Do not make this "const", because "Path" object returned via this
+  // iterator might be modified.
+  pair<PathsIterator, PathsIterator> findPaths(vector<SymbolEntry *> &symSeq) {
+    return Paths.equal_range(
+        Path::Key(symSeq[0]->Ordinal, symSeq[1]->Ordinal, symSeq[2]->Ordinal));
+  }
+
+  void addToMaxPaths(Path &p) {
+    MaxPaths.insert(&p);
+    if (MaxPaths.size() >= KEEP_MAX_PATHS)
+      // Remove the Path w/ minimal weight
+      MaxPaths.erase(MaxPaths.begin());
+  }
+
+  void removeFromMaxPaths(Path &p) {
+    auto R = MaxPaths.equal_range(&p);
+    for (auto I = R.first; I != R.second; ++I) {
+      if (*I == &p) {
+        MaxPaths.erase(I);
+        return;
+      }
+    }
   }
 };
 
@@ -227,7 +344,7 @@ class PropellerProfWriter {
 
   bool aggregateLBR(quipper::PerfParser &Parser);
   bool calculateFallthroughBBs(SymbolEntry *From, SymbolEntry *To,
-                               std::vector<SymbolEntry *> &Result);
+                               vector<SymbolEntry *> &Result);
 
   bool initBinaryFile();
   bool populateSymbolMap();
@@ -242,6 +359,11 @@ class PropellerProfWriter {
   void summarize();
 
   SymbolEntry *findSymbolAtAddress(uint64_t Pid, uint64_t Addr);
+
+  PathProfile PProfile;
+
+  friend PathProfile;
+  friend Path;
 
   static const uint64_t INVALID_ADDRESS = uint64_t(-1);
 };

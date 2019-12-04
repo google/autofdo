@@ -253,10 +253,8 @@ static std::ostream &operator<<(std::ostream &out, const PercentageF &PF) {
 }  // namespace
 
 bool PropellerProfWriter::write() {
-  if (!initBinaryFile() || !findBinaryBuildId() || !populateSymbolMap() ||
-      !parsePerfData()) {
+  if (!initBinaryFile() || !findBinaryBuildId() || !populateSymbolMap())
     return false;
-  }
 
   std::fstream::pos_type partBegin, partEnd, partNew;
   {
@@ -268,6 +266,7 @@ bool PropellerProfWriter::write() {
     writeOuts(fout);
     partNew = fout.tellp();
     writeSymbols(fout);
+    if (!parsePerfData()) return false;
     writeBranches(fout);
     writeFallthroughs(fout);
     partBegin = fout.tellp();
@@ -539,10 +538,11 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
 // ("From" and "To" are excluded)
 bool PropellerProfWriter::calculateFallthroughBBs(
     SymbolEntry *From, SymbolEntry *To, std::vector<SymbolEntry *> &Path) {
+  Path.clear();
   ++FallthroughCalculationNumber;
   if (From == To) return true;
   if (From->Addr > To->Addr) {
-    LOG(FATAL) << "*** Internal error: fallthrough path start address is "
+    LOG(WARNING) << "*** Internal error: fallthrough path start address is "
                   "larger than end address. ***";
     return false;
   }
@@ -1121,48 +1121,90 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
   uint64_t brstackCount = 0;
   for (const auto &PE : Parser.parsed_events()) {
     quipper::PerfDataProto_PerfEvent *EPtr = PE.event_ptr;
-    if (EPtr->event_type_case() ==
-        quipper::PerfDataProto_PerfEvent::kSampleEvent) {
-      auto &SEvent = EPtr->sample_event();
-      if (!SEvent.has_pid()) continue;
-      auto BRStack = SEvent.branch_stack();
-      if (BRStack.empty()) continue;
-      uint64_t Pid = BinaryIsPIE ? SEvent.pid() : 0;
-      if (BinaryMMapByPid.find(Pid) == BinaryMMapByPid.end()) continue;
-      auto &BranchCounters = BranchCountersByPid[Pid];
-      auto &FallthroughCounters = FallthroughCountersByPid[Pid];
-      uint64_t LastFrom = INVALID_ADDRESS;
-      uint64_t LastTo = INVALID_ADDRESS;
-      brstackCount += BRStack.size();
-      for (int P = BRStack.size() - 1; P >= 0; --P) {
-        const auto &BE = BRStack.Get(P);
-        uint64_t From = BE.from_ip();
-        uint64_t To = BE.to_ip();
-        // TODO: LBR sometimes duplicates the first entry by mistake. For now we
-        // treat these to be true entries.
-        
-        // if (P == 0 && From == LastFrom && To == LastTo) {
-        //   // LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
-        //   From
-        //   //           << "-> 0x" << To << std::dec << "\n";
-        //   continue;
-        // }
-        ++(BranchCounters[make_pair(From, To)]);
-        if (LastTo != INVALID_ADDRESS && LastTo <= From)
-          ++(FallthroughCounters[make_pair(LastTo, From)]);
-        LastTo = To;
-        LastFrom = From;
-      }
-    }
-  }
+    if (EPtr->event_type_case() !=
+        quipper::PerfDataProto_PerfEvent::kSampleEvent)
+      continue;
+
+    auto &SEvent = EPtr->sample_event();
+    if (!SEvent.has_pid()) continue;
+    auto BRStack = SEvent.branch_stack();
+    if (BRStack.empty()) continue;
+    uint64_t Pid = BinaryIsPIE ? SEvent.pid() : 0;
+    if (BinaryMMapByPid.find(Pid) == BinaryMMapByPid.end()) continue;
+    auto &BranchCounters = BranchCountersByPid[Pid];
+    auto &FallthroughCounters = FallthroughCountersByPid[Pid];
+    uint64_t LastFrom = INVALID_ADDRESS;
+    uint64_t LastTo = INVALID_ADDRESS;
+    brstackCount += BRStack.size();
+    std::vector<SymbolEntry *> SymSeq{};
+    SymbolEntry *LastToSym = nullptr;
+    for (int P = BRStack.size() - 1; P >= 0; --P) {
+      const auto &BE = BRStack.Get(P);
+      uint64_t From = BE.from_ip();
+      uint64_t To = BE.to_ip();
+      // TODO: LBR sometimes duplicates the first entry by mistake. For now we
+      // treat these to be true entries.
+
+      // if (P == 0 && From == LastFrom && To == LastTo) {
+      //   // LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
+      //   From
+      //   //           << "-> 0x" << To << std::dec << "\n";
+      //   continue;
+      // }
+      ++(BranchCounters[make_pair(From, To)]);
+      if (LastTo != INVALID_ADDRESS && LastTo <= From)
+        ++(FallthroughCounters[make_pair(LastTo, From)]);
+
+      // Aggregate path information.
+      {
+        auto *FromSym = findSymbolAtAddress(Pid, From);
+        auto *ToSym = findSymbolAtAddress(Pid, To);
+        if (LastTo != INVALID_ADDRESS && LastTo > From) {
+          PProfile.addSymSeq(SymSeq);
+          SymSeq.clear();
+          goto done_path;
+        }
+
+        if (P == 0 && From == LastFrom && To == LastTo) {
+          // LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
+          // From
+          //           << "-> 0x" << To << std::dec << "\n";
+          goto done_path;
+        }
+        if (FromSym && ToSym) {
+          SymSeq.push_back(FromSym);
+          SymSeq.push_back(ToSym);
+        } else {
+          PProfile.addSymSeq(SymSeq);
+          SymSeq.clear();
+        }
+      done_path:;
+      }  // Done path profile
+
+      LastTo = To;
+      LastFrom = From;
+    }  // end of iterating one br record
+    PProfile.addSymSeq(SymSeq);
+    SymSeq.clear();
+  }  // End of iterating all br records.
   if (brstackCount < 100) {
     LOG(ERROR) << "Too few brstack records (only " << brstackCount
                << " record(s) found), cannot continue.";
     return false;
   }
   LOG(INFO) << "Processed " << CommaF(brstackCount) << " lbr records.";
+  fprintf(stderr, "Merged: %u\n", merged);
+  fprintf(stderr, "Total paths size: %u\n", PProfile.Paths.size());
+  for (auto I = PProfile.MaxPaths.begin(), J = PProfile.MaxPaths.end(); I != J; ++I) {
+    if ((*I)->expandToIncludeFallthroughs(*this)) {
+      std::cout << *(*I) << std::endl;
+    } else {
+    }
+  }
   return true;
 }
+
+uint64_t merged = 0;
 
 bool PropellerProfWriter::findBinaryBuildId() {
   this->BinaryBuildId = "";
@@ -1197,6 +1239,60 @@ bool PropellerProfWriter::findBinaryBuildId() {
   }
   LOG(INFO) << "No Build Id found in '" << BinaryFileName << "'.";
   return true;  // always returns true
+}
+
+bool PathProfile::addSymSeq(vector<SymbolEntry *> &symSeq) {
+  if (symSeq.size() < MIN_LENGTH) return false;
+  auto Range = findPaths(symSeq);
+  Path P1(std::move(symSeq));
+  for (auto I = Range.first; I != Range.second; ++I)
+    if (I->second.mergeableWith(P1)) {
+      Path &mergeable = I->second;
+      removeFromMaxPaths(mergeable);
+      mergeable.merge(P1);
+      addToMaxPaths(mergeable);
+      return true;
+    }
+
+  // Insert "P1" into PathProfile.
+  Path::Key K = P1.pathKey();
+  // std::cout << "Added path: " << P1 << std::endl;
+  addToMaxPaths(Paths.emplace(K, std::move(P1))->second);
+  return true;
+}
+
+bool Path::expandToIncludeFallthroughs(PropellerProfWriter &PPWriter) {
+  auto From = syms.begin(), E = syms.end();
+  auto To = std::next(From);
+  auto WFrom = cnts.begin(), WEnd = cnts.end();
+  auto WTo = std::next(WFrom);
+  uint64_t LastCnt;
+  SymbolEntry *LastTo = nullptr;
+  for (; To != E; ++From, ++To, ++WFrom, ++WTo) {
+    if (LastTo) {
+      vector<SymbolEntry *> FTs;
+      if (!PPWriter.calculateFallthroughBBs(LastTo, (*From), FTs))
+        return false;
+      if (!FTs.empty()) {
+        // Note, after this operation, From / To are still valid.
+        syms.insert(From, FTs.begin(), FTs.end());
+        cnts.insert(WFrom, FTs.size(), ((*WFrom + LastCnt) >> 1));
+      }
+    }
+    LastTo = *To;
+    LastCnt = *WTo;
+  }
+  return true;
+}
+
+ostream & operator << (ostream &out, const Path &p) {
+  out << "Path [" << p.syms.size() << "]: ";
+  auto I = p.syms.begin(), J = p.syms.end();
+  auto P = p.cnts.begin();
+  out << (*I)->Ordinal;
+  for (++I, ++P; I != J; ++I, ++P)
+    out << "-(" << *P << ")->" << (*I)->Ordinal;
+  return out;
 }
 
 #endif
