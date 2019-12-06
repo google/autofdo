@@ -140,7 +140,6 @@ class Path;
 ostream & operator << (ostream &out, const Path &p);
 
 class PropellerProfWriter;
-extern uint64_t merged;
 class Path {
  public:
   using Key = tuple<uint64_t, uint64_t, uint64_t>;
@@ -181,7 +180,6 @@ class Path {
     this->weight += p.weight;
     // std::cerr << "Into " << std::endl;
     // std::cerr << "\t" << *this << std::endl;
-    ++merged;
     return true;
   }
 

@@ -35,6 +35,7 @@
 
 DEFINE_string(match_mmap_file, "", "Match mmap event file path.");
 DEFINE_bool(ignore_build_id, false, "Ignore build id match.");
+DEFINE_bool(gen_path_profile, false, "Generate path profile.");
 
 using llvm::dyn_cast;
 using llvm::StringRef;
@@ -468,54 +469,90 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       const uint64_t Cnt = EC.second;
       auto *FromSym = findSymbolAtAddress(Pid, From);
       auto *ToSym = findSymbolAtAddress(Pid, To);
+      const uint64_t AdjustedFrom = adjustAddressForPIE(Pid, From);
       const uint64_t AdjustedTo = adjustAddressForPIE(Pid, To);
 
       recordHotSymbol(FromSym);
       recordHotSymbol(ToSym);
 
       TotalCounters += Cnt;
-      if (!FromSym || !ToSym) CountersNotAddressed += Cnt;
-      if (FromSym && ToSym) {
-        if (FromSym->ContainingFunc != ToSym->ContainingFunc)
-          CrossFunctionCounters += Cnt;
-        /* If a return jumps to an address associated with a BB symbol ToSym,
-         * then find the actual callsite symbol which is the symbol right
-         * before ToSym. */
-        if (ToSym->BBTag &&
-            (FromSym->ContainingFunc->Addr != ToSym->ContainingFunc->Addr) &&
-            ToSym->ContainingFunc->Addr != AdjustedTo &&
-            AdjustedTo == ToSym->Addr) { /* implies an inter-procedural return
-                                            to the end of a basic block */
-          auto *CallSiteSym = findSymbolAtAddress(Pid, To - 1);
-          // LOG(INFO) << std::hex << "Return From: 0x" << From << " To: 0x" <<
-          // To
-          //           << " Callsite symbol: 0x"
-          //           << (CallSiteSym ? CallSiteSym->Addr : 0x0) << "\n"
-          //           << std::dec;
-          if (CallSiteSym && CallSiteSym->BBTag) {
-            /* Account for the fall-through between CallSiteSym and ToSym. */
-            FallthroughCountersBySymbol[make_pair(CallSiteSym, ToSym)] += Cnt;
-            /* Reassign ToSym to be the actuall callsite symbol entry. */
-            ToSym = CallSiteSym;
+      if (!FromSym || !ToSym) {
+        CountersNotAddressed += Cnt;
+        continue;
+      }
+
+      if (FromSym->ContainingFunc != ToSym->ContainingFunc)
+        CrossFunctionCounters += Cnt;
+
+      // Special handling of fallthrough counts for recursive call
+      //   foo  <-------+  To Address
+      //     ...        |
+      //     ...        |
+      //   bb1:         |
+      //     ...        |
+      //     ...        |
+      //   bb2:         |
+      //     ...        |
+      //     ...        |
+      //   bb3:         |
+      //     ...        |
+      //     ...        |
+      //     call foo --+  From Address
+      //   bb4:            Next Address
+      //     ...
+      //
+      // For the above case, we must create a fallthrough edge from bb3->bb4 (if
+      // there is no such one exists) and add profile count of call foo to the
+      // edge counter.
+
+      if (ToSym->ContainingFunc == FromSym->ContainingFunc &&
+          ToSym != FromSym && !ToSym->BBTag && FromSym->BBTag &&
+          ToSym->ContainingFunc->Addr == AdjustedTo) {
+        // Let's see if "call foo" is the last insn of a basicblock. We assume
+        // the "call" instruction is less than 6 byteslong.
+        if (AdjustedFrom >= FromSym->Addr + FromSym->Size - 6) {
+          // Now insn_length is 6 or less.
+          int insn_length = FromSym->Addr + FromSym->Size - AdjustedFrom;
+          // Assume call is the last insn of the basic block, then From +
+          // insn_length + 2 should be inside another new basic block (or
+          // other function).
+          uint64_t NextAddress = From + insn_length + 2;
+          auto *FallthroughTo = findSymbolAtAddress(Pid, NextAddress);
+          if (FallthroughTo &&
+              FallthroughTo->ContainingFunc == FromSym->ContainingFunc) {
+            FallthroughCountersBySymbol[make_pair(FromSym, FallthroughTo)] +=
+                Cnt;
           }
         }
-
-        char Type = ' ';
-        if ((ToSym->BBTag && ToSym->ContainingFunc->Addr == AdjustedTo) ||
-            (!ToSym->BBTag && ToSym->isFunction() &&
-             ToSym->Addr == AdjustedTo)) {
-          Type = 'C';
-        } else if (AdjustedTo > ToSym->Addr) {
-          // Transfer to the middle of a basic block, usually a return, either a
-          // normal one or a return from recursive call, but could it be a
-          // dynamic jump?
-          Type = 'R';
-          // fprintf(stderr, "R: From=0x%lx(0x%lx), To=0x%lx(0x%lx), Pid=%ld\n",
-          //         From, adjustAddressForPIE(Pid, From), To,
-          //         adjustAddressForPIE(Pid, To), Pid);
-        }
-        BrCntSummation[std::make_tuple(FromSym, ToSym, Type)] += Cnt;
       }
+
+      if (ToSym->BBTag &&
+          (FromSym->ContainingFunc->Addr != ToSym->ContainingFunc->Addr) &&
+          ToSym->ContainingFunc->Addr != AdjustedTo &&
+          AdjustedTo == ToSym->Addr) {
+        auto *CallSiteSym = findSymbolAtAddress(Pid, To - 1);
+        if (CallSiteSym && CallSiteSym->BBTag) {
+          /* Account for the fall-through between CallSiteSym and ToSym. */
+          FallthroughCountersBySymbol[make_pair(CallSiteSym, ToSym)] += Cnt;
+          /* Reassign ToSym to be the actuall callsite symbol entry. */
+          ToSym = CallSiteSym;
+        }
+      }
+
+      char Type = ' ';
+      if ((ToSym->BBTag && ToSym->ContainingFunc->Addr == AdjustedTo) ||
+          (!ToSym->BBTag && ToSym->isFunction() && ToSym->Addr == AdjustedTo)) {
+        Type = 'C';
+      } else if (AdjustedTo > ToSym->Addr) {
+        // Transfer to the middle of a basic block, usually a return, either a
+        // normal one or a return from recursive call, but could it be a
+        // dynamic jump?
+        Type = 'R';
+        // fprintf(stderr, "R: From=0x%lx(0x%lx), To=0x%lx(0x%lx), Pid=%ld\n",
+        //         From, adjustAddressForPIE(Pid, From), To,
+        //         adjustAddressForPIE(Pid, To), Pid);
+      }
+      BrCntSummation[std::make_tuple(FromSym, ToSym, Type)] += Cnt;
     }
   }
 
@@ -1155,8 +1192,8 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
       if (LastTo != INVALID_ADDRESS && LastTo <= From)
         ++(FallthroughCounters[make_pair(LastTo, From)]);
 
-      // Aggregate path information.
-      {
+      // Aggregate path profile information.
+      if (FLAGS_gen_path_profile) {
         auto *FromSym = findSymbolAtAddress(Pid, From);
         auto *ToSym = findSymbolAtAddress(Pid, To);
         if (LastTo != INVALID_ADDRESS && LastTo > From) {
@@ -1184,8 +1221,10 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
       LastTo = To;
       LastFrom = From;
     }  // end of iterating one br record
-    PProfile.addSymSeq(SymSeq);
-    SymSeq.clear();
+    if (FLAGS_gen_path_profile) {
+      PProfile.addSymSeq(SymSeq);
+      SymSeq.clear();
+    }
   }  // End of iterating all br records.
   if (brstackCount < 100) {
     LOG(ERROR) << "Too few brstack records (only " << brstackCount
@@ -1193,18 +1232,14 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
     return false;
   }
   LOG(INFO) << "Processed " << CommaF(brstackCount) << " lbr records.";
-  fprintf(stderr, "Merged: %u\n", merged);
-  fprintf(stderr, "Total paths size: %u\n", PProfile.Paths.size());
-  for (auto I = PProfile.MaxPaths.begin(), J = PProfile.MaxPaths.end(); I != J; ++I) {
-    if ((*I)->expandToIncludeFallthroughs(*this)) {
-      std::cout << *(*I) << std::endl;
-    } else {
-    }
-  }
+  if (FLAGS_gen_path_profile)
+    for (auto I = PProfile.MaxPaths.begin(), J = PProfile.MaxPaths.end();
+         I != J; ++I)
+      if ((*I)->expandToIncludeFallthroughs(*this))
+        std::cout << *(*I) << std::endl;
+
   return true;
 }
-
-uint64_t merged = 0;
 
 bool PropellerProfWriter::findBinaryBuildId() {
   this->BinaryBuildId = "";
