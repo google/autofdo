@@ -651,6 +651,9 @@ void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
     if (fallthroughFrom != fallthroughTo &&
         calculateFallthroughBBs(fallthroughFrom, fallthroughTo, Path)) {
       TotalCounters += (Path.size() + 1) * FC.second;
+      // Note, fallthroughFrom/To are not included in "Path".
+      HotSymbols.insert(fallthroughFrom);
+      HotSymbols.insert(fallthroughTo);
       for (auto *S : Path)
         ExtraBBsIncludedInFallthroughs += HotSymbols.insert(S).second ? 1 : 0;
     }
