@@ -51,40 +51,6 @@ using std::string;
 using std::stringstream;
 using std::tuple;
 
-PropellerProfWriter::PropellerProfWriter(const string &BFN, const string &PFN,
-                                         const string &OFN)
-    : BinaryFileName(BFN), PerfFileName(PFN), PropOutFileName(OFN) {}
-
-PropellerProfWriter::~PropellerProfWriter() {}
-
-SymbolEntry *PropellerProfWriter::findSymbolAtAddress(uint64_t Pid,
-                                                      uint64_t OriginAddr) {
-  uint64_t Addr = adjustAddressForPIE(Pid, OriginAddr);
-  if (Addr == INVALID_ADDRESS) return nullptr;
-  auto U = AddrMap.upper_bound(Addr);
-  if (U == AddrMap.begin()) return nullptr;
-  auto R = std::prev(U);
-
-  // 99+% of the cases:
-  if (R->second.size() == 1 && R->second.front()->containsAddress(Addr))
-    return *(R->second.begin());
-
-  list<SymbolEntry *> Candidates;
-  for (auto &SymEnt : R->second)
-    if (SymEnt->containsAddress(Addr)) Candidates.emplace_back(SymEnt);
-
-  if (Candidates.empty()) return nullptr;
-
-  // Sort candidates by symbol size.
-  Candidates.sort([](const SymbolEntry *S1, const SymbolEntry *S2) {
-    if (S1->Size != S2->Size) return S1->Size < S2->Size;
-    return S1->Name < S2->Name;
-  });
-
-  // Return the smallest symbol that contains address.
-  return *Candidates.begin();
-}
-
 namespace {
 struct DecOut {
 } dec;
@@ -252,6 +218,43 @@ static std::ostream &operator<<(std::ostream &out, const PercentageF &PF) {
 }
 
 }  // namespace
+
+PropellerProfWriter::PropellerProfWriter(const string &BFN, const string &PFN,
+                                         const string &OFN)
+    : BinaryFileName(BFN), PerfFileName(PFN), PropOutFileName(OFN) {}
+
+PropellerProfWriter::~PropellerProfWriter() {}
+
+SymbolEntry *PropellerProfWriter::findSymbolAtAddress(uint64_t Pid,
+                                                      uint64_t OriginAddr) {
+  if (OriginAddr == INVALID_ADDRESS) return nullptr;
+  uint64_t Addr = adjustAddressForPIE(Pid, OriginAddr);
+  if (Addr == INVALID_ADDRESS) return nullptr;
+  auto U = AddrMap.upper_bound(Addr);
+  if (U == AddrMap.begin()) return nullptr;
+  auto R = std::prev(U);
+
+  // 99+% of the cases:
+  if (R->second.size() == 1 && R->second.front()->containsAddress(Addr))
+    return *(R->second.begin());
+
+  list<SymbolEntry *> Candidates;
+  for (auto &SymEnt : R->second)
+    if (SymEnt->containsAddress(Addr)) Candidates.emplace_back(SymEnt);
+
+  if (Candidates.empty()) return nullptr;
+
+  // Sort candidates by symbol size.
+  Candidates.sort([](const SymbolEntry *S1, const SymbolEntry *S2) {
+    if (S1->Size != S2->Size) return S1->Size < S2->Size;
+    return S1->Name < S2->Name;
+  });
+
+  // Return the smallest symbol that contains address.
+  return *Candidates.begin();
+}
+
+
 
 bool PropellerProfWriter::write() {
   if (!initBinaryFile() || !findBinaryBuildId() || !populateSymbolMap())
@@ -476,7 +479,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       recordHotSymbol(ToSym);
 
       TotalCounters += Cnt;
-      if (!FromSym || !ToSym) {
+      if (!FromSym || !ToSym || FromSym==&SymBaseF::dummySymbolEntry || ToSym==&SymBaseF::dummySymbolEntry) {
         CountersNotAddressed += Cnt;
         continue;
       }
@@ -484,6 +487,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       if (FromSym->ContainingFunc != ToSym->ContainingFunc)
         CrossFunctionCounters += Cnt;
 
+      /*
       // Special handling of fallthrough counts for recursive call
       //   foo  <-------+  To Address
       //     ...        |
@@ -525,11 +529,12 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
           }
         }
       }
+      */
 
-      if (ToSym->BBTag &&
-          (FromSym->ContainingFunc->Addr != ToSym->ContainingFunc->Addr) &&
-          ToSym->ContainingFunc->Addr != AdjustedTo &&
-          AdjustedTo == ToSym->Addr) {
+      if ((FromSym->IsReturnBlock || ToSym->ContainingFunc->Addr != FromSym->ContainingFunc->Addr) &&  ToSym->BBTag && // FromSym is a return block
+          ToSym->ContainingFunc->Addr != AdjustedTo && // Not a call
+          AdjustedTo == ToSym->Addr) {  //Jump to the beginning of the basicblock
+        //LOG(INFO) << "RAHMAN: Found return: " << FromSym->Name.str() << " -> " << ToSym->Name.str();
         auto *CallSiteSym = findSymbolAtAddress(Pid, To - 1);
         if (CallSiteSym && CallSiteSym->BBTag) {
           /* Account for the fall-through between CallSiteSym and ToSym. */
@@ -543,7 +548,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       if ((ToSym->BBTag && ToSym->ContainingFunc->Addr == AdjustedTo) ||
           (!ToSym->BBTag && ToSym->isFunction() && ToSym->Addr == AdjustedTo)) {
         Type = 'C';
-      } else if (AdjustedTo > ToSym->Addr) {
+      } else if (FromSym->IsReturnBlock || AdjustedTo > ToSym->Addr) {
         // Transfer to the middle of a basic block, usually a return, either a
         // normal one or a return from recursive call, but could it be a
         // dynamic jump?
@@ -649,6 +654,7 @@ void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
     SymbolEntry *fallthroughFrom = FC.first.first,
                 *fallthroughTo = FC.first.second;
     if (fallthroughFrom != fallthroughTo &&
+        fallthroughFrom!=&SymBaseF::dummySymbolEntry && fallthroughTo!=&SymBaseF::dummySymbolEntry &&
         calculateFallthroughBBs(fallthroughFrom, fallthroughTo, Path)) {
       TotalCounters += (Path.size() + 1) * FC.second;
       for (auto *S : Path)
@@ -819,6 +825,7 @@ bool PropellerProfWriter::populateSymbolMap() {
         new SymbolEntry(0, Name, SymbolEntry::AliasesTy(), Addr, Size, Type);
     L.push_back(NewSymbolEntry);
     NewSymbolEntry->BBTag = SymbolEntry::isBBSymbol(Name);
+    NewSymbolEntry->IsReturnBlock = NewSymbolEntry->BBTag && (Name.front() == 'r');
     SymbolNameMap.emplace(std::piecewise_construct, std::forward_as_tuple(Name),
                           std::forward_as_tuple(NewSymbolEntry));
   }  // End of iterating all symbols.
@@ -1189,7 +1196,9 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
       //   continue;
       // }
       ++(BranchCounters[make_pair(From, To)]);
-      if (LastTo != INVALID_ADDRESS && LastTo <= From)
+      //if (LastTo != INVALID_ADDRESS && LastTo <= From)
+      //  ++(FallthroughCounters[make_pair(LastTo, From)]);
+      if (LastTo == INVALID_ADDRESS || LastTo <= From)
         ++(FallthroughCounters[make_pair(LastTo, From)]);
 
       // Aggregate path profile information.
@@ -1221,6 +1230,10 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
       LastTo = To;
       LastFrom = From;
     }  // end of iterating one br record
+
+    if (LastTo != INVALID_ADDRESS)
+      ++(FallthroughCounters[make_pair(LastTo, INVALID_ADDRESS)]);
+
     if (FLAGS_gen_path_profile) {
       PProfile.addSymSeq(SymSeq);
       SymSeq.clear();
