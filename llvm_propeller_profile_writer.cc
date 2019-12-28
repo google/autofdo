@@ -531,12 +531,11 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       }
       */
 
-      if ((FromSym->IsReturnBlock || ToSym->ContainingFunc->Addr != FromSym->ContainingFunc->Addr) &&  ToSym->BBTag && // FromSym is a return block
+      if ((FromSym->isReturnBlock() || ToSym->ContainingFunc->Addr != FromSym->ContainingFunc->Addr) &&  ToSym->BBTag && // FromSym is a return block
           ToSym->ContainingFunc->Addr != AdjustedTo && // Not a call
           AdjustedTo == ToSym->Addr) {  //Jump to the beginning of the basicblock
-        //LOG(INFO) << "RAHMAN: Found return: " << FromSym->Name.str() << " -> " << ToSym->Name.str();
         auto *CallSiteSym = findSymbolAtAddress(Pid, To - 1);
-        if (CallSiteSym && CallSiteSym->BBTag) {
+        if (CallSiteSym) {
           /* Account for the fall-through between CallSiteSym and ToSym. */
           FallthroughCountersBySymbol[make_pair(CallSiteSym, ToSym)] += Cnt;
           /* Reassign ToSym to be the actuall callsite symbol entry. */
@@ -548,7 +547,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       if ((ToSym->BBTag && ToSym->ContainingFunc->Addr == AdjustedTo) ||
           (!ToSym->BBTag && ToSym->isFunction() && ToSym->Addr == AdjustedTo)) {
         Type = 'C';
-      } else if (FromSym->IsReturnBlock || AdjustedTo > ToSym->Addr) {
+      } else if (FromSym->isReturnBlock() || AdjustedTo > ToSym->Addr) {
         // Transfer to the middle of a basic block, usually a return, either a
         // normal one or a return from recursive call, but could it be a
         // dynamic jump?
@@ -828,7 +827,19 @@ bool PropellerProfWriter::populateSymbolMap() {
         new SymbolEntry(0, Name, SymbolEntry::AliasesTy(), Addr, Size, Type);
     L.push_back(NewSymbolEntry);
     NewSymbolEntry->BBTag = SymbolEntry::isBBSymbol(Name);
-    NewSymbolEntry->IsReturnBlock = NewSymbolEntry->BBTag && (Name.front() == 'r');
+    switch (Name.front()){
+      case 'a':
+        NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_NORMAL;
+        break;
+      case 'r':
+        NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_RETURN;
+        break;
+      case 'l':
+        NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_LANDING_PAD;
+        break;
+      default:
+        break;
+    }
     SymbolNameMap.emplace(std::piecewise_construct, std::forward_as_tuple(Name),
                           std::forward_as_tuple(NewSymbolEntry));
   }  // End of iterating all symbols.
