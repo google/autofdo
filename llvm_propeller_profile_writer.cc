@@ -827,18 +827,21 @@ bool PropellerProfWriter::populateSymbolMap() {
         new SymbolEntry(0, Name, SymbolEntry::AliasesTy(), Addr, Size, Type);
     L.push_back(NewSymbolEntry);
     NewSymbolEntry->BBTag = SymbolEntry::isBBSymbol(Name);
-    switch (Name.front()){
-      case 'a':
-        NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_NORMAL;
-        break;
-      case 'r':
-        NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_RETURN;
-        break;
-      case 'l':
-        NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_LANDING_PAD;
-        break;
-      default:
-        break;
+    // Set the BB Tag type according to the first character of the symbol name.
+    if (NewSymbolEntry->BBTag) {
+      switch (Name.front()){
+        case 'a':
+          NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_NORMAL;
+          break;
+        case 'r':
+          NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_RETURN;
+          break;
+        case 'l':
+          NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_LANDING_PAD;
+          break;
+        default:
+          break;
+      }
     }
     SymbolNameMap.emplace(std::piecewise_construct, std::forward_as_tuple(Name),
                           std::forward_as_tuple(NewSymbolEntry));
