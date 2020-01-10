@@ -476,7 +476,37 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       recordHotSymbol(ToSym);
 
       TotalCounters += Cnt;
-      if (!FromSym || !ToSym) {
+
+      if (!ToSym) {
+        CountersNotAddressed += Cnt;
+        continue;
+      }
+
+      // If this is a return to the beginning of a basic block, change the ToSym
+      // to the basic block just before and add fallthrough between the two
+      // symbols. After this code executes, AdjustedTo can never be the
+      // beginning of a basic block for returns.
+      if ((!FromSym || FromSym->isReturnBlock() ||
+           ToSym->ContainingFunc->Addr != FromSym->ContainingFunc->Addr) &&
+          ToSym->ContainingFunc->Addr != AdjustedTo &&  // Not a call
+          AdjustedTo == ToSym->Addr  // return to the beginning of a bb.
+      ) {
+        auto PrevAddr = std::prev(AddrMap.find(AdjustedTo))->first;
+        auto *CallSiteSym =
+            findSymbolAtAddress(Pid, To - (AdjustedTo - PrevAddr));
+        if (CallSiteSym) {
+          recordHotSymbol(CallSiteSym);
+          // Account for the fall-through between CallSiteSym and ToSym.
+          FallthroughCountersBySymbol[make_pair(CallSiteSym, ToSym)] += Cnt;
+          // Reassign ToSym to be the actuall callsite symbol entry.
+          ToSym = CallSiteSym;
+        } else
+          LOG(WARNING) << "*** Internal error: Could not find the right "
+                          "CallSiteSym for : "
+                       << AdjustedTo;
+      }
+
+      if (!FromSym) {
         CountersNotAddressed += Cnt;
         continue;
       }
@@ -484,73 +514,11 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       if (FromSym->ContainingFunc != ToSym->ContainingFunc)
         CrossFunctionCounters += Cnt;
 
-      // Special handling of fallthrough counts for recursive call
-      //   foo  <-------+  To Address
-      //     ...        |
-      //     ...        |
-      //   bb1:         |
-      //     ...        |
-      //     ...        |
-      //   bb2:         |
-      //     ...        |
-      //     ...        |
-      //   bb3:         |
-      //     ...        |
-      //     ...        |
-      //     call foo --+  From Address
-      //   bb4:            Next Address
-      //     ...
-      //
-      // For the above case, we must create a fallthrough edge from bb3->bb4 (if
-      // there is no such one exists) and add profile count of call foo to the
-      // edge counter.
-
-      if (ToSym->ContainingFunc == FromSym->ContainingFunc &&
-          ToSym != FromSym && !ToSym->BBTag && FromSym->BBTag &&
-          ToSym->ContainingFunc->Addr == AdjustedTo) {
-        // Let's see if "call foo" is the last insn of a basicblock. We assume
-        // the "call" instruction is less than 6 byteslong.
-        if (AdjustedFrom >= FromSym->Addr + FromSym->Size - 6) {
-          // Now insn_length is 6 or less.
-          int insn_length = FromSym->Addr + FromSym->Size - AdjustedFrom;
-          // Assume call is the last insn of the basic block, then From +
-          // insn_length + 2 should be inside another new basic block (or
-          // other function).
-          uint64_t NextAddress = From + insn_length + 2;
-          auto *FallthroughTo = findSymbolAtAddress(Pid, NextAddress);
-          if (FallthroughTo &&
-              FallthroughTo->ContainingFunc == FromSym->ContainingFunc) {
-            FallthroughCountersBySymbol[make_pair(FromSym, FallthroughTo)] +=
-                Cnt;
-          }
-        }
-      }
-
-      if (ToSym->BBTag &&
-          (FromSym->ContainingFunc->Addr != ToSym->ContainingFunc->Addr) &&
-          ToSym->ContainingFunc->Addr != AdjustedTo &&
-          AdjustedTo == ToSym->Addr) {
-        auto *CallSiteSym = findSymbolAtAddress(Pid, To - 1);
-        if (CallSiteSym && CallSiteSym->BBTag) {
-          /* Account for the fall-through between CallSiteSym and ToSym. */
-          FallthroughCountersBySymbol[make_pair(CallSiteSym, ToSym)] += Cnt;
-          /* Reassign ToSym to be the actuall callsite symbol entry. */
-          ToSym = CallSiteSym;
-        }
-      }
-
       char Type = ' ';
-      if ((ToSym->BBTag && ToSym->ContainingFunc->Addr == AdjustedTo) ||
-          (!ToSym->BBTag && ToSym->isFunction() && ToSym->Addr == AdjustedTo)) {
+      if (ToSym->ContainingFunc->Addr == AdjustedTo) {
         Type = 'C';
-      } else if (AdjustedTo > ToSym->Addr) {
-        // Transfer to the middle of a basic block, usually a return, either a
-        // normal one or a return from recursive call, but could it be a
-        // dynamic jump?
+      } else if (AdjustedTo != ToSym->Addr) {
         Type = 'R';
-        // fprintf(stderr, "R: From=0x%lx(0x%lx), To=0x%lx(0x%lx), Pid=%ld\n",
-        //         From, adjustAddressForPIE(Pid, From), To,
-        //         adjustAddressForPIE(Pid, To), Pid);
       }
       BrCntSummation[std::make_tuple(FromSym, ToSym, Type)] += Cnt;
     }
@@ -589,6 +557,7 @@ bool PropellerProfWriter::calculateFallthroughBBs(
     LOG(FATAL) << "*** Internal error: invalid symbol in fallthrough pair. ***";
     return false;
   }
+  Q = std::next(Q);
   if (From->ContainingFunc != To->ContainingFunc) {
     LOG(ERROR) << "fallthrough (" << SymShortF(From) << " -> "
                << SymShortF(To)
@@ -609,7 +578,8 @@ bool PropellerProfWriter::calculateFallthroughBBs(
                      << ".";
         }
         // Mark both ambiguous bbs as touched.
-        Path.emplace_back(SE);
+        if (SE != To)
+          Path.emplace_back(SE);
         LastFoundSymbol = SE;
       }
     }
@@ -764,12 +734,17 @@ bool PropellerProfWriter::populateSymbolMap() {
     bool isFunction = (Type == llvm::object::SymbolRef::ST_Function);
     bool isBB = SymbolEntry::isBBSymbol(Name, &BBFunctionName);
 
+    // bool dbg = false;
+    // if (Name == "_ZNK4llvm15TargetInstrInfo19shouldClusterMemOpsERKNS_14MachineOperandES3_j") {
+    //   fprintf(stderr, "%d:%d\n", isFunction, isBB);
+    //   dbg = true;
+    // }
+
     if (!isFunction && !isBB) continue;
-    if (isFunction && Size == 0) {
-      // LOG(INFO) << "Dropped zero-sized function symbol '" << Name.str() <<
-      // "'.";
-      continue;
-    }
+    // if (isFunction && Size == 0) {
+    //   LOG(INFO) << "Dropped zero-sized function symbol '" << Name.str() << "'.";
+    //   continue;
+    // }
     if (ExcludedSymbols.find(isBB ? BBFunctionName : Name) !=
         ExcludedSymbols.end()) {
       continue;
@@ -777,17 +752,22 @@ bool PropellerProfWriter::populateSymbolMap() {
 
     auto &L = AddrMap[Addr];
     if (!L.empty()) {
-      // If we already have a symbol at the same address with same size, merge
+      // If we already have a symbol at the same address, merge
       // them together.
       SymbolEntry *SymbolIsAliasedWith = nullptr;
       for (auto *S : L) {
-        if (S->Size == Size) {
+        if (S->Size == Size || (S->isFunction() && isFunction)) {
           // Make sure Name and Aliased name are both BB or both NON-BB.
           if (SymbolEntry::isBBSymbol(S->Name) !=
               SymbolEntry::isBBSymbol(Name)) {
+            LOG(INFO) << "Dropped symbol: '" << SymNameF(Name)
+                      << "'. The symbol conflicts with another symbol on the "
+                         "same address: "
+                      << hex0x << Addr;
             continue;
           }
           S->Aliases.push_back(Name);
+          if (S->Size < Size) S->Size = Size;
           if (!S->isFunction() &&
               Type == llvm::object::SymbolRef::ST_Function) {
             // If any of the aliased symbols is a function, promote the whole
@@ -822,6 +802,28 @@ bool PropellerProfWriter::populateSymbolMap() {
         new SymbolEntry(0, Name, SymbolEntry::AliasesTy(), Addr, Size, Type);
     L.push_back(NewSymbolEntry);
     NewSymbolEntry->BBTag = SymbolEntry::isBBSymbol(Name);
+    // Set the BB Tag type according to the first character of the symbol name.
+    if (NewSymbolEntry->BBTag) {
+      switch (Name.front()){
+        case 'a':
+          NewSymbolEntry->BBTagType = SymbolEntry::BB_NORMAL;
+          break;
+        case 'r':
+          NewSymbolEntry->BBTagType = SymbolEntry::BB_RETURN;
+          break;
+        case 'l':
+          NewSymbolEntry->BBTagType = SymbolEntry::BB_LANDING_PAD;
+          break;
+        case 'L':
+          NewSymbolEntry->BBTagType = SymbolEntry::BB_RETURN_AND_LANDING_PAD;
+          break;
+        default:
+          assert(false);
+          break;
+      }
+    } else {
+      NewSymbolEntry->BBTagType = SymbolEntry::BB_NONE;
+    }
     SymbolNameMap.emplace(std::piecewise_construct, std::forward_as_tuple(Name),
                           std::forward_as_tuple(NewSymbolEntry));
   }  // End of iterating all symbols.
