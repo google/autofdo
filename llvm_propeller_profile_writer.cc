@@ -405,6 +405,7 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
           return !S1->BBTag;
         }
         // order irrelevant, but choose a stable relation.
+        if (S1->Size != S2->Size) return S1->Size < S2->Size;
         return S1->Name < S2->Name;
       });
     }
