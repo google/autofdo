@@ -405,6 +405,7 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
           return !S1->BBTag;
         }
         // order irrelevant, but choose a stable relation.
+        if (S1->Size != S2->Size) return S1->Size < S2->Size;
         return S1->Name < S2->Name;
       });
     }
@@ -434,6 +435,8 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
   fout << "Branches" << std::endl;
   auto recordHotSymbol = [this](SymbolEntry *S) {
     if (!S || !(S->ContainingFunc) || S->ContainingFunc->Name.empty()) return;
+    if (S->isLandingPadBlock())
+      LOG(WARNING) << "*** HOT LANDING PAD: " << S->Name.str() << "\t" << S->ContainingFunc->Name.str() << "\n";
     // Dups are properly handled by set.
     HotSymbols.insert(S);
   };
@@ -476,64 +479,25 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       recordHotSymbol(ToSym);
 
       TotalCounters += Cnt;
-      
-      // Special handling of fallthrough counts for recursive call
-      //   foo  <-------+  To Address
-      //     ...        |
-      //     ...        |
-      //   bb1:         |
-      //     ...        |
-      //     ...        |
-      //   bb2:         |
-      //     ...        |
-      //     ...        |
-      //   bb3:         |
-      //     ...        |
-      //     ...        |
-      //     call foo --+  From Address
-      //   bb4:            Next Address
-      //     ...
-      //
-      // For the above case, we must create a fallthrough edge from bb3->bb4 (if
-      // there is no such one exists) and add profile count of call foo to the
-      // edge counter.
 
-      /*
-      if (ToSym->ContainingFunc == FromSym->ContainingFunc &&
-          ToSym != FromSym && !ToSym->BBTag && FromSym->BBTag &&
-          ToSym->ContainingFunc->Addr == AdjustedTo) {
-        // Let's see if "call foo" is the last insn of a basicblock. We assume
-        // the "call" instruction is less than 6 byteslong.
-        if (AdjustedFrom >= FromSym->Addr + FromSym->Size - 6) {
-          // Now insn_length is 6 or less.
-          int insn_length = FromSym->Addr + FromSym->Size - AdjustedFrom;
-          // Assume call is the last insn of the basic block, then From +
-          // insn_length + 2 should be inside another new basic block (or
-          // other function).
-          uint64_t NextAddress = From + insn_length + 2;
-          auto *FallthroughTo = findSymbolAtAddress(Pid, NextAddress);
-          if (FallthroughTo &&
-              FallthroughTo->ContainingFunc == FromSym->ContainingFunc) {
-            FallthroughCountersBySymbol[make_pair(FromSym, FallthroughTo)] +=
-                Cnt;
-          }
-        }
-      }
-      */
-
-      if (!ToSym) {
+      if (!ToSym || !FromSym) {
         CountersNotAddressed += Cnt;
         continue;
       }
 
-      if ((!FromSym || FromSym->isReturnBlock() || ToSym->ContainingFunc->Addr!=FromSym->ContainingFunc->Addr) && // Return
+      // If this is a return to the beginning of a basic block, change the ToSym
+      // to the basic block just before and add fallthrough between the two
+      // symbols.
+      // After this code executes, AdjustedTo can never be the beginning of a
+      // basic block for returns.
+      if ((FromSym->isReturnBlock() || ToSym->ContainingFunc->Addr!=FromSym->ContainingFunc->Addr) &&
           ToSym->ContainingFunc->Addr != AdjustedTo && // Not a call
-          AdjustedTo == ToSym->Addr) {  //Jump to the beginning of the basicblock
+          AdjustedTo == ToSym->Addr) {  // Jump to the beginning of the basicblock
         auto PrevAddr = std::prev(AddrMap.find(AdjustedTo))->first;
         auto *CallSiteSym = findSymbolAtAddress(Pid, To - (AdjustedTo - PrevAddr));
         if (CallSiteSym) {
           recordHotSymbol(CallSiteSym);
-          /* Account for the fall-through between CallSiteSym and ToSym. */
+          // Account for the fall-through between CallSiteSym and ToSym.
           FallthroughCountersBySymbol[make_pair(CallSiteSym, ToSym)] += Cnt;
           /* Reassign ToSym to be the actuall callsite symbol entry. */
           ToSym = CallSiteSym;
@@ -541,20 +505,13 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
           LOG(WARNING) << "*** Internal error: Could not find the right CallSiteSym for : " << AdjustedTo << "\n";
       }
 
-
-      if (!FromSym) {
-        CountersNotAddressed += Cnt;
-        continue;
-      }
-
       if (FromSym->ContainingFunc != ToSym->ContainingFunc)
         CrossFunctionCounters += Cnt;
 
       char Type = ' ';
       if (ToSym->ContainingFunc->Addr == AdjustedTo) {
-          //(!ToSym->BBTag && ToSym->isFunction() && ToSym->Addr == AdjustedTo)) {
         Type = 'C';
-      } else if (FromSym->isReturnBlock() || AdjustedTo != ToSym->Addr) {
+      } else if (AdjustedTo != ToSym->Addr) {
         Type = 'R';
         // fprintf(stderr, "R: From=0x%lx(0x%lx), To=0x%lx(0x%lx), Pid=%ld\n",
         //         From, adjustAddressForPIE(Pid, From), To,
@@ -609,8 +566,6 @@ bool PropellerProfWriter::calculateFallthroughBBs(
   for (++I; I != Q && I != E; ++I) {
     SymbolEntry *LastFoundSymbol = nullptr;
     for (auto *SE : I->second) {
-      //if (To->Addr == 0x3dfb767)
-      //  LOG(ERROR) << "GOING OVER THEM: " << SymShortF(SE) << "\n";
       if (SE->BBTag && SE->ContainingFunc == Func) {
         if (LastFoundSymbol) {
           LOG(ERROR) << "fallthrough (" << SymShortF(From) << " -> "
@@ -666,8 +621,12 @@ void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
       // Note, fallthroughFrom/To are not included in "Path".
       HotSymbols.insert(fallthroughFrom);
       HotSymbols.insert(fallthroughTo);
-      for (auto *S : Path)
+      for (auto *S : Path) {
+        if (S->isLandingPadBlock()) {
+          LOG(WARNING) << "*** HOT LANDING PAD: " << S->Name.str() << "\t" << S->ContainingFunc->Name.str() << "\n";
+        }
         ExtraBBsIncludedInFallthroughs += HotSymbols.insert(S).second ? 1 : 0;
+      }
     }
 
     fout << SymOrdinalF(*(FC.first.first)) << " "
@@ -846,6 +805,8 @@ bool PropellerProfWriter::populateSymbolMap() {
         case 'l':
           NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_LANDING_PAD;
           break;
+        case 'L':
+          NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_RETURN_AND_LANDING_PAD;
         default:
           break;
       }
@@ -1214,11 +1175,12 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
       // treat these to be true entries.
 
       // if (P == 0 && From == LastFrom && To == LastTo) {
-      //   // LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
-      //   From
-      //   //           << "-> 0x" << To << std::dec << "\n";
-      //   continue;
-      // }
+      //  LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
+      //             From
+      //             << "-> 0x" << To << std::dec << "\n";
+      //  continue;
+      //}
+
       ++(BranchCounters[make_pair(From, To)]);
       if (LastTo != INVALID_ADDRESS && LastTo <= From)
         ++(FallthroughCounters[make_pair(LastTo, From)]);
