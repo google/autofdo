@@ -499,10 +499,12 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
           recordHotSymbol(CallSiteSym);
           // Account for the fall-through between CallSiteSym and ToSym.
           FallthroughCountersBySymbol[make_pair(CallSiteSym, ToSym)] += Cnt;
-          /* Reassign ToSym to be the actuall callsite symbol entry. */
+          // Reassign ToSym to be the actuall callsite symbol entry.
           ToSym = CallSiteSym;
         } else
-          LOG(WARNING) << "*** Internal error: Could not find the right CallSiteSym for : " << AdjustedTo << "\n";
+          LOG(WARNING) << "*** Internal error: Could not find the right "
+                          "CallSiteSym for : "
+                       << AdjustedTo;
       }
 
       if (FromSym->ContainingFunc != ToSym->ContainingFunc)
@@ -513,9 +515,6 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
         Type = 'C';
       } else if (AdjustedTo != ToSym->Addr) {
         Type = 'R';
-        // fprintf(stderr, "R: From=0x%lx(0x%lx), To=0x%lx(0x%lx), Pid=%ld\n",
-        //         From, adjustAddressForPIE(Pid, From), To,
-        //         adjustAddressForPIE(Pid, To), Pid);
       }
       BrCntSummation[std::make_tuple(FromSym, ToSym, Type)] += Cnt;
     }
@@ -554,6 +553,7 @@ bool PropellerProfWriter::calculateFallthroughBBs(
     LOG(FATAL) << "*** Internal error: invalid symbol in fallthrough pair. ***";
     return false;
   }
+  Q = std::next(Q);
   if (From->ContainingFunc != To->ContainingFunc) {
     LOG(ERROR) << "fallthrough (" << SymShortF(From) << " -> "
                << SymShortF(To)
@@ -574,9 +574,8 @@ bool PropellerProfWriter::calculateFallthroughBBs(
                      << ".";
         }
         // Mark both ambiguous bbs as touched.
-        if (SE != To) {
+        if (SE != To)
           Path.emplace_back(SE);
-        }
         LastFoundSymbol = SE;
       }
     }
@@ -735,12 +734,17 @@ bool PropellerProfWriter::populateSymbolMap() {
     bool isFunction = (Type == llvm::object::SymbolRef::ST_Function);
     bool isBB = SymbolEntry::isBBSymbol(Name, &BBFunctionName);
 
+    // bool dbg = false;
+    // if (Name == "_ZNK4llvm15TargetInstrInfo19shouldClusterMemOpsERKNS_14MachineOperandES3_j") {
+    //   fprintf(stderr, "%d:%d\n", isFunction, isBB);
+    //   dbg = true;
+    // }
+
     if (!isFunction && !isBB) continue;
-    if (isFunction && Size == 0) {
-      // LOG(INFO) << "Dropped zero-sized function symbol '" << Name.str() <<
-      // "'.";
-      continue;
-    }
+    // if (isFunction && Size == 0) {
+    //   LOG(INFO) << "Dropped zero-sized function symbol '" << Name.str() << "'.";
+    //   continue;
+    // }
     if (ExcludedSymbols.find(isBB ? BBFunctionName : Name) !=
         ExcludedSymbols.end()) {
       continue;
@@ -748,17 +752,22 @@ bool PropellerProfWriter::populateSymbolMap() {
 
     auto &L = AddrMap[Addr];
     if (!L.empty()) {
-      // If we already have a symbol at the same address with same size, merge
+      // If we already have a symbol at the same address, merge
       // them together.
       SymbolEntry *SymbolIsAliasedWith = nullptr;
       for (auto *S : L) {
-        if (S->Size == Size) {
+        if (S->Size == Size || (S->isFunction() && isFunction)) {
           // Make sure Name and Aliased name are both BB or both NON-BB.
           if (SymbolEntry::isBBSymbol(S->Name) !=
               SymbolEntry::isBBSymbol(Name)) {
+            LOG(INFO) << "Dropped symbol: '" << SymNameF(Name)
+                      << "'. The symbol conflicts with another symbol on the "
+                         "same address: "
+                      << hex0x << Addr;
             continue;
           }
           S->Aliases.push_back(Name);
+          if (S->Size < Size) S->Size = Size;
           if (!S->isFunction() &&
               Type == llvm::object::SymbolRef::ST_Function) {
             // If any of the aliased symbols is a function, promote the whole
@@ -797,19 +806,23 @@ bool PropellerProfWriter::populateSymbolMap() {
     if (NewSymbolEntry->BBTag) {
       switch (Name.front()){
         case 'a':
-          NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_NORMAL;
+          NewSymbolEntry->BBTagType = SymbolEntry::BB_NORMAL;
           break;
         case 'r':
-          NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_RETURN;
+          NewSymbolEntry->BBTagType = SymbolEntry::BB_RETURN;
           break;
         case 'l':
-          NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_LANDING_PAD;
+          NewSymbolEntry->BBTagType = SymbolEntry::BB_LANDING_PAD;
           break;
         case 'L':
-          NewSymbolEntry->BBTagType = SymbolEntry::BBTagTypeEnum::BB_RETURN_AND_LANDING_PAD;
+          NewSymbolEntry->BBTagType = SymbolEntry::BB_RETURN_AND_LANDING_PAD;
+          break;
         default:
+          assert(false);
           break;
       }
+    } else {
+      NewSymbolEntry->BBTagType = SymbolEntry::BB_NONE;
     }
     SymbolNameMap.emplace(std::piecewise_construct, std::forward_as_tuple(Name),
                           std::forward_as_tuple(NewSymbolEntry));
