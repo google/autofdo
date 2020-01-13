@@ -436,7 +436,8 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
   auto recordHotSymbol = [this](SymbolEntry *S) {
     if (!S || !(S->ContainingFunc) || S->ContainingFunc->Name.empty()) return;
     if (S->isLandingPadBlock())
-      LOG(WARNING) << "*** HOT LANDING PAD: " << S->Name.str() << "\t" << S->ContainingFunc->Name.str() << "\n";
+      LOG(WARNING) << "*** HOT LANDING PAD: " << S->Name.str() << "\t"
+                   << S->ContainingFunc->Name.str() << "\n";
     // Dups are properly handled by set.
     HotSymbols.insert(S);
   };
@@ -490,11 +491,14 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       // symbols.
       // After this code executes, AdjustedTo can never be the beginning of a
       // basic block for returns.
-      if ((FromSym->isReturnBlock() || ToSym->ContainingFunc->Addr!=FromSym->ContainingFunc->Addr) &&
-          ToSym->ContainingFunc->Addr != AdjustedTo && // Not a call
-          AdjustedTo == ToSym->Addr) {  // Jump to the beginning of the basicblock
+      if ((FromSym->isReturnBlock() ||
+           ToSym->ContainingFunc->Addr != FromSym->ContainingFunc->Addr) &&
+          ToSym->ContainingFunc->Addr != AdjustedTo &&  // Not a call
+          // Jump to the beginning of the basicblock
+          AdjustedTo == ToSym->Addr) {
         auto PrevAddr = std::prev(AddrMap.find(AdjustedTo))->first;
-        auto *CallSiteSym = findSymbolAtAddress(Pid, To - (AdjustedTo - PrevAddr));
+        auto *CallSiteSym =
+            findSymbolAtAddress(Pid, To - (AdjustedTo - PrevAddr));
         if (CallSiteSym) {
           recordHotSymbol(CallSiteSym);
           // Account for the fall-through between CallSiteSym and ToSym.
@@ -622,7 +626,8 @@ void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
       HotSymbols.insert(fallthroughTo);
       for (auto *S : Path) {
         if (S->isLandingPadBlock()) {
-          LOG(WARNING) << "*** HOT LANDING PAD: " << S->Name.str() << "\t" << S->ContainingFunc->Name.str() << "\n";
+          LOG(WARNING) << "*** HOT LANDING PAD: " << S->Name.str() << "\t"
+                       << S->ContainingFunc->Name.str() << "\n";
         }
         ExtraBBsIncludedInFallthroughs += HotSymbols.insert(S).second ? 1 : 0;
       }
@@ -734,17 +739,7 @@ bool PropellerProfWriter::populateSymbolMap() {
     bool isFunction = (Type == llvm::object::SymbolRef::ST_Function);
     bool isBB = SymbolEntry::isBBSymbol(Name, &BBFunctionName);
 
-    // bool dbg = false;
-    // if (Name == "_ZNK4llvm15TargetInstrInfo19shouldClusterMemOpsERKNS_14MachineOperandES3_j") {
-    //   fprintf(stderr, "%d:%d\n", isFunction, isBB);
-    //   dbg = true;
-    // }
-
     if (!isFunction && !isBB) continue;
-    // if (isFunction && Size == 0) {
-    //   LOG(INFO) << "Dropped zero-sized function symbol '" << Name.str() << "'.";
-    //   continue;
-    // }
     if (ExcludedSymbols.find(isBB ? BBFunctionName : Name) !=
         ExcludedSymbols.end()) {
       continue;
@@ -803,27 +798,10 @@ bool PropellerProfWriter::populateSymbolMap() {
     L.push_back(NewSymbolEntry);
     NewSymbolEntry->BBTag = SymbolEntry::isBBSymbol(Name);
     // Set the BB Tag type according to the first character of the symbol name.
-    if (NewSymbolEntry->BBTag) {
-      switch (Name.front()){
-        case 'a':
-          NewSymbolEntry->BBTagType = SymbolEntry::BB_NORMAL;
-          break;
-        case 'r':
-          NewSymbolEntry->BBTagType = SymbolEntry::BB_RETURN;
-          break;
-        case 'l':
-          NewSymbolEntry->BBTagType = SymbolEntry::BB_LANDING_PAD;
-          break;
-        case 'L':
-          NewSymbolEntry->BBTagType = SymbolEntry::BB_RETURN_AND_LANDING_PAD;
-          break;
-        default:
-          assert(false);
-          break;
-      }
-    } else {
+    if (NewSymbolEntry->BBTag)
+      NewSymbolEntry->BBTagType = SymbolEntry::toBBTagType(Name.front());
+    else
       NewSymbolEntry->BBTagType = SymbolEntry::BB_NONE;
-    }
     SymbolNameMap.emplace(std::piecewise_construct, std::forward_as_tuple(Name),
                           std::forward_as_tuple(NewSymbolEntry));
   }  // End of iterating all symbols.
