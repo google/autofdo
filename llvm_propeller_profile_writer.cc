@@ -552,12 +552,13 @@ bool PropellerProfWriter::calculateFallthroughBBs(
     return false;
   }
 
-  auto P = AddrMap.find(From->Addr), Q = std::next(AddrMap.find(To->Addr)),
+  auto P = AddrMap.find(From->Addr), Q = AddrMap.find(To->Addr),
        E = AddrMap.end();
   if (P == E || Q == E) {
     LOG(FATAL) << "*** Internal error: invalid symbol in fallthrough pair. ***";
     return false;
   }
+  Q = std::next(Q);
   if (From->ContainingFunc != To->ContainingFunc) {
     LOG(ERROR) << "fallthrough (" << SymShortF(From) << " -> "
                << SymShortF(To)
