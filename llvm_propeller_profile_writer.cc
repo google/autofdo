@@ -555,7 +555,8 @@ bool PropellerProfWriter::calculateFallthroughBBs(
                   "larger than end address. ***";
     return false;
   }
-  auto P = AddrMap.find(From->Addr), Q = std::next(AddrMap.find(To->Addr)),
+
+  auto P = AddrMap.find(From->Addr), Q = AddrMap.find(To->Addr),
        E = AddrMap.end();
   if (P == E || Q == E) {
     LOG(FATAL) << "*** Internal error: invalid symbol in fallthrough pair. ***";
@@ -581,7 +582,7 @@ bool PropellerProfWriter::calculateFallthroughBBs(
                      << SymShortF(SE) << " and " << SymShortF(LastFoundSymbol)
                      << ".";
         }
-        // Mark both ambiguous bbs as touched.
+        // Add the symbol entry to path, unless it is the the "To" symbol.
         if (SE != To)
           Path.emplace_back(SE);
         LastFoundSymbol = SE;
