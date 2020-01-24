@@ -420,8 +420,10 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
       if (SE.BBTag) {
         fout << SymOrdinalF(SE.ContainingFunc) << ".";
         StringRef BBIndex = SE.Name;
-        fout << dec << (uint64_t)(BBIndex.bytes_end() - BBIndex.bytes_begin())
-             << std::endl;
+        fout << dec << (uint64_t)(BBIndex.size());
+        if (BBIndex.front() != 'a')
+          fout << BBIndex.front();
+        fout << std::endl;
         ++FuncBBCounter[SE.ContainingFunc->Ordinal];
       } else {
         fout << "N" << SymNameF(SE) << std::endl;
@@ -436,10 +438,12 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
   auto recordHotSymbol = [this](SymbolEntry *S) {
     if (!S || !(S->ContainingFunc) || S->ContainingFunc->Name.empty()) return;
     if (S->isLandingPadBlock())
+      // Landing pads are always treated as not hot.
       LOG(WARNING) << "*** HOT LANDING PAD: " << S->Name.str() << "\t"
                    << S->ContainingFunc->Name.str() << "\n";
-    // Dups are properly handled by set.
-    HotSymbols.insert(S);
+    else
+      // Dups are properly handled by set.
+      HotSymbols.insert(S);
   };
 
   using BrCntSummationKey = tuple<SymbolEntry *, SymbolEntry *, char>;
