@@ -57,6 +57,37 @@ PropellerProfWriter::PropellerProfWriter(const string &BFN, const string &PFN,
 
 PropellerProfWriter::~PropellerProfWriter() {}
 
+// Return true if this SymbolEntry is a containing function for BBName. For
+// example, if BBName is given as "aa.BB.foo", and SymbolEntry.Name = "foo",
+// then SymbolEntry.isFunctionForBBName(BBName) == true. BBNames are from ELF
+// object files.
+static bool
+isFunctionForBBName(SymbolEntry *S, StringRef BBName) {
+  auto A = BBName.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
+  if (A.second == S->Name)
+    return true;
+  for (auto N : S->Aliases)
+    if (A.second == N)
+      return true;
+  return false;
+}
+
+static bool
+containsAddress(SymbolEntry *S, uint64_t A) {
+  return S->Addr <= A && A < S->Addr + S->Size;
+}
+
+static bool
+containsAnotherSymbol(SymbolEntry *S, SymbolEntry *O) {
+  if (O->Size == 0) {
+    // Note if O's size is 0, we allow O on the end boundary. For example, if
+    // foo.BB.4 is at address 0x10. foo is [0x0, 0x10), we then assume foo
+    // contains foo.BB.4.
+    return S->Addr <= O->Addr && O->Addr <= S->Addr + S->Size;
+  }
+  return containsAddress(S, O->Addr) && containsAddress(S, O->Addr + O->Size - 1);
+}
+
 SymbolEntry *PropellerProfWriter::findSymbolAtAddress(uint64_t Pid,
                                                       uint64_t OriginAddr) {
   uint64_t Addr = adjustAddressForPIE(Pid, OriginAddr);
@@ -66,12 +97,12 @@ SymbolEntry *PropellerProfWriter::findSymbolAtAddress(uint64_t Pid,
   auto R = std::prev(U);
 
   // 99+% of the cases:
-  if (R->second.size() == 1 && R->second.front()->containsAddress(Addr))
+  if (R->second.size() == 1 && containsAddress(R->second.front(), Addr))
     return *(R->second.begin());
 
   list<SymbolEntry *> Candidates;
   for (auto &SymEnt : R->second)
-    if (SymEnt->containsAddress(Addr)) Candidates.emplace_back(SymEnt);
+    if (containsAddress(SymEnt, Addr)) Candidates.emplace_back(SymEnt);
 
   if (Candidates.empty()) return nullptr;
 
@@ -373,13 +404,20 @@ void PropellerProfWriter::writeOuts(ofstream &fout) {
 
 void PropellerProfWriter::writeHotFuncAndBBList(ofstream &fout) {
   SymbolEntry *LastFuncSymbol = nullptr;
+  uint32_t bbCount = 0;
   for (auto *SE : HotSymbols)
     if (SE->BBTag) {
       if (LastFuncSymbol != SE->ContainingFunc) {
         fout << "!" << SymNameF(SE->ContainingFunc) << std::endl;
+        // If we haven't output any BB symbols for LastFuncSymbol, we then
+        // output "!!0" which means the entry block is hot, before we switch
+        // to processing another hot function.
+        if (!bbCount && LastFuncSymbol)
+          fout << "!!0" << std::endl;
         LastFuncSymbol = SE->ContainingFunc;
       }
       fout << "!!" << SE->Name.size() << std::endl;
+      ++bbCount;
     } else {
       fout << "!" << SymNameF(SE) << std::endl;
       LastFuncSymbol = SE;
@@ -841,8 +879,8 @@ bool PropellerProfWriter::populateSymbolMap() {
       // This is a bb symbol, find a wrapping func for it.
       SymbolEntry *ContainingFunc = nullptr;
       for (SymbolEntry *FP : LastFuncPos->second) {
-        if (FP->isFunction() && !FP->BBTag && FP->containsAnotherSymbol(S) &&
-            FP->isFunctionForBBName(S->Name)) {
+        if (FP->isFunction() && !FP->BBTag && containsAnotherSymbol(FP,S) &&
+            isFunctionForBBName(FP, S->Name)) {
           if (ContainingFunc == nullptr) {
             ContainingFunc = FP;
           } else {
@@ -874,8 +912,8 @@ bool PropellerProfWriter::populateSymbolMap() {
           for (auto *KS : T->second) {
             isFunction |= KS->isFunction();
             if (KS->isFunction() && !KS->BBTag &&
-                KS->containsAnotherSymbol(S) &&
-                KS->isFunctionForBBName(S->Name)) {
+                containsAnotherSymbol(KS, S) &&
+                isFunctionForBBName(KS, S->Name)) {
               ContainingFunc = KS;
               break;
             }
@@ -893,7 +931,7 @@ bool PropellerProfWriter::populateSymbolMap() {
         AddrMap.erase(P--);
         break;
       } else {
-        if (!ContainingFunc->isFunctionForBBName(S->Name)) {
+        if (!isFunctionForBBName(ContainingFunc, S->Name)) {
           LOG(ERROR) << "Internal check warning: \n"
                      << "Sym: " << SymShortF(S) << "\n"
                      << "Func: " << SymShortF(S->ContainingFunc);
