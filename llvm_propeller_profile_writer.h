@@ -48,7 +48,7 @@ class PerfReader;
 
 // a sample output is like below:
 //
-// Symbols
+// symbols
 // 1 0 N.init/_init
 // 2 0 N.plt
 // 3 0 N.plt.got
@@ -85,14 +85,14 @@ class PerfReader;
 // !func2
 // !func3
 //
-// The file consists of 4 parts, "Symbols", "Branches", "Fallthroughs" and
+// The file consists of 4 parts, "symbols", "Branches", "Fallthroughs" and
 // Funclist.
 //
 // Funclist contains lines that starts with "!", and everything following that
 // will be the function name that's to be consumed by compiler (for bb section
 // generation purpose).
 //
-// Each line in "Symbols" section contains the following field:
+// Each line in "symbols" section contains the following field:
 //   index    - in decimal, unique for each symbol, start from 1
 //   size     - in hex, without "0x"
 //   name     - either starts with "N" or a digit. In the former case,
@@ -130,33 +130,33 @@ class MMapEntry {
 
   uint64_t getEndAddr() const { return loadAddr + loadSize; }
 
-  bool operator<(const MMapEntry &M) const {
-    return this->loadAddr < M.loadAddr;
+  bool operator<(const MMapEntry &mm) const {
+    return this->loadAddr < mm.loadAddr;
   }
 };
 
-class path;
+class Path;
 
-ostream & operator << (ostream &out, const path &path);
+ostream & operator << (ostream &out, const Path &path);
 
 class PropellerProfWriter;
-class path {
+class Path {
  public:
   using Key = tuple<uint64_t, uint64_t, uint64_t>;
 
-  explicit path(path &&path)
+  explicit Path(Path &&path)
       : syms(std::move(path.syms)),
         cnts(std::move(path.cnts)),
         weight(path.weight) {}
-  explicit path(vector<SymbolEntry *> &&o)
+  explicit Path(vector<SymbolEntry *> &&o)
       : syms(o), cnts(o.size(), 1), weight(o.size()) {}
 
-  bool operator<(const path &p2) const {
+  bool operator<(const Path &p2) const {
     return Key(syms[0]->ordinal, syms[1]->ordinal, syms[2]->ordinal) <
            Key(p2.syms[0]->ordinal, p2.syms[1]->ordinal, p2.syms[2]->ordinal);
   }
 
-  bool mergeableWith(const path &path) const {
+  bool mergeableWith(const Path &path) const {
     for (auto i = syms.begin(), j = syms.end(), p = path.syms.begin(),
               q = path.syms.end();
          i != j && p != q; ++i, ++p)
@@ -164,7 +164,7 @@ class path {
     return true;
   }
 
-  bool merge(path &path) {
+  bool merge(Path &path) {
     // std::cerr << "Merging " << std::endl;
     // std::cerr << "\t" << *this << std::endl;
     // std::cerr << "\t" << path << std::endl;
@@ -200,18 +200,18 @@ class path {
 
 class PathProfile {
  public:
-  using PathsTy = std::multimap<path::Key, path>;
+  using PathsTy = std::multimap<Path::Key, Path>;
   using PathsIterator = PathsTy::iterator;
 
-  PathsTy Paths;
+  PathsTy paths;
 
   struct PathComparator {
-    bool operator()(path *p1, path *p2) const {
+    bool operator()(Path *p1, Path *p2) const {
       return p1->weight < p2->weight;
     }
   };
 
-  using MaxPathsTy = multiset<path *, PathComparator>;
+  using MaxPathsTy = multiset<Path *, PathComparator>;
   MaxPathsTy maxPaths;
 
   bool addSymSeq(vector<SymbolEntry *> &symSequence);
@@ -224,18 +224,18 @@ class PathProfile {
   // Do not make this "const", because "path" object returned via this
   // iterator might be modified.
   pair<PathsIterator, PathsIterator> findPaths(vector<SymbolEntry *> &symSeq) {
-    return Paths.equal_range(
-        path::Key(symSeq[0]->ordinal, symSeq[1]->ordinal, symSeq[2]->ordinal));
+    return paths.equal_range(
+        Path::Key(symSeq[0]->ordinal, symSeq[1]->ordinal, symSeq[2]->ordinal));
   }
 
-  void addToMaxPaths(path &path) {
+  void addToMaxPaths(Path &path) {
     maxPaths.insert(&path);
     if (maxPaths.size() >= KEEP_MAX_PATHS)
       // Remove the path w/ minimal weight
       maxPaths.erase(maxPaths.begin());
   }
 
-  void removeFromMaxPaths(path &path) {
+  void removeFromMaxPaths(Path &path) {
     auto r = maxPaths.equal_range(&path);
     for (auto i = r.first; i != r.second; ++i) {
       if (*i == &path) {
@@ -365,7 +365,7 @@ class PropellerProfWriter {
   PathProfile pathProfile;
 
   friend PathProfile;
-  friend path;
+  friend Path;
 
   static const uint64_t INVALID_ADDRESS = uint64_t(-1);
 };

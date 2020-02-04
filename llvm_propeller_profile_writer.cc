@@ -428,7 +428,7 @@ void PropellerProfWriter::writeHotFuncAndBBList(ofstream &fout) {
 void PropellerProfWriter::writeSymbols(ofstream &fout) {
   this->symbolsWritten = 0;
   uint64_t symbolOrdinal = 0;
-  fout << "Symbols" << std::endl;
+  fout << "symbols" << std::endl;
   for (auto &le : addrMap) {
     // Tricky case here:
     // In the same address we have:
@@ -712,46 +712,46 @@ bool fillELFPhdr(llvm::object::ELFObjectFileBase *ebFile,
     LOG(ERROR) << "No loadable and executable segments found in binary.";
     return false;
   }
-  stringstream SS;
-  SS << "Loadable and executable segments:\n";
-  for (auto &Seg : phdrLoadMap) {
-    SS << "\tvaddr=" << hex0x << Seg.first << ", memsz=" << hex0x << Seg.second
+  stringstream ss;
+  ss << "Loadable and executable segments:\n";
+  for (auto &seg : phdrLoadMap) {
+    ss << "\tvaddr=" << hex0x << seg.first << ", memsz=" << hex0x << seg.second
        << std::endl;
   }
-  LOG(INFO) << SS.str();
+  LOG(INFO) << ss.str();
   return true;
 }
 
 bool PropellerProfWriter::initBinaryFile() {
-  auto FileOrError = llvm::MemoryBuffer::getFile(binaryFileName);
-  if (!FileOrError) {
+  auto fileOrError = llvm::MemoryBuffer::getFile(binaryFileName);
+  if (!fileOrError) {
     LOG(ERROR) << "Failed to read file '" << binaryFileName << "'.";
     return false;
   }
-  this->binaryFileContent = std::move(*FileOrError);
+  this->binaryFileContent = std::move(*fileOrError);
 
-  auto ObjOrError = llvm::object::ObjectFile::createELFObjectFile(
+  auto objOrError = llvm::object::ObjectFile::createELFObjectFile(
       llvm::MemoryBufferRef(*(this->binaryFileContent)));
-  if (!ObjOrError) {
+  if (!objOrError) {
     LOG(ERROR) << "Not a valid ELF file '" << binaryFileName << "'.";
     return false;
   }
-  this->objFile = std::move(*ObjOrError);
+  this->objFile = std::move(*objOrError);
 
-  auto *ELFObjBase = dyn_cast<ELFObjectFileBase, ObjectFile>(objFile.get());
-  binaryIsPIE = (ELFObjBase->getEType() == llvm::ELF::ET_DYN);
+  auto *elfObjBase = dyn_cast<ELFObjectFileBase, ObjectFile>(objFile.get());
+  binaryIsPIE = (elfObjBase->getEType() == llvm::ELF::ET_DYN);
   if (binaryIsPIE) {
-    const char *ELFIdent = binaryFileContent->getBufferStart();
-    const char ELFClass = ELFIdent[4];
-    const char ELFData = ELFIdent[5];
-    if (ELFClass == 1 && ELFData == 1) {
-      fillELFPhdr<llvm::object::ELF32LE>(ELFObjBase, phdrLoadMap);
-    } else if (ELFClass == 1 && ELFData == 2) {
-      fillELFPhdr<llvm::object::ELF32BE>(ELFObjBase, phdrLoadMap);
-    } else if (ELFClass == 2 && ELFData == 1) {
-      fillELFPhdr<llvm::object::ELF64LE>(ELFObjBase, phdrLoadMap);
-    } else if (ELFClass == 2 && ELFData == 2) {
-      fillELFPhdr<llvm::object::ELF64BE>(ELFObjBase, phdrLoadMap);
+    const char *elfIdent = binaryFileContent->getBufferStart();
+    const char elfClass = elfIdent[4];
+    const char elfData = elfIdent[5];
+    if (elfClass == 1 && elfData == 1) {
+      fillELFPhdr<llvm::object::ELF32LE>(elfObjBase, phdrLoadMap);
+    } else if (elfClass == 1 && elfData == 2) {
+      fillELFPhdr<llvm::object::ELF32BE>(elfObjBase, phdrLoadMap);
+    } else if (elfClass == 2 && elfData == 1) {
+      fillELFPhdr<llvm::object::ELF64LE>(elfObjBase, phdrLoadMap);
+    } else if (elfClass == 2 && elfData == 2) {
+      fillELFPhdr<llvm::object::ELF64BE>(elfObjBase, phdrLoadMap);
     } else {
       assert(false);
     }
@@ -762,40 +762,40 @@ bool PropellerProfWriter::initBinaryFile() {
 }
 
 bool PropellerProfWriter::populateSymbolMap() {
-  auto Symbols = objFile->symbols();
-  const set<StringRef> ExcludedSymbols{"__cxx_global_array_dtor"};
-  for (const auto &sym : Symbols) {
-    auto AddrR = sym.getAddress();
-    auto SecR = sym.getSection();
+  auto symbols = objFile->symbols();
+  const set<StringRef> excludedSymbols{"__cxx_global_array_dtor"};
+  for (const auto &sym : symbols) {
+    auto addrR = sym.getAddress();
+    auto secR = sym.getSection();
     auto NameR = sym.getName();
-    auto TypeR = sym.getType();
+    auto typeR = sym.getType();
 
-    if (!(AddrR && *AddrR && SecR && (*SecR)->isText() && NameR && TypeR))
+    if (!(addrR && *addrR && secR && (*secR)->isText() && NameR && typeR))
       continue;
 
     StringRef name = *NameR;
     if (name.empty()) continue;
-    uint64_t addr = *AddrR;
-    uint8_t type(*TypeR);
+    uint64_t addr = *addrR;
+    uint8_t type(*typeR);
     llvm::object::ELFSymbolRef ELFSym(sym);
     uint64_t size = ELFSym.getSize();
 
-    StringRef BBFunctionName;
+    StringRef bbFunctionName;
     bool isFunction = (type == llvm::object::SymbolRef::ST_Function);
-    bool isBB = SymbolEntry::isBBSymbol(name, &BBFunctionName);
+    bool isBB = SymbolEntry::isBBSymbol(name, &bbFunctionName);
 
     if (!isFunction && !isBB) continue;
-    if (ExcludedSymbols.find(isBB ? BBFunctionName : name) !=
-        ExcludedSymbols.end()) {
+    if (excludedSymbols.find(isBB ? bbFunctionName : name) !=
+        excludedSymbols.end()) {
       continue;
     }
 
-    auto &L = addrMap[addr];
-    if (!L.empty()) {
+    auto &addrL = addrMap[addr];
+    if (!addrL.empty()) {
       // If we already have a symbol at the same address, merge
       // them together.
-      SymbolEntry *SymbolIsAliasedWith = nullptr;
-      for (auto *sym : L) {
+      SymbolEntry *symbolIsAliasedWith = nullptr;
+      for (auto *sym : addrL) {
         if (sym->size == size || (sym->isFunction() && isFunction)) {
           // Make sure name and Aliased name are both BB or both NON-BB.
           if (SymbolEntry::isBBSymbol(sym->name) !=
@@ -814,52 +814,52 @@ bool PropellerProfWriter::populateSymbolMap() {
             // group to function.
             sym->type = llvm::object::SymbolRef::ST_Function;
           }
-          SymbolIsAliasedWith = sym;
+          symbolIsAliasedWith = sym;
           break;
         }
       }
-      if (SymbolIsAliasedWith) continue;
+      if (symbolIsAliasedWith) continue;
     }
 
     // Delete symbol with same name from symbolNameMap and addrMap.
-    map<StringRef, unique_ptr<SymbolEntry>>::iterator ExistingNameR =
+    map<StringRef, unique_ptr<SymbolEntry>>::iterator existingNameR =
         symbolNameMap.find(name);
-    if (ExistingNameR != symbolNameMap.end()) {
+    if (existingNameR != symbolNameMap.end()) {
       LOG(INFO) << "Dropped duplicate symbol \"" << SymNameF(name) << "\". "
                 << "Consider using \"-funique-internal-funcnames\" to "
                    "dedupe internal function names.";
-      map<uint64_t, list<SymbolEntry *>>::iterator ExistingLI =
-          addrMap.find(ExistingNameR->second->addr);
-      if (ExistingLI != addrMap.end()) {
-        ExistingLI->second.remove_if(
+      map<uint64_t, list<SymbolEntry *>>::iterator existingLI =
+          addrMap.find(existingNameR->second->addr);
+      if (existingLI != addrMap.end()) {
+        existingLI->second.remove_if(
             [&name](SymbolEntry *sym) { return sym->name == name; });
       }
-      symbolNameMap.erase(ExistingNameR);
+      symbolNameMap.erase(existingNameR);
       continue;
     }
 
-    SymbolEntry *NewSymbolEntry =
+    SymbolEntry *newSymbolEntry =
         new SymbolEntry(0, name, SymbolEntry::AliasesTy(), addr, size, type);
-    L.push_back(NewSymbolEntry);
-    NewSymbolEntry->bbTag = SymbolEntry::isBBSymbol(name);
+    addrL.push_back(newSymbolEntry);
+    newSymbolEntry->bbTag = SymbolEntry::isBBSymbol(name);
     // Set the BB Tag type according to the first character of the symbol name.
-    if (NewSymbolEntry->bbTag)
-      NewSymbolEntry->bbTagType = SymbolEntry::toBBTagType(name.front());
+    if (newSymbolEntry->bbTag)
+      newSymbolEntry->bbTagType = SymbolEntry::toBBTagType(name.front());
     else
-      NewSymbolEntry->bbTagType = SymbolEntry::BB_NONE;
+      newSymbolEntry->bbTagType = SymbolEntry::BB_NONE;
     symbolNameMap.emplace(std::piecewise_construct, std::forward_as_tuple(name),
-                          std::forward_as_tuple(NewSymbolEntry));
+                          std::forward_as_tuple(newSymbolEntry));
   }  // End of iterating all symbols.
 
   // Now scan all the symbols in address order to create function <-> bb
   // relationship.
-  uint64_t BBSymbolDropped = 0;
-  decltype(addrMap)::iterator LastFuncPos = addrMap.end();
+  uint64_t bbSymbolDropped = 0;
+  decltype(addrMap)::iterator lastFuncPos = addrMap.end();
   for (auto p = addrMap.begin(), q = addrMap.end(); p != q; ++p) {
-    int FuncCount = 0;
+    int funcCount = 0;
     for (auto *sym : p->second) {
       if (sym->isFunction() && !sym->bbTag) {
-        if (++FuncCount > 1) {
+        if (++funcCount > 1) {
           // 2 different functions start at the same address, but with different
           // sizes, this is not supported.
           LOG(ERROR)
@@ -867,11 +867,11 @@ bool PropellerProfWriter::populateSymbolMap() {
               << ", there are more than 1 functions that have different sizes.";
           return false;
         }
-        LastFuncPos = p;
+        lastFuncPos = p;
       }
     }
 
-    if (LastFuncPos == addrMap.end()) continue;
+    if (lastFuncPos == addrMap.end()) continue;
     for (auto *sym : p->second) {
       if (!sym->bbTag) {
         // Set a function's wrapping function to itself.
@@ -880,20 +880,20 @@ bool PropellerProfWriter::populateSymbolMap() {
       }
       // This is a bb symbol, find a wrapping func for it.
       SymbolEntry *containingFunc = nullptr;
-      for (SymbolEntry *FP : LastFuncPos->second) {
-        if (FP->isFunction() && !FP->bbTag && containsAnotherSymbol(FP,sym) &&
-            isFunctionForBBName(FP, sym->name)) {
+      for (SymbolEntry *fp : lastFuncPos->second) {
+        if (fp->isFunction() && !fp->bbTag && containsAnotherSymbol(fp,sym) &&
+            isFunctionForBBName(fp, sym->name)) {
           if (containingFunc == nullptr) {
-            containingFunc = FP;
+            containingFunc = fp;
           } else {
             // Already has a containing function, so we have at least 2
             // different functions with different sizes but start at the same
             // address, impossible?
             LOG(ERROR) << "Analyzing failure: at address 0x" << hex
-                       << LastFuncPos->first
+                       << lastFuncPos->first
                        << ", there are 2 different functions: "
                        << SymNameF(containingFunc) << " and "
-                       << SymNameF(FP);
+                       << SymNameF(fp);
             return false;
           }
         }
@@ -903,15 +903,15 @@ bool PropellerProfWriter::populateSymbolMap() {
         // 0x10 foo       size = 2
         // 0x12 foo.bb.1  size = 2
         // 0x14 foo.bb.2  size = 0
-        // 0x14 bar  <- LastFuncPos set is to bar.
+        // 0x14 bar  <- lastFuncPos set is to bar.
         // 0x14 bar.bb.1
         // In this scenario, we seek lower address.
-        auto T = LastFuncPos;
-        int FunctionSymbolSeen = 0;
-        while (T != addrMap.begin()) {
-          T = std::prev(T);
+        auto tempI = lastFuncPos;
+        int functionSymbolSeen = 0;
+        while (tempI != addrMap.begin()) {
+          tempI = std::prev(tempI);
           bool isFunction = false;
-          for (auto *KS : T->second) {
+          for (auto *KS : tempI->second) {
             isFunction |= KS->isFunction();
             if (KS->isFunction() && !KS->bbTag &&
                 containsAnotherSymbol(KS, sym) &&
@@ -920,16 +920,16 @@ bool PropellerProfWriter::populateSymbolMap() {
               break;
             }
           }
-          FunctionSymbolSeen += isFunction ? 1 : 0;
+          functionSymbolSeen += isFunction ? 1 : 0;
           // Only go back for at most 2 function symbols.
-          if (FunctionSymbolSeen > 2) break;
+          if (functionSymbolSeen > 2) break;
         }
       }
       sym->containingFunc = containingFunc;
       if (sym->containingFunc == nullptr) {
         LOG(ERROR) << "Dropped bb symbol without any wrapping function: \""
                    << SymShortF(sym) << "\"";
-        ++BBSymbolDropped;
+        ++bbSymbolDropped;
         addrMap.erase(p--);
         break;
       } else {
@@ -952,131 +952,134 @@ bool PropellerProfWriter::populateSymbolMap() {
       //
       if (!containingFunc->aliases.empty()) {
         auto a = sym->name.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
-        auto ExpectFuncName = a.second;
+        auto expectFuncName = a.second;
         auto &aliases = containingFunc->aliases;
-        if (ExpectFuncName != containingFunc->name) {
+        if (expectFuncName != containingFunc->name) {
           SymbolEntry::AliasesTy::iterator p, q;
           for (p = aliases.begin(), q = aliases.end(); p != q; ++p)
-            if (*p == ExpectFuncName) break;
+            if (*p == expectFuncName) break;
 
           if (p == q) {
             LOG(ERROR) << "Internal check error: bb symbol '" << sym->name.str()
                        << "' does not have a valid wrapping function.";
             return false;
           }
-          StringRef OldName = containingFunc->name;
+          StringRef oldName = containingFunc->name;
           containingFunc->name = *p;
           aliases.erase(p);
-          aliases.push_back(OldName);
+          aliases.push_back(oldName);
         }
       }
 
       // Replace the whole name (e.g. "aaaa.BB.foo" with "aaaa" only);
-      StringRef FName, BName;
-      bool r = SymbolEntry::isBBSymbol(sym->name, &FName, &BName);
+      StringRef fName, bName;
+      bool r = SymbolEntry::isBBSymbol(sym->name, &fName, &bName);
       (void)(r);
       assert(r);
-      if (FName != sym->containingFunc->name) {
+      if (fName != sym->containingFunc->name) {
         LOG(ERROR) << "Internal check error: bb symbol '" << sym->name.str()
                        << "' does not have a valid wrapping function.";
       }
-      sym->name = BName;
+      sym->name = bName;
     }  // End of iterating p->second
   }    // End of iterating addrMap.
-  if (BBSymbolDropped)
-    LOG(INFO) << "Dropped " << dec << CommaF(BBSymbolDropped)
+  if (bbSymbolDropped)
+    LOG(INFO) << "Dropped " << dec << CommaF(bbSymbolDropped)
               << " bb symbol(s).";
   return true;
 }
 
 bool PropellerProfWriter::parsePerfData() {
   this->perfDataFileParsed = 0;
-  StringRef FN(perfFileName);
-  while (!FN.empty()) {
-    StringRef PerfName;
-    std::tie(PerfName, FN) = FN.split(',');
-    if (!parsePerfData(PerfName.str())) {
+  StringRef fn(perfFileName);
+  while (!fn.empty()) {
+    StringRef perfName;
+    std::tie(perfName, fn) = fn.split(',');
+    if (!parsePerfData(perfName.str())) {
       return false;
     }
-    ++this->perfDataFileParsed;
+    ++perfDataFileParsed;
   }
   LOG(INFO) << "Processed " << perfDataFileParsed << " perf file(s).";
   return true;
 }
 
-bool PropellerProfWriter::parsePerfData(const string &PName) {
-  quipper::PerfReader PR;
-  if (!PR.ReadFile(PName)) {
-    LOG(ERROR) << "Failed to read perf data file: " << PName;
+bool PropellerProfWriter::parsePerfData(const string &pName) {
+  quipper::PerfReader perfReader;
+  if (!perfReader.ReadFile(pName)) {
+    LOG(ERROR) << "Failed to read perf data file: " << pName;
     return false;
   }
 
-  quipper::PerfParser Parser(&PR);
-  if (!Parser.ParseRawEvents()) {
-    LOG(ERROR) << "Failed to parse perf raw events for perf file: '" << PName
+  quipper::PerfParser parser(&perfReader);
+  if (!parser.ParseRawEvents()) {
+    LOG(ERROR) << "Failed to parse perf raw events for perf file: '" << pName
                << "'.";
     return false;
   }
 
   if (!FLAGS_ignore_build_id) {
-    if (!setupBinaryMMapName(PR, PName)) {
+    if (!setupBinaryMMapName(perfReader, pName)) {
       return false;
     }
   }
 
-  if (!setupMMaps(Parser, PName)) {
+  if (!setupMMaps(parser, pName)) {
     LOG(ERROR) << "Failed to find perf mmaps for binary '" << binaryFileName
                << "'.";
     return false;
   }
 
-  return aggregateLBR(Parser);
+  return aggregateLBR(parser);
 }
 
-bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
-                                     const string &PName) {
+bool PropellerProfWriter::setupMMaps(quipper::PerfParser &parser,
+                                     const string &pName) {
   // Depends on the binary file name, if
   //   - it is absolute, compares it agains the full path
   //   - it is relative, only compares the file name part
-  // Note: CompFunc is constructed in a way so that there is no branch /
+  // Note: compFunc is constructed in a way so that there is no branch /
   // conditional test inside the function.
   struct BinaryNameComparator {
     BinaryNameComparator(const string &binaryFileName) {
       if (llvm::sys::path::is_absolute(binaryFileName)) {
-        ComparePart = StringRef(binaryFileName);
-        PathChanger = NullPathChanger;
+        comparePart = StringRef(binaryFileName);
+        pathChanger = NullPathChanger;
       } else {
-        ComparePart = llvm::sys::path::filename(binaryFileName);
-        PathChanger = NameOnlyPathChanger;
+        comparePart = llvm::sys::path::filename(binaryFileName);
+        pathChanger = NameOnlyPathChanger;
       }
     }
 
     bool operator()(const string &path) {
-      return ComparePart == PathChanger(path);
+      return comparePart == pathChanger(path);
     }
 
-    StringRef ComparePart;
-    std::function<StringRef(const string &)> PathChanger;
+    StringRef comparePart;
+    std::function<StringRef(const string &)> pathChanger;
 
-    static StringRef NullPathChanger(const string &sym) { return StringRef(sym); }
+    static StringRef NullPathChanger(const string &sym) {
+      return StringRef(sym);
+    }
     static StringRef NameOnlyPathChanger(const string &sym) {
       return llvm::sys::path::filename(StringRef(sym));
     }
-  } CompFunc(FLAGS_match_mmap_file.empty()
+  } compFunc(FLAGS_match_mmap_file.empty()
                  ? (this->binaryMMapName.empty() ? binaryFileName
                                                  : this->binaryMMapName)
                  : FLAGS_match_mmap_file);
 
-  for (const auto &PE : Parser.parsed_events()) {
-    quipper::PerfDataProto_PerfEvent *EPtr = PE.event_ptr;
-    if (EPtr->event_type_case() != quipper::PerfDataProto_PerfEvent::kMmapEvent)
+  for (const auto &pe : parser.parsed_events()) {
+    quipper::PerfDataProto_PerfEvent *eventPtr = pe.event_ptr;
+    if (eventPtr->event_type_case() !=
+        quipper::PerfDataProto_PerfEvent::kMmapEvent)
       continue;
 
-    const quipper::PerfDataProto_MMapEvent &mmap = EPtr->mmap_event();
+    const quipper::PerfDataProto_MMapEvent &mmap = eventPtr->mmap_event();
     if (!mmap.has_filename()) continue;
 
     const string &MMapFileName = mmap.filename();
-    if (!CompFunc(MMapFileName) || !mmap.has_start() || !mmap.has_len() ||
+    if (!compFunc(MMapFileName) || !mmap.has_start() || !mmap.has_len() ||
         !mmap.has_pid())
       continue;
 
@@ -1086,7 +1089,7 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
       LOG(ERROR) << "'" << binaryFileName
                  << "' is not specific enough. It matches both '"
                  << binaryMMapName << "' and '" << MMapFileName
-                 << "' in the perf data file '" << PName
+                 << "' in the perf data file '" << pName
                  << "'. Consider using absolute file name.";
       return false;
     }
@@ -1097,19 +1100,19 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
     // For the same binary, mmap can only be different if it is a PIE binary. So
     // for non-PIE binaries, we check all MMaps are equal and merge them into
     // binaryMMapByPid[0].
-    uint64_t MPid = binaryIsPIE ? mmap.pid() : 0;
-    set<MMapEntry> &LoadMap = binaryMMapByPid[MPid];
+    uint64_t mPid = binaryIsPIE ? mmap.pid() : 0;
+    set<MMapEntry> &loadMap = binaryMMapByPid[mPid];
     // Check for mmap conflicts.
     if (!checkBinaryMMapConflictionAndEmplace(loadAddr, loadSize, pageOffset,
-                                              LoadMap)) {
-      stringstream SS;
-      SS << "Found conflict mmap event: "
+                                              loadMap)) {
+      stringstream ss;
+      ss << "Found conflict mmap event: "
          << MMapEntry{loadAddr, loadSize, pageOffset}
          << ". Existing mmap entries: " << std::endl;
-      for (auto &EM : LoadMap) {
-        SS << "\t" << EM << std::endl;
+      for (auto &me : loadMap) {
+        ss << "\t" << me << std::endl;
       }
-      LOG(ERROR) << SS.str();
+      LOG(ERROR) << ss.str();
       return false;
     }
   }  // End of iterating mmap events.
@@ -1118,27 +1121,27 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
           binaryMMapByPid.begin(), binaryMMapByPid.end(), 0,
           [](uint64_t V, const decltype(binaryMMapByPid)::value_type &sym)
               -> uint64_t { return V + sym.second.size(); })) {
-    LOG(ERROR) << "Failed to find mmap entries in '" << PName << "' for '"
+    LOG(ERROR) << "Failed to find mmap entries in '" << pName << "' for '"
                << binaryFileName << "'.";
     return false;
   }
-  for (auto &M : binaryMMapByPid) {
-    stringstream SS;
-    SS << "Found mmap in '" << PName << "' for binary: '" << binaryFileName
-       << "', pid=" << dec << M.first << " (0 for non-pie executables)"
+  for (auto &mpid : binaryMMapByPid) {
+    stringstream ss;
+    ss << "Found mmap in '" << pName << "' for binary: '" << binaryFileName
+       << "', pid=" << dec << mpid.first << " (0 for non-pie executables)"
        << std::endl;
-    for (auto &N : M.second) {
-      SS << "\t" << N << std::endl;
+    for (auto &mm : mpid.second) {
+      ss << "\t" << mm << std::endl;
     }
-    LOG(INFO) << SS.str();
+    LOG(INFO) << ss.str();
   }
   return true;
 }
 
 bool PropellerProfWriter::checkBinaryMMapConflictionAndEmplace(
     uint64_t loadAddr, uint64_t loadSize, uint64_t pageOffset,
-    set<MMapEntry> &M) {
-  for (const MMapEntry &e : M) {
+    set<MMapEntry> &mm) {
+  for (const MMapEntry &e : mm) {
     if (e.loadAddr == loadAddr && e.loadSize == loadSize &&
         e.pageOffset == pageOffset)
       return true;
@@ -1146,124 +1149,124 @@ bool PropellerProfWriter::checkBinaryMMapConflictionAndEmplace(
           (e.loadAddr + e.loadSize <= loadAddr)))
       return false;
   }
-  auto r = M.emplace(loadAddr, loadSize, pageOffset);
+  auto r = mm.emplace(loadAddr, loadSize, pageOffset);
   assert(r.second);
   return true;
 }
 
-bool PropellerProfWriter::setupBinaryMMapName(quipper::PerfReader &PR,
-                                              const string &PName) {
+bool PropellerProfWriter::setupBinaryMMapName(quipper::PerfReader &perfReader,
+                                              const string &pName) {
   this->binaryMMapName = "";
   if (FLAGS_ignore_build_id || this->binaryBuildId.empty()) {
     return true;
   }
-  list<pair<string, string>> ExistingBuildIds;
-  for (const auto &buildId : PR.build_ids()) {
+  list<pair<string, string>> existingBuildIds;
+  for (const auto &buildId : perfReader.build_ids()) {
     if (buildId.has_filename() && buildId.has_build_id_hash()) {
       string PerfBuildId = buildId.build_id_hash();
       quipper::PerfizeBuildIDString(&PerfBuildId);
-      ExistingBuildIds.emplace_back(buildId.filename(), PerfBuildId);
+      existingBuildIds.emplace_back(buildId.filename(), PerfBuildId);
       if (PerfBuildId == this->binaryBuildId) {
         this->binaryMMapName = buildId.filename();
-        LOG(INFO) << "Found file with matching buildId in perf file '" << PName
+        LOG(INFO) << "Found file with matching buildId in perf file '" << pName
                   << "': " << this->binaryMMapName;
         return true;
       }
     }
   }
-  stringstream SS;
-  SS << "No file with matching buildId in perf data '" << PName
+  stringstream ss;
+  ss << "No file with matching buildId in perf data '" << pName
      << "', which contains the following <file, buildid>:" << std::endl;
-  for (auto &p : ExistingBuildIds) {
-    SS << "\t" << p.first << ": " << BuildIdWrapper(p.second.c_str())
+  for (auto &p : existingBuildIds) {
+    ss << "\t" << p.first << ": " << BuildIdWrapper(p.second.c_str())
        << std::endl;
   }
-  LOG(INFO) << SS.str();
+  LOG(INFO) << ss.str();
   return false;
 }
 
-bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
-  uint64_t brstackCount = 0;
-  for (const auto &PE : Parser.parsed_events()) {
-    quipper::PerfDataProto_PerfEvent *EPtr = PE.event_ptr;
-    if (EPtr->event_type_case() !=
+bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &parser) {
+  uint64_t brStackCount = 0;
+  for (const auto &pe : parser.parsed_events()) {
+    quipper::PerfDataProto_PerfEvent *eventPtr = pe.event_ptr;
+    if (eventPtr->event_type_case() !=
         quipper::PerfDataProto_PerfEvent::kSampleEvent)
       continue;
 
-    auto &SEvent = EPtr->sample_event();
-    if (!SEvent.has_pid()) continue;
-    auto BRStack = SEvent.branch_stack();
-    if (BRStack.empty()) continue;
-    uint64_t pid = binaryIsPIE ? SEvent.pid() : 0;
+    auto &sEvent = eventPtr->sample_event();
+    if (!sEvent.has_pid()) continue;
+    auto brStack = sEvent.branch_stack();
+    if (brStack.empty()) continue;
+    uint64_t pid = binaryIsPIE ? sEvent.pid() : 0;
     if (binaryMMapByPid.find(pid) == binaryMMapByPid.end()) continue;
-    auto &BranchCounters = branchCountersByPid[pid];
-    auto &FallthroughCounters = fallthroughCountersByPid[pid];
-    uint64_t LastFrom = INVALID_ADDRESS;
-    uint64_t LastTo = INVALID_ADDRESS;
-    brstackCount += BRStack.size();
-    std::vector<SymbolEntry *> SymSeq{};
+    auto &branchCounters = branchCountersByPid[pid];
+    auto &fallthroughCounters = fallthroughCountersByPid[pid];
+    uint64_t lastFrom = INVALID_ADDRESS;
+    uint64_t lastTo = INVALID_ADDRESS;
+    brStackCount += brStack.size();
+    std::vector<SymbolEntry *> symSeq{};
     SymbolEntry *LastToSym = nullptr;
-    for (int p = BRStack.size() - 1; p >= 0; --p) {
-      const auto &BE = BRStack.Get(p);
-      uint64_t from = BE.from_ip();
-      uint64_t to = BE.to_ip();
+    for (int p = brStack.size() - 1; p >= 0; --p) {
+      const auto &be = brStack.Get(p);
+      uint64_t from = be.from_ip();
+      uint64_t to = be.to_ip();
       // TODO: LBR sometimes duplicates the first entry by mistake. For now we
       // treat these to be true entries.
 
-      // if (p == 0 && from == LastFrom && to == LastTo) {
+      // if (p == 0 && from == lastFrom && to == lastTo) {
       //  LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
       //             from
       //             << "-> 0x" << to << std::dec << "\n";
       //  continue;
       //}
 
-      ++(BranchCounters[make_pair(from, to)]);
-      if (LastTo != INVALID_ADDRESS && LastTo <= from)
-        ++(FallthroughCounters[make_pair(LastTo, from)]);
+      ++(branchCounters[make_pair(from, to)]);
+      if (lastTo != INVALID_ADDRESS && lastTo <= from)
+        ++(fallthroughCounters[make_pair(lastTo, from)]);
 
       // Aggregate path profile information.
       if (FLAGS_gen_path_profile) {
         auto *fromSym = findSymbolAtAddress(pid, from);
         auto *toSym = findSymbolAtAddress(pid, to);
-        if (LastTo != INVALID_ADDRESS && LastTo > from) {
-          pathProfile.addSymSeq(SymSeq);
-          SymSeq.clear();
+        if (lastTo != INVALID_ADDRESS && lastTo > from) {
+          pathProfile.addSymSeq(symSeq);
+          symSeq.clear();
           goto done_path;
         }
 
-        if (p == 0 && from == LastFrom && to == LastTo) {
+        if (p == 0 && from == lastFrom && to == lastTo) {
           // LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
           // from
           //           << "-> 0x" << to << std::dec << "\n";
           goto done_path;
         }
         if (fromSym && toSym) {
-          SymSeq.push_back(fromSym);
-          SymSeq.push_back(toSym);
+          symSeq.push_back(fromSym);
+          symSeq.push_back(toSym);
         } else {
-          pathProfile.addSymSeq(SymSeq);
-          SymSeq.clear();
+          pathProfile.addSymSeq(symSeq);
+          symSeq.clear();
         }
       done_path:;
       }  // Done path profile
 
-      LastTo = to;
-      LastFrom = from;
+      lastTo = to;
+      lastFrom = from;
     }  // end of iterating one br record
     if (FLAGS_gen_path_profile) {
-      pathProfile.addSymSeq(SymSeq);
-      SymSeq.clear();
+      pathProfile.addSymSeq(symSeq);
+      symSeq.clear();
     }
   }  // End of iterating all br records.
-  if (brstackCount < 100) {
-    LOG(ERROR) << "Too few brstack records (only " << brstackCount
+  if (brStackCount < 100) {
+    LOG(ERROR) << "Too few brstack records (only " << brStackCount
                << " record(s) found), cannot continue.";
     return false;
   }
-  LOG(INFO) << "Processed " << CommaF(brstackCount) << " lbr records.";
+  LOG(INFO) << "Processed " << CommaF(brStackCount) << " lbr records.";
   if (FLAGS_gen_path_profile)
-    for (auto i = pathProfile.maxPaths.begin(), J = pathProfile.maxPaths.end();
-         i != J; ++i)
+    for (auto i = pathProfile.maxPaths.begin(), j = pathProfile.maxPaths.end();
+         i != j; ++i)
       if ((*i)->expandToIncludeFallthroughs(*this))
         std::cout << *(*i) << std::endl;
 
@@ -1273,27 +1276,27 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
 bool PropellerProfWriter::findBinaryBuildId() {
   this->binaryBuildId = "";
   if (FLAGS_ignore_build_id) return true;
-  bool BuildIdFound = false;
-  for (auto &SR : objFile->sections()) {
-    llvm::object::ELFSectionRef ESR(SR);
-    StringRef SName;
-    auto ExSecRefName = SR.getName();
-    if (ExSecRefName) {
-      SName = *ExSecRefName;
+  bool buildIdFound = false;
+  for (auto &sr : objFile->sections()) {
+    llvm::object::ELFSectionRef esr(sr);
+    StringRef sName;
+    auto exSecRefName = sr.getName();
+    if (exSecRefName) {
+      sName = *exSecRefName;
     } else {
       continue;
     }
-    auto ExpectedSContents = SR.getContents();
-    if (ESR.getType() == llvm::ELF::SHT_NOTE && SName == ".note.gnu.build-id" &&
-        ExpectedSContents && !ExpectedSContents->empty()) {
-      StringRef SContents = *ExpectedSContents;
-      const unsigned char *p = SContents.bytes_begin() + 0x10;
-      if (p >= SContents.bytes_end()) {
+    auto expectedSContents = sr.getContents();
+    if (esr.getType() == llvm::ELF::SHT_NOTE && sName == ".note.gnu.build-id" &&
+        expectedSContents && !expectedSContents->empty()) {
+      StringRef sContents = *expectedSContents;
+      const unsigned char *p = sContents.bytes_begin() + 0x10;
+      if (p >= sContents.bytes_end()) {
         LOG(INFO) << "Section '.note.gnu.build-id' does not contain valid "
                      "build id information.";
         return true;
       }
-      string buildId((const char *)p, SContents.size() - 0x10);
+      string buildId((const char *)p, sContents.size() - 0x10);
       quipper::PerfizeBuildIDString(&buildId);
       this->binaryBuildId = buildId;
       LOG(INFO) << "Found Build Id in binary '" << binaryFileName
@@ -1307,54 +1310,54 @@ bool PropellerProfWriter::findBinaryBuildId() {
 
 bool PathProfile::addSymSeq(vector<SymbolEntry *> &symSeq) {
   if (symSeq.size() < MIN_LENGTH) return false;
-  auto Range = findPaths(symSeq);
-  path P1(std::move(symSeq));
-  for (auto i = Range.first; i != Range.second; ++i)
-    if (i->second.mergeableWith(P1)) {
-      path &mergeable = i->second;
+  auto range = findPaths(symSeq);
+  Path p1(std::move(symSeq));
+  for (auto i = range.first; i != range.second; ++i)
+    if (i->second.mergeableWith(p1)) {
+      Path &mergeable = i->second;
       removeFromMaxPaths(mergeable);
-      mergeable.merge(P1);
+      mergeable.merge(p1);
       addToMaxPaths(mergeable);
       return true;
     }
 
-  // Insert "P1" into PathProfile.
-  path::Key K = P1.pathKey();
-  // std::cout << "Added path: " << P1 << std::endl;
-  addToMaxPaths(Paths.emplace(K, std::move(P1))->second);
+  // Insert "p1" into PathProfile.
+  Path::Key k = p1.pathKey();
+  // std::cout << "Added path: " << p1 << std::endl;
+  addToMaxPaths(paths.emplace(k, std::move(p1))->second);
   return true;
 }
 
-bool path::expandToIncludeFallthroughs(PropellerProfWriter &PPWriter) {
+bool Path::expandToIncludeFallthroughs(PropellerProfWriter &PPWriter) {
   auto from = syms.begin(), e = syms.end();
   auto to = std::next(from);
-  auto WFrom = cnts.begin(), WEnd = cnts.end();
-  auto WTo = std::next(WFrom);
+  auto wFrom = cnts.begin();
+  auto wTo = std::next(wFrom);
   uint64_t LastCnt;
-  SymbolEntry *LastTo = nullptr;
-  for (; to != e; ++from, ++to, ++WFrom, ++WTo) {
-    if (LastTo) {
+  SymbolEntry *lastTo = nullptr;
+  for (; to != e; ++from, ++to, ++wFrom, ++wTo) {
+    if (lastTo) {
       vector<SymbolEntry *> FTs;
-      if (!PPWriter.calculateFallthroughBBs(LastTo, (*from), FTs))
+      if (!PPWriter.calculateFallthroughBBs(lastTo, (*from), FTs))
         return false;
       if (!FTs.empty()) {
         // Note, after this operation, from / to are still valid.
         syms.insert(from, FTs.begin(), FTs.end());
-        cnts.insert(WFrom, FTs.size(), ((*WFrom + LastCnt) >> 1));
+        cnts.insert(wFrom, FTs.size(), ((*wFrom + LastCnt) >> 1));
       }
     }
-    LastTo = *to;
-    LastCnt = *WTo;
+    lastTo = *to;
+    LastCnt = *wTo;
   }
   return true;
 }
 
-ostream & operator << (ostream &out, const path &path) {
+ostream & operator << (ostream &out, const Path &path) {
   out << "path [" << path.syms.size() << "]: ";
-  auto i = path.syms.begin(), J = path.syms.end();
+  auto i = path.syms.begin(), j = path.syms.end();
   auto p = path.cnts.begin();
   out << (*i)->ordinal;
-  for (++i, ++p; i != J; ++i, ++p)
+  for (++i, ++p; i != j; ++i, ++p)
     out << "-(" << *p << ")->" << (*i)->ordinal;
   return out;
 }
