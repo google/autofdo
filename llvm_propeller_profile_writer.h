@@ -46,7 +46,7 @@ class PerfReader;
 // This class, given binary and perf.data file paths, writes profile data
 // that are to be consumed by plo optimizer.
 
-// A sample output is like below:
+// a sample output is like below:
 //
 // Symbols
 // 1 0 N.init/_init
@@ -69,8 +69,8 @@ class PerfReader;
 // 18 0 N.fini/_fini
 // 19 5e N_ZN9assistantD2Ev/_ZN9assistantD1Ev
 // Branches
-// 10 12 232590 R
-// 12 10 234842 C
+// 10 12 232590 r
+// 12 10 234842 c
 // 12 14 143608
 // 14 12 227040
 // Fallthroughs
@@ -109,84 +109,88 @@ class PerfReader;
 //   from     - sym_index, in decimal
 //   to       - sym_index, in decimal
 //   cnt      - counter, in decimal
-//   C/R      - a field indicate whether this is a function call or a return,
+//   c/r      - a field indicate whether this is a function call or a return,
 //              could be empty if it's just a normal branch.
 //
 // Each line in "Fallthroughs" section contains exactly the same fields as in
-// "Branches" section, except the "C" field.
+// "Branches" section, except the "c" field.
 //
 // Each line that starts with "!" is followed by a function name, for
 // which, bb sections will be generated.
 
 class MMapEntry {
  public:
-  MMapEntry(uint64_t Addr, uint64_t Size, uint64_t PgOff)
-      : LoadAddr(Addr), LoadSize(Size), PageOffset(PgOff) {}
+  MMapEntry(uint64_t addr, uint64_t size, uint64_t pageOff)
+      : loadAddr(addr), loadSize(size), pageOffset(pageOff) {}
   ~MMapEntry() {}
 
-  uint64_t LoadAddr;
-  uint64_t LoadSize;
-  uint64_t PageOffset;
+  uint64_t loadAddr;
+  uint64_t loadSize;
+  uint64_t pageOffset;
 
-  uint64_t getEndAddr() const { return LoadAddr + LoadSize; }
+  uint64_t getEndAddr() const { return loadAddr + loadSize; }
 
   bool operator<(const MMapEntry &M) const {
-    return this->LoadAddr < M.LoadAddr;
+    return this->loadAddr < M.loadAddr;
   }
 };
 
-class Path;
+class path;
 
-ostream & operator << (ostream &out, const Path &p);
+ostream & operator << (ostream &out, const path &path);
 
 class PropellerProfWriter;
-class Path {
+class path {
  public:
   using Key = tuple<uint64_t, uint64_t, uint64_t>;
 
-  explicit Path(Path &&p)
-      : syms(std::move(p.syms)), cnts(std::move(p.cnts)), weight(p.weight) {}
-  explicit Path(vector<SymbolEntry *> &&O)
-      : syms(O), cnts(O.size(), 1), weight(O.size()) {}
+  explicit path(path &&path)
+      : syms(std::move(path.syms)),
+        cnts(std::move(path.cnts)),
+        weight(path.weight) {}
+  explicit path(vector<SymbolEntry *> &&o)
+      : syms(o), cnts(o.size(), 1), weight(o.size()) {}
 
-  bool operator<(const Path &p2) const {
-    return Key(syms[0]->Ordinal, syms[1]->Ordinal, syms[2]->Ordinal) <
-           Key(p2.syms[0]->Ordinal, p2.syms[1]->Ordinal, p2.syms[2]->Ordinal);
+  bool operator<(const path &p2) const {
+    return Key(syms[0]->ordinal, syms[1]->ordinal, syms[2]->ordinal) <
+           Key(p2.syms[0]->ordinal, p2.syms[1]->ordinal, p2.syms[2]->ordinal);
   }
 
-  bool mergeableWith(const Path &p) const {
-    for (auto I = syms.begin(), J = syms.end(), P = p.syms.begin(),
-              Q = p.syms.end();
-         I != J && P != Q; ++I, ++P)
-      if ((*I)->Ordinal != (*P)->Ordinal) return false;
+  bool mergeableWith(const path &path) const {
+    for (auto i = syms.begin(), j = syms.end(), p = path.syms.begin(),
+              q = path.syms.end();
+         i != j && p != q; ++i, ++p)
+      if ((*i)->ordinal != (*p)->ordinal) return false;
     return true;
   }
 
-  bool merge(Path &p) {
+  bool merge(path &path) {
     // std::cerr << "Merging " << std::endl;
     // std::cerr << "\t" << *this << std::endl;
-    // std::cerr << "\t" << p << std::endl;
-    auto I = syms.begin(), J = syms.end(), P = p.syms.begin(), Q = p.syms.end();
-    auto C = cnts.begin(), D = cnts.end(), E = p.cnts.begin(), F = p.cnts.end();
-    for (; I != J && P != Q && C != D && E != F; ++I, ++P, ++C, ++E) *C += *E;
-    if (I == J) {
-      // "p" is longer than this, append p's syms and cnts to this.
-      syms.insert(J, P, Q);
-      cnts.insert(D, E, F);
+    // std::cerr << "\t" << path << std::endl;
+    auto i = syms.begin(), j = syms.end(), p = path.syms.begin(),
+         q = path.syms.end();
+    auto c = cnts.begin(), d = cnts.end(), e = path.cnts.begin(),
+         f = path.cnts.end();
+    for (; i != j && p != q && c != d && e != f; ++i, ++p, ++c, ++e) *c += *e;
+    if (i == j) {
+      // "path" is longer than this, append path's syms and cnts to this.
+      syms.insert(j, p, q);
+      cnts.insert(d, e, f);
     } else {
       // nothing to do
       ;
     }
-    this->weight += p.weight;
+    this->weight += path.weight;
     // std::cerr << "Into " << std::endl;
     // std::cerr << "\t" << *this << std::endl;
     return true;
   }
 
-  bool expandToIncludeFallthroughs(PropellerProfWriter &PPWriter);
+  bool expandToIncludeFallthroughs(PropellerProfWriter &ppWriter);
 
   Key pathKey() const {
-    return Key(syms[0]->Ordinal, syms[1]->Ordinal, syms[2]->Ordinal);
+    return Key(syms[0]->ordinal, syms[1]->ordinal, syms[2]->ordinal);
   }
 
   vector<SymbolEntry *> syms;
@@ -196,19 +200,19 @@ class Path {
 
 class PathProfile {
  public:
-  using PathsTy = std::multimap<Path::Key, Path>;
+  using PathsTy = std::multimap<path::Key, path>;
   using PathsIterator = PathsTy::iterator;
 
   PathsTy Paths;
 
   struct PathComparator {
-    bool operator()(Path *p1, Path *p2) const {
+    bool operator()(path *p1, path *p2) const {
       return p1->weight < p2->weight;
     }
   };
 
-  using MaxPathsTy = multiset<Path *, PathComparator>;
-  MaxPathsTy MaxPaths;
+  using MaxPathsTy = multiset<path *, PathComparator>;
+  MaxPathsTy maxPaths;
 
   bool addSymSeq(vector<SymbolEntry *> &symSequence);
 
@@ -217,25 +221,25 @@ class PathProfile {
   const static int KEEP_MAX_PATHS = 500;
 
  private:
-  // Do not make this "const", because "Path" object returned via this
+  // Do not make this "const", because "path" object returned via this
   // iterator might be modified.
   pair<PathsIterator, PathsIterator> findPaths(vector<SymbolEntry *> &symSeq) {
     return Paths.equal_range(
-        Path::Key(symSeq[0]->Ordinal, symSeq[1]->Ordinal, symSeq[2]->Ordinal));
+        path::Key(symSeq[0]->ordinal, symSeq[1]->ordinal, symSeq[2]->ordinal));
   }
 
-  void addToMaxPaths(Path &p) {
-    MaxPaths.insert(&p);
-    if (MaxPaths.size() >= KEEP_MAX_PATHS)
-      // Remove the Path w/ minimal weight
-      MaxPaths.erase(MaxPaths.begin());
+  void addToMaxPaths(path &path) {
+    maxPaths.insert(&path);
+    if (maxPaths.size() >= KEEP_MAX_PATHS)
+      // Remove the path w/ minimal weight
+      maxPaths.erase(maxPaths.begin());
   }
 
-  void removeFromMaxPaths(Path &p) {
-    auto R = MaxPaths.equal_range(&p);
-    for (auto I = R.first; I != R.second; ++I) {
-      if (*I == &p) {
-        MaxPaths.erase(I);
+  void removeFromMaxPaths(path &path) {
+    auto r = maxPaths.equal_range(&path);
+    for (auto i = r.first; i != r.second; ++i) {
+      if (*i == &path) {
+        maxPaths.erase(i);
         return;
       }
     }
@@ -244,110 +248,110 @@ class PathProfile {
 
 class PropellerProfWriter {
  public:
-  PropellerProfWriter(const string &BFN, const string &PFN, const string &OFN);
+  PropellerProfWriter(const string &bfn, const string &pfn, const string &ofn);
   ~PropellerProfWriter();
 
   bool write();
 
  private:
-  const string BinaryFileName;
-  const string PerfFileName;
-  const string PropOutFileName;
+  const string binaryFileName;
+  const string perfFileName;
+  const string propOutFileName;
 
-  // BinaryFileContent must be the last one to be destroyed.
+  // binaryFileContent must be the last one to be destroyed.
   // So it appears first in this section.
-  unique_ptr<llvm::MemoryBuffer> BinaryFileContent;
-  unique_ptr<llvm::object::ObjectFile> ObjFile;
+  unique_ptr<llvm::MemoryBuffer> binaryFileContent;
+  unique_ptr<llvm::object::ObjectFile> objFile;
   // All symbol handlers.
-  map<StringRef, unique_ptr<SymbolEntry>> SymbolNameMap;
+  map<StringRef, unique_ptr<SymbolEntry>> symbolNameMap;
   // Symbol start address -> Symbol list.
-  map<uint64_t, list<SymbolEntry *>> AddrMap;
+  map<uint64_t, list<SymbolEntry *>> addrMap;
   using CounterTy = map<pair<uint64_t, uint64_t>, uint64_t>;
-  map<uint64_t, CounterTy> BranchCountersByPid;
-  map<uint64_t, CounterTy> FallthroughCountersByPid;
-  map<uint64_t, uint64_t> PhdrLoadMap;  // Only used when binary is PIE.
+  map<uint64_t, CounterTy> branchCountersByPid;
+  map<uint64_t, CounterTy> fallthroughCountersByPid;
+  map<uint64_t, uint64_t> phdrLoadMap;  // Only used when binary is PIE.
 
   // Instead of sorting "SymbolEntry *" by pointer address, we sort it by it's
   // symbol address and symbol ordinal, so we get a stable sort.
   struct SymbolEntryPairComp {
     using KeyT = pair<SymbolEntry *, SymbolEntry *>;
-    bool operator()(const KeyT &K1, const KeyT &K2) const {
-      if (K1.first->Addr != K2.first->Addr)
-        return K1.first->Addr < K2.first->Addr;
-      if (K1.second->Addr != K2.second->Addr)
-        return K1.second->Addr < K2.second->Addr;
-      return K1.first->Ordinal == K2.first->Ordinal
-                 ? K1.second->Ordinal < K2.second->Ordinal
-                 : K1.first->Ordinal < K2.first->Ordinal;
+    bool operator()(const KeyT &k1, const KeyT &k2) const {
+      if (k1.first->addr != k2.first->addr)
+        return k1.first->addr < k2.first->addr;
+      if (k1.second->addr != k2.second->addr)
+        return k1.second->addr < k2.second->addr;
+      return k1.first->ordinal == k2.first->ordinal
+                 ? k1.second->ordinal < k2.second->ordinal
+                 : k1.first->ordinal < k2.first->ordinal;
     }
   };
 
   map<pair<SymbolEntry *, SymbolEntry *>, uint64_t, SymbolEntryPairComp>
-      FallthroughCountersBySymbol;
+      fallthroughCountersBySymbol;
 
   // Group all bb symbols under their wrapping functions, and order function
   // groups by names.
   struct SymGroupComparator {
-    bool operator()(SymbolEntry *S1, SymbolEntry *S2) const {
-      if (S1->ContainingFunc->Name != S2->ContainingFunc->Name)
-        return S1->ContainingFunc->Name < S2->ContainingFunc->Name;
-      return S1->Ordinal < S2->Ordinal;
+    bool operator()(SymbolEntry *s1, SymbolEntry *s2) const {
+      if (s1->containingFunc->name != s2->containingFunc->name)
+        return s1->containingFunc->name < s2->containingFunc->name;
+      return s1->ordinal < s2->ordinal;
     }
   };
-  set<SymbolEntry *, SymGroupComparator> HotSymbols;
+  set<SymbolEntry *, SymGroupComparator> hotSymbols;
 
   // Whether it is Position Independent Executable. If so, addresses from perf
   // file must be adjusted to map to symbols.
-  bool BinaryIsPIE;
-  // MMap entries, pid -> BinaryLoadMap
-  map<uint64_t, set<MMapEntry>> BinaryMMapByPid;
-  // All binary mmaps must have the same BinaryMMapName.
-  string BinaryMMapName;
-  // Nullptr if build id does not exist for BinaryMMapName.
-  string BinaryBuildId;
-  int32_t PerfDataFileParsed;
-  uint64_t SymbolsWritten;
-  uint64_t BranchesWritten;
-  uint64_t FallthroughsWritten;
-  uint64_t ExtraBBsIncludedInFallthroughs;
-  uint64_t TotalCounters;
-  uint64_t CountersNotAddressed;
-  uint64_t CrossFunctionCounters;
-  uint64_t FallthroughStartEndInDifferentFuncs;
-  uint64_t FallthroughCalculationNumber;
-  map<uint64_t, uint64_t> FuncBBCounter;  // How many bb for each func.
+  bool binaryIsPIE;
+  // mmap entries, pid -> BinaryLoadMap
+  map<uint64_t, set<MMapEntry>> binaryMMapByPid;
+  // All binary mmaps must have the same binaryMMapName.
+  string binaryMMapName;
+  // Nullptr if build id does not exist for binaryMMapName.
+  string binaryBuildId;
+  int32_t perfDataFileParsed;
+  uint64_t symbolsWritten;
+  uint64_t branchesWritten;
+  uint64_t fallthroughsWritten;
+  uint64_t extraBBsIncludedInFallthroughs;
+  uint64_t totalCounters;
+  uint64_t countersNotAddressed;
+  uint64_t crossFunctionCounters;
+  uint64_t fallthroughStartEndInDifferentFuncs;
+  uint64_t fallthroughCalculationNumber;
+  map<uint64_t, uint64_t> funcBBCounter;  // How many bb for each func.
   bool findBinaryBuildId();
-  bool setupMMaps(quipper::PerfParser &Parser, const string &PName);
-  bool setupBinaryMMapName(quipper::PerfReader &R, const string &PName);
-  bool checkBinaryMMapConflictionAndEmplace(uint64_t LoadAddr,
-                                            uint64_t LoadSize,
-                                            uint64_t PageOffset,
-                                            set<MMapEntry> &M);
+  bool setupMMaps(quipper::PerfParser &parser, const string &pName);
+  bool setupBinaryMMapName(quipper::PerfReader &reader, const string &pName);
+  bool checkBinaryMMapConflictionAndEmplace(uint64_t loadAddr,
+                                            uint64_t loadSize,
+                                            uint64_t pageOffset,
+                                            set<MMapEntry> &mmapEntry);
 
-  uint64_t adjustAddressForPIE(uint64_t Pid, uint64_t Addr) const {
-    auto I = BinaryMMapByPid.find(Pid);
-    if (I == BinaryMMapByPid.end()) return INVALID_ADDRESS;
-    const MMapEntry *MMap = nullptr;
-    for (const MMapEntry &P : I->second)
-      if (P.LoadAddr <= Addr && Addr < P.LoadAddr + P.LoadSize) MMap = &P;
-    if (!MMap) {
-      // fprintf(stderr, "!!! %ld 0x%lx\n", Pid, Addr);
+  uint64_t adjustAddressForPIE(uint64_t pid, uint64_t addr) const {
+    auto i = binaryMMapByPid.find(pid);
+    if (i == binaryMMapByPid.end()) return INVALID_ADDRESS;
+    const MMapEntry *mmap = nullptr;
+    for (const MMapEntry &p : i->second)
+      if (p.loadAddr <= addr && addr < p.loadAddr + p.loadSize) mmap = &p;
+    if (!mmap) {
+      // fprintf(stderr, "!!! %ld 0x%lx\n", pid, addr);
       return INVALID_ADDRESS;
     }
-    if (BinaryIsPIE) {
-      return Addr - MMap->LoadAddr + MMap->PageOffset;
+    if (binaryIsPIE) {
+      return addr - mmap->loadAddr + mmap->pageOffset;
     }
-    return Addr;
+    return addr;
   }
 
-  bool aggregateLBR(quipper::PerfParser &Parser);
-  bool calculateFallthroughBBs(SymbolEntry *From, SymbolEntry *To,
-                               vector<SymbolEntry *> &Result);
+  bool aggregateLBR(quipper::PerfParser &parser);
+  bool calculateFallthroughBBs(SymbolEntry *from, SymbolEntry *to,
+                               vector<SymbolEntry *> &result);
 
   bool initBinaryFile();
   bool populateSymbolMap();
   bool parsePerfData();
-  bool parsePerfData(const string &PName);
+  bool parsePerfData(const string &pName);
   void writeOuts(ofstream &fout);
   void writeSymbols(ofstream &fout);
   void writeBranches(ofstream &fout);
@@ -356,12 +360,12 @@ class PropellerProfWriter {
   bool reorderSections(int64_t partBegin, int64_t partEnd, int64_t partNew);
   void summarize();
 
-  SymbolEntry *findSymbolAtAddress(uint64_t Pid, uint64_t Addr);
+  SymbolEntry *findSymbolAtAddress(uint64_t pid, uint64_t addr);
 
-  PathProfile PProfile;
+  PathProfile pathProfile;
 
   friend PathProfile;
-  friend Path;
+  friend path;
 
   static const uint64_t INVALID_ADDRESS = uint64_t(-1);
 };

@@ -51,69 +51,70 @@ using std::string;
 using std::stringstream;
 using std::tuple;
 
-PropellerProfWriter::PropellerProfWriter(const string &BFN, const string &PFN,
-                                         const string &OFN)
-    : BinaryFileName(BFN), PerfFileName(PFN), PropOutFileName(OFN) {}
+PropellerProfWriter::PropellerProfWriter(const string &bfn, const string &pfn,
+                                         const string &ofn)
+    : binaryFileName(bfn), perfFileName(pfn), propOutFileName(ofn) {}
 
 PropellerProfWriter::~PropellerProfWriter() {}
 
-// Return true if this SymbolEntry is a containing function for BBName. For
-// example, if BBName is given as "aa.BB.foo", and SymbolEntry.Name = "foo",
-// then SymbolEntry.isFunctionForBBName(BBName) == true. BBNames are from ELF
+// Return true if this SymbolEntry is a containing function for bbName. For
+// example, if bbName is given as "aa.BB.foo", and SymbolEntry.name = "foo",
+// then SymbolEntry.isFunctionForBBName(bbName) == true. BBNames are from ELF
 // object files.
 static bool
-isFunctionForBBName(SymbolEntry *S, StringRef BBName) {
-  auto A = BBName.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
-  if (A.second == S->Name)
+isFunctionForBBName(SymbolEntry *sym, StringRef bbName) {
+  auto a = bbName.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
+  if (a.second == sym->name)
     return true;
-  for (auto N : S->Aliases)
-    if (A.second == N)
+  for (auto n : sym->aliases)
+    if (a.second == n)
       return true;
   return false;
 }
 
 static bool
-containsAddress(SymbolEntry *S, uint64_t A) {
-  return S->Addr <= A && A < S->Addr + S->Size;
+containsAddress(SymbolEntry *sym, uint64_t a) {
+  return sym->addr <= a && a < sym->addr + sym->size;
 }
 
 static bool
-containsAnotherSymbol(SymbolEntry *S, SymbolEntry *O) {
-  if (O->Size == 0) {
+containsAnotherSymbol(SymbolEntry *sym, SymbolEntry *O) {
+  if (O->size == 0) {
     // Note if O's size is 0, we allow O on the end boundary. For example, if
     // foo.BB.4 is at address 0x10. foo is [0x0, 0x10), we then assume foo
     // contains foo.BB.4.
-    return S->Addr <= O->Addr && O->Addr <= S->Addr + S->Size;
+    return sym->addr <= O->addr && O->addr <= sym->addr + sym->size;
   }
-  return containsAddress(S, O->Addr) && containsAddress(S, O->Addr + O->Size - 1);
+  return containsAddress(sym, O->addr) &&
+         containsAddress(sym, O->addr + O->size - 1);
 }
 
-SymbolEntry *PropellerProfWriter::findSymbolAtAddress(uint64_t Pid,
-                                                      uint64_t OriginAddr) {
-  uint64_t Addr = adjustAddressForPIE(Pid, OriginAddr);
-  if (Addr == INVALID_ADDRESS) return nullptr;
-  auto U = AddrMap.upper_bound(Addr);
-  if (U == AddrMap.begin()) return nullptr;
-  auto R = std::prev(U);
+SymbolEntry *PropellerProfWriter::findSymbolAtAddress(uint64_t pid,
+                                                      uint64_t originAddr) {
+  uint64_t addr = adjustAddressForPIE(pid, originAddr);
+  if (addr == INVALID_ADDRESS) return nullptr;
+  auto u = addrMap.upper_bound(addr);
+  if (u == addrMap.begin()) return nullptr;
+  auto r = std::prev(u);
 
   // 99+% of the cases:
-  if (R->second.size() == 1 && containsAddress(R->second.front(), Addr))
-    return *(R->second.begin());
+  if (r->second.size() == 1 && containsAddress(r->second.front(), addr))
+    return *(r->second.begin());
 
-  list<SymbolEntry *> Candidates;
-  for (auto &SymEnt : R->second)
-    if (containsAddress(SymEnt, Addr)) Candidates.emplace_back(SymEnt);
+  list<SymbolEntry *> candidates;
+  for (auto &SymEnt : r->second)
+    if (containsAddress(SymEnt, addr)) candidates.emplace_back(SymEnt);
 
-  if (Candidates.empty()) return nullptr;
+  if (candidates.empty()) return nullptr;
 
   // Sort candidates by symbol size.
-  Candidates.sort([](const SymbolEntry *S1, const SymbolEntry *S2) {
-    if (S1->Size != S2->Size) return S1->Size < S2->Size;
-    return S1->Name < S2->Name;
+  candidates.sort([](const SymbolEntry *s1, const SymbolEntry *s2) {
+    if (s1->size != s2->size) return s1->size < s2->size;
+    return s1->name < s2->name;
   });
 
   // Return the smallest symbol that contains address.
-  return *Candidates.begin();
+  return *candidates.begin();
 }
 
 namespace {
@@ -127,7 +128,7 @@ struct Hex0xOut {
 } hex0x;
 
 struct SymBaseF {
-  SymBaseF(const SymbolEntry &S) : Symbol(S) {}
+  SymBaseF(const SymbolEntry &sym) : Symbol(sym) {}
   const SymbolEntry &Symbol;
 
   static SymbolEntry dummySymbolEntry;
@@ -137,32 +138,32 @@ SymbolEntry SymBaseF::dummySymbolEntry(0, "", SymbolEntry::AliasesTy(),
                                        0, 0,  0);
 
 struct SymNameF : public SymBaseF {
-  SymNameF(const SymbolEntry &S) : SymBaseF(S), Name("") {}
-  SymNameF(const SymbolEntry *S) : SymBaseF(*S), Name("") {}
+  SymNameF(const SymbolEntry &sym) : SymBaseF(sym), name("") {}
+  SymNameF(const SymbolEntry *sym) : SymBaseF(*sym), name("") {}
   // Use explicit to prevent StringRef being casted to SymNameF.
   explicit SymNameF(const StringRef N)
-      : SymBaseF(SymBaseF::dummySymbolEntry), Name(N) {}
+      : SymBaseF(SymBaseF::dummySymbolEntry), name(N) {}
 
-  StringRef Name;
+  StringRef name;
 };
 
 struct SymOrdinalF : public SymBaseF {
-  SymOrdinalF(const SymbolEntry &S) : SymBaseF(S) {}
-  SymOrdinalF(const SymbolEntry *S) : SymBaseF(*S) {}
+  SymOrdinalF(const SymbolEntry &sym) : SymBaseF(sym) {}
+  SymOrdinalF(const SymbolEntry *sym) : SymBaseF(*sym) {}
 };
 
 struct SymSizeF : public SymBaseF {
-  SymSizeF(const SymbolEntry &S) : SymBaseF(S) {}
+  SymSizeF(const SymbolEntry &sym) : SymBaseF(sym) {}
 };
 
 struct SymShortF : public SymBaseF {
-  SymShortF(const SymbolEntry &S) : SymBaseF(S) {}
-  SymShortF(const SymbolEntry *S) : SymBaseF(*S) {}
+  SymShortF(const SymbolEntry &sym) : SymBaseF(sym) {}
+  SymShortF(const SymbolEntry *sym) : SymBaseF(*sym) {}
 };
 
-struct CountF {
-  CountF(uint64_t C) : Cnt(C){};
-  uint64_t Cnt;
+struct countF {
+  countF(uint64_t c) : cnt(c){};
+  uint64_t cnt;
 };
 
 struct CommaF {
@@ -173,20 +174,20 @@ struct CommaF {
 struct PercentageF {
   PercentageF(double d) : value(d) {}
   PercentageF(uint64_t a, uint64_t b) : value((double)a / (double)b) {}
-  template<class C>
-  PercentageF(C &c, uint64_t b) : value((double)c.size() / (double)b) {}
-  template<class C, class D>
-  PercentageF(C &c, D &d) : value((double)c.size() / (double)d.size()) {}
+  template<class Clazz>
+  PercentageF(Clazz &c, uint64_t b) : value((double)c.size() / (double)b) {}
+  template<class Clazz, class D>
+  PercentageF(Clazz &c, D &d) : value((double)c.size() / (double)d.size()) {}
   double value;
 };
 
 struct BuildIdWrapper {
-  BuildIdWrapper(const quipper::PerfDataProto_PerfBuildID &BuildId)
-      : Data(BuildId.build_id_hash().c_str()) {}
+  BuildIdWrapper(const quipper::PerfDataProto_PerfBuildID &buildId)
+      : data(buildId.build_id_hash().c_str()) {}
 
-  BuildIdWrapper(const char *P) : Data(P) {}
+  BuildIdWrapper(const char *p) : data(p) {}
 
-  const char *Data;
+  const char *data;
 };
 
 static std::ostream &operator<<(std::ostream &out, const struct DecOut &) {
@@ -201,84 +202,84 @@ static std::ostream &operator<<(std::ostream &out, const struct Hex0xOut &) {
   return out << std::hex << std::showbase;
 }
 
-static std::ostream &operator<<(std::ostream &out, const SymNameF &NameF) {
-  if (!NameF.Name.empty()) {
-    // In this case, we only care about Name field.
-    // Name is the form of "aaaa.BB.funcname" or "funcname".
-    auto R = NameF.Name.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
-    if (R.second.empty())
-      out << R.first.str();
+static std::ostream &operator<<(std::ostream &out, const SymNameF &nameF) {
+  if (!nameF.name.empty()) {
+    // In this case, we only care about name field.
+    // name is the form of "aaaa.BB.funcname" or "funcname".
+    auto r = nameF.name.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
+    if (r.second.empty())
+      out << r.first.str();
     else
-      out << dec << R.first.size() << lld::propeller::BASIC_BLOCK_SEPARATOR
-          << R.second.str();
+      out << dec << r.first.size() << lld::propeller::BASIC_BLOCK_SEPARATOR
+          << r.second.str();
     return out;
   }
-  auto &Sym = NameF.Symbol;
-  if (Sym.BBTag) {
-    out << dec << Sym.Name.size() << lld::propeller::BASIC_BLOCK_SEPARATOR
-        << (Sym.ContainingFunc ? Sym.ContainingFunc->Name.str() : "null_func");
+  auto &sym = nameF.Symbol;
+  if (sym.bbTag) {
+    out << dec << sym.name.size() << lld::propeller::BASIC_BLOCK_SEPARATOR
+        << (sym.containingFunc ? sym.containingFunc->name.str() : "null_func");
   } else {
-    out << Sym.Name.str().c_str();
-    for (auto A : Sym.Aliases) out << "/" << A.str();
+    out << sym.name.str().c_str();
+    for (auto a : sym.aliases) out << "/" << a.str();
   }
   return out;
 }
 
 static std::ostream &operator<<(std::ostream &out,
-                                const SymOrdinalF &OrdinalF) {
-  return out << dec << OrdinalF.Symbol.Ordinal;
+                                const SymOrdinalF &ordinalF) {
+  return out << dec << ordinalF.Symbol.ordinal;
 }
 
-static std::ostream &operator<<(std::ostream &out, const SymSizeF &SizeF) {
-  return out << hex << SizeF.Symbol.Size;
+static std::ostream &operator<<(std::ostream &out, const SymSizeF &sizeF) {
+  return out << hex << sizeF.Symbol.size;
 }
 
-static std::ostream &operator<<(std::ostream &out, const SymShortF &SymSF) {
-  return out << "symbol '" << SymNameF(SymSF.Symbol) << "@" << hex0x
-             << SymSF.Symbol.Addr << "'";
+static std::ostream &operator<<(std::ostream &out, const SymShortF &symSF) {
+  return out << "symbol '" << SymNameF(symSF.Symbol) << "@" << hex0x
+             << symSF.Symbol.addr << "'";
 }
 
-static std::ostream &operator<<(std::ostream &out, const CountF &CountF) {
-  return out << dec << CountF.Cnt;
+static std::ostream &operator<<(std::ostream &out, const countF &countF) {
+  return out << dec << countF.cnt;
 }
 
-static std::ostream &operator<<(std::ostream &OS, const MMapEntry &ME) {
-  return OS << "[" << hex0x << ME.LoadAddr << ", " << hex0x << ME.getEndAddr()
-            << "] (PgOff=" << hex0x << ME.PageOffset << ", Size=" << hex0x
-            << ME.LoadSize << ")";
+static std::ostream &operator<<(std::ostream &os, const MMapEntry &me) {
+  return os << "[" << hex0x << me.loadAddr << ", " << hex0x << me.getEndAddr()
+            << "] (PgOff=" << hex0x << me.pageOffset << ", size=" << hex0x
+            << me.loadSize << ")";
 };
 
-static std::ostream &operator<<(std::ostream &out, const BuildIdWrapper &BW) {
+static std::ostream &operator<<(std::ostream &out, const BuildIdWrapper &bw) {
   for (int i = 0; i < quipper::kBuildIDArraySize; ++i) {
     out << std::setw(2) << std::setfill('0') << std::hex
-        << ((int)(BW.Data[i]) & 0xFF);
+        << ((int)(bw.data[i]) & 0xFF);
   }
   return out;
 }
 
 // Output integer numbers in "," separated format.
-static std::ostream &operator<<(std::ostream &out, const CommaF &CF) {
+static std::ostream &operator<<(std::ostream &out, const CommaF &cf) {
   std::list<int> seg;
-  uint64_t value = CF.value;
+  uint64_t value = cf.value;
   while (value) {
     seg.insert(seg.begin(), value % 1000);
     value /= 1000;
   }
   if (seg.empty()) seg.insert(seg.begin(), 0);
-  auto OF = out.fill();
-  auto OW = out.width();
+  auto of = out.fill();
+  auto ow = out.width();
   auto i = seg.begin();
   out << std::setfill('\0') << *i;
   for (++i; i != seg.end(); ++i)
     out << "," << std::setw(3) << std::setfill('0') << dec << *i;
-  out.fill(OF);
-  out.width(OW);
+  out.fill(of);
+  out.width(ow);
   return out;
 }
 
-static std::ostream &operator<<(std::ostream &out, const PercentageF &PF) {
+static std::ostream &operator<<(std::ostream &out, const PercentageF &pf) {
   out << std::setprecision(3);
-  out << (PF.value * 100) << '%';
+  out << (pf.value * 100) << '%';
   return out;
 }
 
@@ -290,9 +291,9 @@ bool PropellerProfWriter::write() {
 
   std::fstream::pos_type partBegin, partEnd, partNew;
   {
-    ofstream fout(PropOutFileName);
+    ofstream fout(propOutFileName);
     if (fout.bad()) {
-      LOG(ERROR) << "Failed to open '" << PropOutFileName << "' for writing.";
+      LOG(ERROR) << "Failed to open '" << propOutFileName << "' for writing.";
       return false;
     }
     writeOuts(fout);
@@ -323,7 +324,7 @@ bool PropellerProfWriter::reorderSections(int64_t partBegin, int64_t partEnd,
     int v;
   };
   auto partLength = partEnd - partBegin;
-  FdWrapper fd(open(PropOutFileName.c_str(), O_RDWR));
+  FdWrapper fd(open(propOutFileName.c_str(), O_RDWR));
   if (fd.v == -1) return false;
   unique_ptr<char> tmp(new char[partLength]);
   if (!tmp) return false;
@@ -339,61 +340,61 @@ bool PropellerProfWriter::reorderSections(int64_t partBegin, int64_t partEnd,
 }
 
 void PropellerProfWriter::summarize() {
-  LOG(INFO) << "Wrote propeller profile (" << PerfDataFileParsed << " file(s), "
-            << CommaF(SymbolsWritten) << " syms, " << CommaF(BranchesWritten)
-            << " branches, " << CommaF(FallthroughsWritten)
-            << " fallthroughs) to " << PropOutFileName;
+  LOG(INFO) << "Wrote propeller profile (" << perfDataFileParsed << " file(s), "
+            << CommaF(symbolsWritten) << " syms, " << CommaF(branchesWritten)
+            << " branches, " << CommaF(fallthroughsWritten)
+            << " fallthroughs) to " << propOutFileName;
 
-  LOG(INFO) << CommaF(CountersNotAddressed) << " of " << CommaF(TotalCounters)
+  LOG(INFO) << CommaF(countersNotAddressed) << " of " << CommaF(totalCounters)
             << " branch entries are not mapped ("
-            << PercentageF(CountersNotAddressed, TotalCounters) << ").";
+            << PercentageF(countersNotAddressed, totalCounters) << ").";
 
-  LOG(INFO) << CommaF(CrossFunctionCounters) << " of " << CommaF(TotalCounters)
+  LOG(INFO) << CommaF(crossFunctionCounters) << " of " << CommaF(totalCounters)
             << " branch entries are cross function (" << std::setprecision(3)
-            << PercentageF(CrossFunctionCounters, TotalCounters) << ").";
+            << PercentageF(crossFunctionCounters, totalCounters) << ").";
 
-  LOG(INFO) << CommaF(FallthroughStartEndInDifferentFuncs) << " of "
-            << CommaF(FallthroughCalculationNumber)
+  LOG(INFO) << CommaF(fallthroughStartEndInDifferentFuncs) << " of "
+            << CommaF(fallthroughCalculationNumber)
             << " fallthroughs are discareded because from and to are from "
                "different functions ("
-            << PercentageF(FallthroughStartEndInDifferentFuncs,
-                           FallthroughCalculationNumber)
+            << PercentageF(fallthroughStartEndInDifferentFuncs,
+                           fallthroughCalculationNumber)
             << ").";
 
-  uint64_t TotalBBsWithinFuncsWithProf = 0;
-  uint64_t NumBBsWithProf = 0;
-  set<uint64_t> FuncsWithProf;
-  for (auto &SE : HotSymbols) {
-    if (FuncsWithProf.insert(SE->ContainingFunc->Ordinal).second)
-      TotalBBsWithinFuncsWithProf += FuncBBCounter[SE->ContainingFunc->Ordinal];
-    if (SE->BBTag)
-      ++NumBBsWithProf;
+  uint64_t totalBBsWithinFuncsWithProf = 0;
+  uint64_t numBBsWithProf = 0;
+  set<uint64_t> funcsWithProf;
+  for (auto &se : hotSymbols) {
+    if (funcsWithProf.insert(se->containingFunc->ordinal).second)
+      totalBBsWithinFuncsWithProf += funcBBCounter[se->containingFunc->ordinal];
+    if (se->bbTag)
+      ++numBBsWithProf;
   }
-  uint64_t TotalFuncs = 0;
-  uint64_t TotalBBsAll = 0;
-  for (auto &P : this->SymbolNameMap) {
-    SymbolEntry *S = P.second.get();
-    if (S->BBTag)
-      ++TotalBBsAll;
+  uint64_t totalFuncs = 0;
+  uint64_t totalBBsAll = 0;
+  for (auto &p : this->symbolNameMap) {
+    SymbolEntry *sym = p.second.get();
+    if (sym->bbTag)
+      ++totalBBsAll;
     else
-      ++TotalFuncs;
+      ++totalFuncs;
   }
-  LOG(INFO) << CommaF(TotalFuncs) << " functions, "
-            << CommaF(FuncsWithProf.size()) << " functions with prof ("
-            << PercentageF(FuncsWithProf, TotalFuncs) << ")"
-            << ", " << CommaF(TotalBBsAll) << " BBs (average "
-            << TotalBBsAll / TotalFuncs << " BBs per func), "
-            << CommaF(TotalBBsWithinFuncsWithProf) << " BBs within hot funcs ("
-            << PercentageF(TotalBBsWithinFuncsWithProf, TotalBBsAll) << "), "
-            << CommaF(NumBBsWithProf) << " BBs with prof (include "
-            << CommaF(ExtraBBsIncludedInFallthroughs)
+  LOG(INFO) << CommaF(totalFuncs) << " functions, "
+            << CommaF(funcsWithProf.size()) << " functions with prof ("
+            << PercentageF(funcsWithProf, totalFuncs) << ")"
+            << ", " << CommaF(totalBBsAll) << " BBs (average "
+            << totalBBsAll / totalFuncs << " BBs per func), "
+            << CommaF(totalBBsWithinFuncsWithProf) << " BBs within hot funcs ("
+            << PercentageF(totalBBsWithinFuncsWithProf, totalBBsAll) << "), "
+            << CommaF(numBBsWithProf) << " BBs with prof (include "
+            << CommaF(extraBBsIncludedInFallthroughs)
             << " BBs that are on the path of "
                "fallthroughs, total accounted for "
-            << PercentageF(NumBBsWithProf, TotalBBsAll) << " of all BBs).";
+            << PercentageF(numBBsWithProf, totalBBsAll) << " of all BBs).";
 }
 
 void PropellerProfWriter::writeOuts(ofstream &fout) {
-  set<string> paths{FLAGS_match_mmap_file, BinaryMMapName, BinaryFileName};
+  set<string> paths{FLAGS_match_mmap_file, binaryMMapName, binaryFileName};
   set<string> nameMatches;
   for (const auto &v : paths)
     if (!v.empty()) nameMatches.insert(llvm::sys::path::filename(v).str());
@@ -405,30 +406,30 @@ void PropellerProfWriter::writeOuts(ofstream &fout) {
 void PropellerProfWriter::writeHotFuncAndBBList(ofstream &fout) {
   SymbolEntry *LastFuncSymbol = nullptr;
   uint32_t bbCount = 0;
-  for (auto *SE : HotSymbols)
-    if (SE->BBTag) {
-      if (LastFuncSymbol != SE->ContainingFunc) {
-        fout << "!" << SymNameF(SE->ContainingFunc) << std::endl;
+  for (auto *se : hotSymbols)
+    if (se->bbTag) {
+      if (LastFuncSymbol != se->containingFunc) {
+        fout << "!" << SymNameF(se->containingFunc) << std::endl;
         // If we haven't output any BB symbols for LastFuncSymbol, we then
         // output "!!0" which means the entry block is hot, before we switch
         // to processing another hot function.
         if (!bbCount && LastFuncSymbol)
           fout << "!!0" << std::endl;
-        LastFuncSymbol = SE->ContainingFunc;
+        LastFuncSymbol = se->containingFunc;
       }
-      fout << "!!" << SE->Name.size() << std::endl;
+      fout << "!!" << se->name.size() << std::endl;
       ++bbCount;
     } else {
-      fout << "!" << SymNameF(SE) << std::endl;
-      LastFuncSymbol = SE;
+      fout << "!" << SymNameF(se) << std::endl;
+      LastFuncSymbol = se;
     }
 }
 
 void PropellerProfWriter::writeSymbols(ofstream &fout) {
-  this->SymbolsWritten = 0;
-  uint64_t SymbolOrdinal = 0;
+  this->symbolsWritten = 0;
+  uint64_t symbolOrdinal = 0;
   fout << "Symbols" << std::endl;
-  for (auto &LE : AddrMap) {
+  for (auto &le : addrMap) {
     // Tricky case here:
     // In the same address we have:
     //    foo.bb.1
@@ -436,257 +437,258 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
     // So we first output foo.bb.1, and at this time
     //   foo.bb.1->containingFunc->Index == 0.
     // We output 0.1, wrong!.
-    // To handle this, we sort LE by BBTag:
-    if (LE.second.size() > 1) {
-      LE.second.sort([](SymbolEntry *S1, SymbolEntry *S2) {
-        if (S1->BBTag != S2->BBTag) {
-          return !S1->BBTag;
+    // to handle this, we sort le by bbTag:
+    if (le.second.size() > 1) {
+      le.second.sort([](SymbolEntry *s1, SymbolEntry *s2) {
+        if (s1->bbTag != s2->bbTag) {
+          return !s1->bbTag;
         }
         // order irrelevant, but choose a stable relation.
-        if (S1->Size != S2->Size) return S1->Size < S2->Size;
-        return S1->Name < S2->Name;
+        if (s1->size != s2->size) return s1->size < s2->size;
+        return s1->name < s2->name;
       });
     }
     // Then apply ordial to all before accessing.
-    for (auto *SEPtr : LE.second) {
-      SEPtr->Ordinal = ++SymbolOrdinal;
+    for (auto *sePtr : le.second) {
+      sePtr->ordinal = ++symbolOrdinal;
     }
-    for (auto *SEPtr : LE.second) {
-      SymbolEntry &SE = *SEPtr;
-      fout << SymOrdinalF(SE) << " " << SymSizeF(SE) << " ";
-      ++this->SymbolsWritten;
-      if (SE.BBTag) {
-        fout << SymOrdinalF(SE.ContainingFunc) << ".";
-        StringRef BBIndex = SE.Name;
-        fout << dec << (uint64_t)(BBIndex.size());
-        if (BBIndex.front() != 'a')
-          fout << BBIndex.front();
+    for (auto *sePtr : le.second) {
+      SymbolEntry &se = *sePtr;
+      fout << SymOrdinalF(se) << " " << SymSizeF(se) << " ";
+      ++this->symbolsWritten;
+      if (se.bbTag) {
+        fout << SymOrdinalF(se.containingFunc) << ".";
+        StringRef bbIndex = se.name;
+        fout << dec << (uint64_t)(bbIndex.size());
+        if (bbIndex.front() != 'a')
+          fout << bbIndex.front();
         fout << std::endl;
-        ++FuncBBCounter[SE.ContainingFunc->Ordinal];
+        ++funcBBCounter[se.containingFunc->ordinal];
       } else {
-        fout << "N" << SymNameF(SE) << std::endl;
+        fout << "N" << SymNameF(se) << std::endl;
       }
     }
   }
 }
 
 void PropellerProfWriter::writeBranches(std::ofstream &fout) {
-  this->BranchesWritten = 0;
+  this->branchesWritten = 0;
   fout << "Branches" << std::endl;
-  auto recordHotSymbol = [this](SymbolEntry *S) {
-    if (!S || !(S->ContainingFunc) || S->ContainingFunc->Name.empty()) return;
-    if (S->isLandingPadBlock())
+  auto recordHotSymbol = [this](SymbolEntry *sym) {
+    if (!sym || !(sym->containingFunc) || sym->containingFunc->name.empty())
+      return;
+    if (sym->isLandingPadBlock())
       // Landing pads are always treated as not hot.
-      LOG(WARNING) << "*** HOT LANDING PAD: " << S->Name.str() << "\t"
-                   << S->ContainingFunc->Name.str() << "\n";
+      LOG(WARNING) << "*** HOT LANDING PAD: " << sym->name.str() << "\t"
+                   << sym->containingFunc->name.str() << "\n";
     else
       // Dups are properly handled by set.
-      HotSymbols.insert(S);
+      hotSymbols.insert(sym);
   };
 
   using BrCntSummationKey = tuple<SymbolEntry *, SymbolEntry *, char>;
   struct BrCntSummationKeyComp {
-    bool operator()(const BrCntSummationKey &K1,
-                    const BrCntSummationKey &K2) const {
+    bool operator()(const BrCntSummationKey &k1,
+                    const BrCntSummationKey &k2) const {
       SymbolEntry *From1, *From2, *To1, *To2;
       char T1, T2;
-      std::tie(From1, To1, T1) = K1;
-      std::tie(From2, To2, T2) = K2;
-      if (From1->Ordinal != From2->Ordinal)
-        return From1->Ordinal < From2->Ordinal;
-      if (To1->Ordinal != To2->Ordinal) return To1->Ordinal < To2->Ordinal;
+      std::tie(From1, To1, T1) = k1;
+      std::tie(From2, To2, T2) = k2;
+      if (From1->ordinal != From2->ordinal)
+        return From1->ordinal < From2->ordinal;
+      if (To1->ordinal != To2->ordinal) return To1->ordinal < To2->ordinal;
       return T1 < T2;
     }
   };
   using BrCntSummationTy =
       map<BrCntSummationKey, uint64_t, BrCntSummationKeyComp>;
-  BrCntSummationTy BrCntSummation;
+  BrCntSummationTy brCntSummation;
 
-  TotalCounters = 0;
-  CountersNotAddressed = 0;
-  CrossFunctionCounters = 0;
+  totalCounters = 0;
+  countersNotAddressed = 0;
+  crossFunctionCounters = 0;
   // {pid: {<from, to>: count}}
-  for (auto &BCPid : BranchCountersByPid) {
-    const uint64_t Pid = BCPid.first;
-    auto &BC = BCPid.second;
+  for (auto &bcPid : branchCountersByPid) {
+    const uint64_t pid = bcPid.first;
+    auto &BC = bcPid.second;
     for (auto &EC : BC) {
-      const uint64_t From = EC.first.first;
-      const uint64_t To = EC.first.second;
-      const uint64_t Cnt = EC.second;
-      auto *FromSym = findSymbolAtAddress(Pid, From);
-      auto *ToSym = findSymbolAtAddress(Pid, To);
-      const uint64_t AdjustedFrom = adjustAddressForPIE(Pid, From);
-      const uint64_t AdjustedTo = adjustAddressForPIE(Pid, To);
+      const uint64_t from = EC.first.first;
+      const uint64_t to = EC.first.second;
+      const uint64_t cnt = EC.second;
+      auto *fromSym = findSymbolAtAddress(pid, from);
+      auto *toSym = findSymbolAtAddress(pid, to);
+      const uint64_t adjustedFrom = adjustAddressForPIE(pid, from);
+      const uint64_t adjustedTo = adjustAddressForPIE(pid, to);
 
-      recordHotSymbol(FromSym);
-      recordHotSymbol(ToSym);
+      recordHotSymbol(fromSym);
+      recordHotSymbol(toSym);
 
-      TotalCounters += Cnt;
+      totalCounters += cnt;
 
-      if (!ToSym || !FromSym) {
-        CountersNotAddressed += Cnt;
+      if (!toSym || !fromSym) {
+        countersNotAddressed += cnt;
         continue;
       }
 
-      // If this is a return to the beginning of a basic block, change the ToSym
+      // If this is a return to the beginning of a basic block, change the toSym
       // to the basic block just before and add fallthrough between the two
       // symbols.
-      // After this code executes, AdjustedTo can never be the beginning of a
+      // After this code executes, adjustedTo can never be the beginning of a
       // basic block for returns.
-      if ((FromSym->isReturnBlock() ||
-           ToSym->ContainingFunc->Addr != FromSym->ContainingFunc->Addr) &&
-          ToSym->ContainingFunc->Addr != AdjustedTo &&  // Not a call
+      if ((fromSym->isReturnBlock() ||
+           toSym->containingFunc->addr != fromSym->containingFunc->addr) &&
+          toSym->containingFunc->addr != adjustedTo &&  // Not a call
           // Jump to the beginning of the basicblock
-          AdjustedTo == ToSym->Addr) {
-        auto PrevAddr = std::prev(AddrMap.find(AdjustedTo))->first;
-        auto *CallSiteSym =
-            findSymbolAtAddress(Pid, To - (AdjustedTo - PrevAddr));
-        if (CallSiteSym) {
-          recordHotSymbol(CallSiteSym);
-          // Account for the fall-through between CallSiteSym and ToSym.
-          FallthroughCountersBySymbol[make_pair(CallSiteSym, ToSym)] += Cnt;
-          // Reassign ToSym to be the actuall callsite symbol entry.
-          ToSym = CallSiteSym;
+          adjustedTo == toSym->addr) {
+        auto prevAddr = std::prev(addrMap.find(adjustedTo))->first;
+        auto *callSiteSym =
+            findSymbolAtAddress(pid, to - (adjustedTo - prevAddr));
+        if (callSiteSym) {
+          recordHotSymbol(callSiteSym);
+          // Account for the fall-through between callSiteSym and toSym.
+          fallthroughCountersBySymbol[make_pair(callSiteSym, toSym)] += cnt;
+          // Reassign toSym to be the actuall callsite symbol entry.
+          toSym = callSiteSym;
         } else
           LOG(WARNING) << "*** Internal error: Could not find the right "
-                          "CallSiteSym for : "
-                       << AdjustedTo;
+                          "callSiteSym for : "
+                       << adjustedTo;
       }
 
-      if (FromSym->ContainingFunc != ToSym->ContainingFunc)
-        CrossFunctionCounters += Cnt;
+      if (fromSym->containingFunc != toSym->containingFunc)
+        crossFunctionCounters += cnt;
 
-      char Type = ' ';
-      if (ToSym->ContainingFunc->Addr == AdjustedTo) {
-        Type = 'C';
-      } else if (AdjustedTo != ToSym->Addr) {
-        Type = 'R';
+      char type = ' ';
+      if (toSym->containingFunc->addr == adjustedTo) {
+        type = 'C';
+      } else if (adjustedTo != toSym->addr) {
+        type = 'r';
       }
-      BrCntSummation[std::make_tuple(FromSym, ToSym, Type)] += Cnt;
+      brCntSummation[std::make_tuple(fromSym, toSym, type)] += cnt;
     }
   }
 
-  for (auto &BrEnt : BrCntSummation) {
-    SymbolEntry *FromSym, *ToSym;
-    char Type;
-    std::tie(FromSym, ToSym, Type) = BrEnt.first;
-    uint64_t Cnt = BrEnt.second;
-    fout << SymOrdinalF(FromSym) << " " << SymOrdinalF(ToSym) << " "
-         << CountF(Cnt);
-    if (Type != ' ') {
-      fout << ' ' << Type;
+  for (auto &brEnt : brCntSummation) {
+    SymbolEntry *fromSym, *toSym;
+    char type;
+    std::tie(fromSym, toSym, type) = brEnt.first;
+    uint64_t cnt = brEnt.second;
+    fout << SymOrdinalF(fromSym) << " " << SymOrdinalF(toSym) << " "
+         << countF(cnt);
+    if (type != ' ') {
+      fout << ' ' << type;
     }
     fout << std::endl;
-    ++this->BranchesWritten;
+    ++this->branchesWritten;
   }
 }
 
-// Compute fallthrough BBs from "From" -> "To", and place them in "Path".
-// ("From" and "To" are excluded)
+// Compute fallthrough BBs from "from" -> "to", and place them in "path".
+// ("from" and "to" are excluded)
 bool PropellerProfWriter::calculateFallthroughBBs(
-    SymbolEntry *From, SymbolEntry *To, std::vector<SymbolEntry *> &Path) {
-  Path.clear();
-  ++FallthroughCalculationNumber;
-  if (From == To) return true;
-  if (From->Addr > To->Addr) {
+    SymbolEntry *from, SymbolEntry *to, std::vector<SymbolEntry *> &path) {
+  path.clear();
+  ++fallthroughCalculationNumber;
+  if (from == to) return true;
+  if (from->addr > to->addr) {
     LOG(WARNING) << "*** Internal error: fallthrough path start address is "
                   "larger than end address. ***";
     return false;
   }
 
-  auto P = AddrMap.find(From->Addr), Q = AddrMap.find(To->Addr),
-       E = AddrMap.end();
-  if (P == E || Q == E) {
+  auto p = addrMap.find(from->addr), q = addrMap.find(to->addr),
+       e = addrMap.end();
+  if (p == e || q == e) {
     LOG(FATAL) << "*** Internal error: invalid symbol in fallthrough pair. ***";
     return false;
   }
-  Q = std::next(Q);
-  if (From->ContainingFunc != To->ContainingFunc) {
-    LOG(ERROR) << "fallthrough (" << SymShortF(From) << " -> "
-               << SymShortF(To)
+  q = std::next(q);
+  if (from->containingFunc != to->containingFunc) {
+    LOG(ERROR) << "fallthrough (" << SymShortF(from) << " -> "
+               << SymShortF(to)
                << ") does not start and end within the same faunction.";
-    ++FallthroughStartEndInDifferentFuncs;
+    ++fallthroughStartEndInDifferentFuncs;
     return false;
   }
-  auto Func = From->ContainingFunc;
-  auto I = P;
-  for (++I; I != Q && I != E; ++I) {
-    SymbolEntry *LastFoundSymbol = nullptr;
-    for (auto *SE : I->second) {
-      if (SE->BBTag && SE->ContainingFunc == Func) {
-        if (LastFoundSymbol) {
-          LOG(ERROR) << "fallthrough (" << SymShortF(From) << " -> "
-                     << SymShortF(To) << ") contains ambiguous "
-                     << SymShortF(SE) << " and " << SymShortF(LastFoundSymbol)
+  auto func = from->containingFunc;
+  auto i = p;
+  for (++i; i != q && i != e; ++i) {
+    SymbolEntry *lastFoundSymbol = nullptr;
+    for (auto *se : i->second) {
+      if (se->bbTag && se->containingFunc == func) {
+        if (lastFoundSymbol) {
+          LOG(ERROR) << "fallthrough (" << SymShortF(from) << " -> "
+                     << SymShortF(to) << ") contains ambiguous "
+                     << SymShortF(se) << " and " << SymShortF(lastFoundSymbol)
                      << ".";
         }
-        // Add the symbol entry to path, unless it is the the "To" symbol.
-        if (SE != To)
-          Path.emplace_back(SE);
-        LastFoundSymbol = SE;
+        // Add the symbol entry to path, unless it is the the "to" symbol.
+        if (se != to)
+          path.emplace_back(se);
+        lastFoundSymbol = se;
       }
     }
-    if (!LastFoundSymbol) {
+    if (!lastFoundSymbol) {
       LOG(ERROR) << "failed to find a BB for "
-                 << "fallthrough (" << SymShortF(*From) << " -> "
-                 << SymShortF(To) << ").";
+                 << "fallthrough (" << SymShortF(*from) << " -> "
+                 << SymShortF(to) << ").";
       return false;
     }
   }
-  if (Path.size() >= 200)
-    LOG(ERROR) << "too many BBs along fallthrough (" << SymShortF(From)
-               << " -> " << SymShortF(To) << "): " << dec << Path.size()
+  if (path.size() >= 200)
+    LOG(ERROR) << "too many BBs along fallthrough (" << SymShortF(from)
+               << " -> " << SymShortF(to) << "): " << dec << path.size()
                << " BBs.";
   return true;
 }
 
 void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
-  // CAPid: {pid, <<from_addr, to_addr>, counter>}
-  for (auto &CAPid : FallthroughCountersByPid) {
-    uint64_t Pid = CAPid.first;
-    for (auto &CA : CAPid.second) {
-      const uint64_t Cnt = CA.second;
-      auto *FromSym = findSymbolAtAddress(Pid, CA.first.first);
-      auto *ToSym = findSymbolAtAddress(Pid, CA.first.second);
-      if (FromSym && ToSym)
-        FallthroughCountersBySymbol[std::make_pair(FromSym, ToSym)] += Cnt;
+  // caPid: {pid, <<from_addr, to_addr>, counter>}
+  for (auto &caPid : fallthroughCountersByPid) {
+    uint64_t pid = caPid.first;
+    for (auto &ca : caPid.second) {
+      const uint64_t cnt = ca.second;
+      auto *fromSym = findSymbolAtAddress(pid, ca.first.first);
+      auto *toSym = findSymbolAtAddress(pid, ca.first.second);
+      if (fromSym && toSym)
+        fallthroughCountersBySymbol[std::make_pair(fromSym, toSym)] += cnt;
     }
   }
 
   fout << "Fallthroughs" << std::endl;
-  ExtraBBsIncludedInFallthroughs = 0;
-  FallthroughStartEndInDifferentFuncs = 0;
-  FallthroughCalculationNumber = 0;
-  for (auto &FC : FallthroughCountersBySymbol) {
-    std::vector<SymbolEntry *> Path;
-    SymbolEntry *fallthroughFrom = FC.first.first,
-                *fallthroughTo = FC.first.second;
+  extraBBsIncludedInFallthroughs = 0;
+  fallthroughStartEndInDifferentFuncs = 0;
+  fallthroughCalculationNumber = 0;
+  for (auto &fc : fallthroughCountersBySymbol) {
+    std::vector<SymbolEntry *> path;
+    SymbolEntry *fallthroughFrom = fc.first.first,
+                *fallthroughTo = fc.first.second;
     if (fallthroughFrom != fallthroughTo &&
-        calculateFallthroughBBs(fallthroughFrom, fallthroughTo, Path)) {
-      TotalCounters += (Path.size() + 1) * FC.second;
-      // Note, fallthroughFrom/To are not included in "Path".
-      HotSymbols.insert(fallthroughFrom);
-      HotSymbols.insert(fallthroughTo);
-      for (auto *S : Path) {
-        if (S->isLandingPadBlock()) {
-          LOG(WARNING) << "*** HOT LANDING PAD: " << S->Name.str() << "\t"
-                       << S->ContainingFunc->Name.str() << "\n";
+        calculateFallthroughBBs(fallthroughFrom, fallthroughTo, path)) {
+      totalCounters += (path.size() + 1) * fc.second;
+      // Note, fallthroughFrom/to are not included in "path".
+      hotSymbols.insert(fallthroughFrom);
+      hotSymbols.insert(fallthroughTo);
+      for (auto *sym : path) {
+        if (sym->isLandingPadBlock()) {
+          LOG(WARNING) << "*** HOT LANDING PAD: " << sym->name.str() << "\t"
+                       << sym->containingFunc->name.str() << "\n";
         }
-        ExtraBBsIncludedInFallthroughs += HotSymbols.insert(S).second ? 1 : 0;
+        extraBBsIncludedInFallthroughs += hotSymbols.insert(sym).second ? 1 : 0;
       }
     }
 
-    fout << SymOrdinalF(*(FC.first.first)) << " "
-         << SymOrdinalF(*(FC.first.second)) << " " << CountF(FC.second)
+    fout << SymOrdinalF(*(fc.first.first)) << " "
+         << SymOrdinalF(*(fc.first.second)) << " " << countF(fc.second)
          << std::endl;
   }
-  this->FallthroughsWritten = FallthroughCountersBySymbol.size();
+  this->fallthroughsWritten = fallthroughCountersBySymbol.size();
 }
 
 template <class ELFT>
-bool fillELFPhdr(llvm::object::ELFObjectFileBase *EBFile,
-                 map<uint64_t, uint64_t> &PhdrLoadMap) {
-  ELFObjectFile<ELFT> *eobj = dyn_cast<ELFObjectFile<ELFT>>(EBFile);
+bool fillELFPhdr(llvm::object::ELFObjectFileBase *ebFile,
+                 map<uint64_t, uint64_t> &phdrLoadMap) {
+  ELFObjectFile<ELFT> *eobj = dyn_cast<ELFObjectFile<ELFT>>(ebFile);
   if (!eobj) return false;
   const ELFFile<ELFT> *efile = eobj->getELFFile();
   if (!efile) return false;
@@ -695,24 +697,24 @@ bool fillELFPhdr(llvm::object::ELFObjectFileBase *EBFile,
   for (const typename ELFT::Phdr &phdr : *program_headers) {
     if (phdr.p_type == llvm::ELF::PT_LOAD &&
         (phdr.p_flags & llvm::ELF::PF_X) != 0) {
-      auto E = PhdrLoadMap.find(phdr.p_vaddr);
-      if (E == PhdrLoadMap.end()) {
-        PhdrLoadMap.emplace(phdr.p_vaddr, phdr.p_memsz);
+      auto e = phdrLoadMap.find(phdr.p_vaddr);
+      if (e == phdrLoadMap.end()) {
+        phdrLoadMap.emplace(phdr.p_vaddr, phdr.p_memsz);
       } else {
-        if (E->second != phdr.p_memsz) {
+        if (e->second != phdr.p_memsz) {
           LOG(ERROR) << "Invalid phdr found in elf binary file.";
           return false;
         }
       }
     }
   }
-  if (PhdrLoadMap.empty()) {
+  if (phdrLoadMap.empty()) {
     LOG(ERROR) << "No loadable and executable segments found in binary.";
     return false;
   }
   stringstream SS;
   SS << "Loadable and executable segments:\n";
-  for (auto &Seg : PhdrLoadMap) {
+  for (auto &Seg : phdrLoadMap) {
     SS << "\tvaddr=" << hex0x << Seg.first << ", memsz=" << hex0x << Seg.second
        << std::endl;
   }
@@ -721,168 +723,168 @@ bool fillELFPhdr(llvm::object::ELFObjectFileBase *EBFile,
 }
 
 bool PropellerProfWriter::initBinaryFile() {
-  auto FileOrError = llvm::MemoryBuffer::getFile(BinaryFileName);
+  auto FileOrError = llvm::MemoryBuffer::getFile(binaryFileName);
   if (!FileOrError) {
-    LOG(ERROR) << "Failed to read file '" << BinaryFileName << "'.";
+    LOG(ERROR) << "Failed to read file '" << binaryFileName << "'.";
     return false;
   }
-  this->BinaryFileContent = std::move(*FileOrError);
+  this->binaryFileContent = std::move(*FileOrError);
 
   auto ObjOrError = llvm::object::ObjectFile::createELFObjectFile(
-      llvm::MemoryBufferRef(*(this->BinaryFileContent)));
+      llvm::MemoryBufferRef(*(this->binaryFileContent)));
   if (!ObjOrError) {
-    LOG(ERROR) << "Not a valid ELF file '" << BinaryFileName << "'.";
+    LOG(ERROR) << "Not a valid ELF file '" << binaryFileName << "'.";
     return false;
   }
-  this->ObjFile = std::move(*ObjOrError);
+  this->objFile = std::move(*ObjOrError);
 
-  auto *ELFObjBase = dyn_cast<ELFObjectFileBase, ObjectFile>(ObjFile.get());
-  BinaryIsPIE = (ELFObjBase->getEType() == llvm::ELF::ET_DYN);
-  if (BinaryIsPIE) {
-    const char *ELFIdent = BinaryFileContent->getBufferStart();
+  auto *ELFObjBase = dyn_cast<ELFObjectFileBase, ObjectFile>(objFile.get());
+  binaryIsPIE = (ELFObjBase->getEType() == llvm::ELF::ET_DYN);
+  if (binaryIsPIE) {
+    const char *ELFIdent = binaryFileContent->getBufferStart();
     const char ELFClass = ELFIdent[4];
     const char ELFData = ELFIdent[5];
     if (ELFClass == 1 && ELFData == 1) {
-      fillELFPhdr<llvm::object::ELF32LE>(ELFObjBase, PhdrLoadMap);
+      fillELFPhdr<llvm::object::ELF32LE>(ELFObjBase, phdrLoadMap);
     } else if (ELFClass == 1 && ELFData == 2) {
-      fillELFPhdr<llvm::object::ELF32BE>(ELFObjBase, PhdrLoadMap);
+      fillELFPhdr<llvm::object::ELF32BE>(ELFObjBase, phdrLoadMap);
     } else if (ELFClass == 2 && ELFData == 1) {
-      fillELFPhdr<llvm::object::ELF64LE>(ELFObjBase, PhdrLoadMap);
+      fillELFPhdr<llvm::object::ELF64LE>(ELFObjBase, phdrLoadMap);
     } else if (ELFClass == 2 && ELFData == 2) {
-      fillELFPhdr<llvm::object::ELF64BE>(ELFObjBase, PhdrLoadMap);
+      fillELFPhdr<llvm::object::ELF64BE>(ELFObjBase, phdrLoadMap);
     } else {
       assert(false);
     }
   }
-  LOG(INFO) << "'" << this->BinaryFileName
-            << "' is PIE binary: " << BinaryIsPIE;
+  LOG(INFO) << "'" << this->binaryFileName
+            << "' is PIE binary: " << binaryIsPIE;
   return true;
 }
 
 bool PropellerProfWriter::populateSymbolMap() {
-  auto Symbols = ObjFile->symbols();
+  auto Symbols = objFile->symbols();
   const set<StringRef> ExcludedSymbols{"__cxx_global_array_dtor"};
-  for (const auto &Sym : Symbols) {
-    auto AddrR = Sym.getAddress();
-    auto SecR = Sym.getSection();
-    auto NameR = Sym.getName();
-    auto TypeR = Sym.getType();
+  for (const auto &sym : Symbols) {
+    auto AddrR = sym.getAddress();
+    auto SecR = sym.getSection();
+    auto NameR = sym.getName();
+    auto TypeR = sym.getType();
 
     if (!(AddrR && *AddrR && SecR && (*SecR)->isText() && NameR && TypeR))
       continue;
 
-    StringRef Name = *NameR;
-    if (Name.empty()) continue;
-    uint64_t Addr = *AddrR;
-    uint8_t Type(*TypeR);
-    llvm::object::ELFSymbolRef ELFSym(Sym);
-    uint64_t Size = ELFSym.getSize();
+    StringRef name = *NameR;
+    if (name.empty()) continue;
+    uint64_t addr = *AddrR;
+    uint8_t type(*TypeR);
+    llvm::object::ELFSymbolRef ELFSym(sym);
+    uint64_t size = ELFSym.getSize();
 
     StringRef BBFunctionName;
-    bool isFunction = (Type == llvm::object::SymbolRef::ST_Function);
-    bool isBB = SymbolEntry::isBBSymbol(Name, &BBFunctionName);
+    bool isFunction = (type == llvm::object::SymbolRef::ST_Function);
+    bool isBB = SymbolEntry::isBBSymbol(name, &BBFunctionName);
 
     if (!isFunction && !isBB) continue;
-    if (ExcludedSymbols.find(isBB ? BBFunctionName : Name) !=
+    if (ExcludedSymbols.find(isBB ? BBFunctionName : name) !=
         ExcludedSymbols.end()) {
       continue;
     }
 
-    auto &L = AddrMap[Addr];
+    auto &L = addrMap[addr];
     if (!L.empty()) {
       // If we already have a symbol at the same address, merge
       // them together.
       SymbolEntry *SymbolIsAliasedWith = nullptr;
-      for (auto *S : L) {
-        if (S->Size == Size || (S->isFunction() && isFunction)) {
-          // Make sure Name and Aliased name are both BB or both NON-BB.
-          if (SymbolEntry::isBBSymbol(S->Name) !=
-              SymbolEntry::isBBSymbol(Name)) {
-            LOG(INFO) << "Dropped symbol: '" << SymNameF(Name)
+      for (auto *sym : L) {
+        if (sym->size == size || (sym->isFunction() && isFunction)) {
+          // Make sure name and Aliased name are both BB or both NON-BB.
+          if (SymbolEntry::isBBSymbol(sym->name) !=
+              SymbolEntry::isBBSymbol(name)) {
+            LOG(INFO) << "Dropped symbol: '" << SymNameF(name)
                       << "'. The symbol conflicts with another symbol on the "
                          "same address: "
-                      << hex0x << Addr;
+                      << hex0x << addr;
             continue;
           }
-          S->Aliases.push_back(Name);
-          if (S->Size < Size) S->Size = Size;
-          if (!S->isFunction() &&
-              Type == llvm::object::SymbolRef::ST_Function) {
+          sym->aliases.push_back(name);
+          if (sym->size < size) sym->size = size;
+          if (!sym->isFunction() &&
+              type == llvm::object::SymbolRef::ST_Function) {
             // If any of the aliased symbols is a function, promote the whole
             // group to function.
-            S->Type = llvm::object::SymbolRef::ST_Function;
+            sym->type = llvm::object::SymbolRef::ST_Function;
           }
-          SymbolIsAliasedWith = S;
+          SymbolIsAliasedWith = sym;
           break;
         }
       }
       if (SymbolIsAliasedWith) continue;
     }
 
-    // Delete symbol with same name from SymbolNameMap and AddrMap.
+    // Delete symbol with same name from symbolNameMap and addrMap.
     map<StringRef, unique_ptr<SymbolEntry>>::iterator ExistingNameR =
-        SymbolNameMap.find(Name);
-    if (ExistingNameR != SymbolNameMap.end()) {
-      LOG(INFO) << "Dropped duplicate symbol \"" << SymNameF(Name) << "\". "
+        symbolNameMap.find(name);
+    if (ExistingNameR != symbolNameMap.end()) {
+      LOG(INFO) << "Dropped duplicate symbol \"" << SymNameF(name) << "\". "
                 << "Consider using \"-funique-internal-funcnames\" to "
                    "dedupe internal function names.";
       map<uint64_t, list<SymbolEntry *>>::iterator ExistingLI =
-          AddrMap.find(ExistingNameR->second->Addr);
-      if (ExistingLI != AddrMap.end()) {
+          addrMap.find(ExistingNameR->second->addr);
+      if (ExistingLI != addrMap.end()) {
         ExistingLI->second.remove_if(
-            [&Name](SymbolEntry *S) { return S->Name == Name; });
+            [&name](SymbolEntry *sym) { return sym->name == name; });
       }
-      SymbolNameMap.erase(ExistingNameR);
+      symbolNameMap.erase(ExistingNameR);
       continue;
     }
 
     SymbolEntry *NewSymbolEntry =
-        new SymbolEntry(0, Name, SymbolEntry::AliasesTy(), Addr, Size, Type);
+        new SymbolEntry(0, name, SymbolEntry::AliasesTy(), addr, size, type);
     L.push_back(NewSymbolEntry);
-    NewSymbolEntry->BBTag = SymbolEntry::isBBSymbol(Name);
+    NewSymbolEntry->bbTag = SymbolEntry::isBBSymbol(name);
     // Set the BB Tag type according to the first character of the symbol name.
-    if (NewSymbolEntry->BBTag)
-      NewSymbolEntry->BBTagType = SymbolEntry::toBBTagType(Name.front());
+    if (NewSymbolEntry->bbTag)
+      NewSymbolEntry->bbTagType = SymbolEntry::toBBTagType(name.front());
     else
-      NewSymbolEntry->BBTagType = SymbolEntry::BB_NONE;
-    SymbolNameMap.emplace(std::piecewise_construct, std::forward_as_tuple(Name),
+      NewSymbolEntry->bbTagType = SymbolEntry::BB_NONE;
+    symbolNameMap.emplace(std::piecewise_construct, std::forward_as_tuple(name),
                           std::forward_as_tuple(NewSymbolEntry));
   }  // End of iterating all symbols.
 
   // Now scan all the symbols in address order to create function <-> bb
   // relationship.
   uint64_t BBSymbolDropped = 0;
-  decltype(AddrMap)::iterator LastFuncPos = AddrMap.end();
-  for (auto P = AddrMap.begin(), Q = AddrMap.end(); P != Q; ++P) {
+  decltype(addrMap)::iterator LastFuncPos = addrMap.end();
+  for (auto p = addrMap.begin(), q = addrMap.end(); p != q; ++p) {
     int FuncCount = 0;
-    for (auto *S : P->second) {
-      if (S->isFunction() && !S->BBTag) {
+    for (auto *sym : p->second) {
+      if (sym->isFunction() && !sym->bbTag) {
         if (++FuncCount > 1) {
           // 2 different functions start at the same address, but with different
           // sizes, this is not supported.
           LOG(ERROR)
-              << "Analyzing failure: at address 0x" << hex << P->first
+              << "Analyzing failure: at address 0x" << hex << p->first
               << ", there are more than 1 functions that have different sizes.";
           return false;
         }
-        LastFuncPos = P;
+        LastFuncPos = p;
       }
     }
 
-    if (LastFuncPos == AddrMap.end()) continue;
-    for (auto *S : P->second) {
-      if (!S->BBTag) {
+    if (LastFuncPos == addrMap.end()) continue;
+    for (auto *sym : p->second) {
+      if (!sym->bbTag) {
         // Set a function's wrapping function to itself.
-        S->ContainingFunc = S;
+        sym->containingFunc = sym;
         continue;
       }
       // This is a bb symbol, find a wrapping func for it.
-      SymbolEntry *ContainingFunc = nullptr;
+      SymbolEntry *containingFunc = nullptr;
       for (SymbolEntry *FP : LastFuncPos->second) {
-        if (FP->isFunction() && !FP->BBTag && containsAnotherSymbol(FP,S) &&
-            isFunctionForBBName(FP, S->Name)) {
-          if (ContainingFunc == nullptr) {
-            ContainingFunc = FP;
+        if (FP->isFunction() && !FP->bbTag && containsAnotherSymbol(FP,sym) &&
+            isFunctionForBBName(FP, sym->name)) {
+          if (containingFunc == nullptr) {
+            containingFunc = FP;
           } else {
             // Already has a containing function, so we have at least 2
             // different functions with different sizes but start at the same
@@ -890,13 +892,13 @@ bool PropellerProfWriter::populateSymbolMap() {
             LOG(ERROR) << "Analyzing failure: at address 0x" << hex
                        << LastFuncPos->first
                        << ", there are 2 different functions: "
-                       << SymNameF(ContainingFunc) << " and "
+                       << SymNameF(containingFunc) << " and "
                        << SymNameF(FP);
             return false;
           }
         }
       }
-      if (!ContainingFunc) {
+      if (!containingFunc) {
         // Disambiguate the following case:
         // 0x10 foo       size = 2
         // 0x12 foo.bb.1  size = 2
@@ -906,15 +908,15 @@ bool PropellerProfWriter::populateSymbolMap() {
         // In this scenario, we seek lower address.
         auto T = LastFuncPos;
         int FunctionSymbolSeen = 0;
-        while (T != AddrMap.begin()) {
+        while (T != addrMap.begin()) {
           T = std::prev(T);
           bool isFunction = false;
           for (auto *KS : T->second) {
             isFunction |= KS->isFunction();
-            if (KS->isFunction() && !KS->BBTag &&
-                containsAnotherSymbol(KS, S) &&
-                isFunctionForBBName(KS, S->Name)) {
-              ContainingFunc = KS;
+            if (KS->isFunction() && !KS->bbTag &&
+                containsAnotherSymbol(KS, sym) &&
+                isFunctionForBBName(KS, sym->name)) {
+              containingFunc = KS;
               break;
             }
           }
@@ -923,18 +925,18 @@ bool PropellerProfWriter::populateSymbolMap() {
           if (FunctionSymbolSeen > 2) break;
         }
       }
-      S->ContainingFunc = ContainingFunc;
-      if (S->ContainingFunc == nullptr) {
+      sym->containingFunc = containingFunc;
+      if (sym->containingFunc == nullptr) {
         LOG(ERROR) << "Dropped bb symbol without any wrapping function: \""
-                   << SymShortF(S) << "\"";
+                   << SymShortF(sym) << "\"";
         ++BBSymbolDropped;
-        AddrMap.erase(P--);
+        addrMap.erase(p--);
         break;
       } else {
-        if (!isFunctionForBBName(ContainingFunc, S->Name)) {
+        if (!isFunctionForBBName(containingFunc, sym->name)) {
           LOG(ERROR) << "Internal check warning: \n"
-                     << "Sym: " << SymShortF(S) << "\n"
-                     << "Func: " << SymShortF(S->ContainingFunc);
+                     << "sym: " << SymShortF(sym) << "\n"
+                     << "func: " << SymShortF(sym->containingFunc);
           return false;
         }
       }
@@ -948,39 +950,39 @@ bool PropellerProfWriter::populateSymbolMap() {
       //    _zfooc1/_zfooc2/_zfooc3
       // By doing this, the wrapping func matches "a.BB._zfooc1" correctly.
       //
-      if (!ContainingFunc->Aliases.empty()) {
-        auto A = S->Name.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
-        auto ExpectFuncName = A.second;
-        auto &Aliases = ContainingFunc->Aliases;
-        if (ExpectFuncName != ContainingFunc->Name) {
-          SymbolEntry::AliasesTy::iterator P, Q;
-          for (P = Aliases.begin(), Q = Aliases.end(); P != Q; ++P)
-            if (*P == ExpectFuncName) break;
+      if (!containingFunc->aliases.empty()) {
+        auto a = sym->name.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
+        auto ExpectFuncName = a.second;
+        auto &aliases = containingFunc->aliases;
+        if (ExpectFuncName != containingFunc->name) {
+          SymbolEntry::AliasesTy::iterator p, q;
+          for (p = aliases.begin(), q = aliases.end(); p != q; ++p)
+            if (*p == ExpectFuncName) break;
 
-          if (P == Q) {
-            LOG(ERROR) << "Internal check error: bb symbol '" << S->Name.str()
+          if (p == q) {
+            LOG(ERROR) << "Internal check error: bb symbol '" << sym->name.str()
                        << "' does not have a valid wrapping function.";
             return false;
           }
-          StringRef OldName = ContainingFunc->Name;
-          ContainingFunc->Name = *P;
-          Aliases.erase(P);
-          Aliases.push_back(OldName);
+          StringRef OldName = containingFunc->name;
+          containingFunc->name = *p;
+          aliases.erase(p);
+          aliases.push_back(OldName);
         }
       }
 
       // Replace the whole name (e.g. "aaaa.BB.foo" with "aaaa" only);
       StringRef FName, BName;
-      bool R = SymbolEntry::isBBSymbol(S->Name, &FName, &BName);
-      (void)(R);
-      assert(R);
-      if (FName != S->ContainingFunc->Name) {
-        LOG(ERROR) << "Internal check error: bb symbol '" << S->Name.str()
+      bool r = SymbolEntry::isBBSymbol(sym->name, &FName, &BName);
+      (void)(r);
+      assert(r);
+      if (FName != sym->containingFunc->name) {
+        LOG(ERROR) << "Internal check error: bb symbol '" << sym->name.str()
                        << "' does not have a valid wrapping function.";
       }
-      S->Name = BName;
-    }  // End of iterating P->second
-  }    // End of iterating AddrMap.
+      sym->name = BName;
+    }  // End of iterating p->second
+  }    // End of iterating addrMap.
   if (BBSymbolDropped)
     LOG(INFO) << "Dropped " << dec << CommaF(BBSymbolDropped)
               << " bb symbol(s).";
@@ -988,17 +990,17 @@ bool PropellerProfWriter::populateSymbolMap() {
 }
 
 bool PropellerProfWriter::parsePerfData() {
-  this->PerfDataFileParsed = 0;
-  StringRef FN(PerfFileName);
+  this->perfDataFileParsed = 0;
+  StringRef FN(perfFileName);
   while (!FN.empty()) {
     StringRef PerfName;
     std::tie(PerfName, FN) = FN.split(',');
     if (!parsePerfData(PerfName.str())) {
       return false;
     }
-    ++this->PerfDataFileParsed;
+    ++this->perfDataFileParsed;
   }
-  LOG(INFO) << "Processed " << PerfDataFileParsed << " perf file(s).";
+  LOG(INFO) << "Processed " << perfDataFileParsed << " perf file(s).";
   return true;
 }
 
@@ -1023,7 +1025,7 @@ bool PropellerProfWriter::parsePerfData(const string &PName) {
   }
 
   if (!setupMMaps(Parser, PName)) {
-    LOG(ERROR) << "Failed to find perf mmaps for binary '" << BinaryFileName
+    LOG(ERROR) << "Failed to find perf mmaps for binary '" << binaryFileName
                << "'.";
     return false;
   }
@@ -1039,30 +1041,30 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
   // Note: CompFunc is constructed in a way so that there is no branch /
   // conditional test inside the function.
   struct BinaryNameComparator {
-    BinaryNameComparator(const string &BinaryFileName) {
-      if (llvm::sys::path::is_absolute(BinaryFileName)) {
-        ComparePart = StringRef(BinaryFileName);
+    BinaryNameComparator(const string &binaryFileName) {
+      if (llvm::sys::path::is_absolute(binaryFileName)) {
+        ComparePart = StringRef(binaryFileName);
         PathChanger = NullPathChanger;
       } else {
-        ComparePart = llvm::sys::path::filename(BinaryFileName);
+        ComparePart = llvm::sys::path::filename(binaryFileName);
         PathChanger = NameOnlyPathChanger;
       }
     }
 
-    bool operator()(const string &Path) {
-      return ComparePart == PathChanger(Path);
+    bool operator()(const string &path) {
+      return ComparePart == PathChanger(path);
     }
 
     StringRef ComparePart;
     std::function<StringRef(const string &)> PathChanger;
 
-    static StringRef NullPathChanger(const string &S) { return StringRef(S); }
-    static StringRef NameOnlyPathChanger(const string &S) {
-      return llvm::sys::path::filename(StringRef(S));
+    static StringRef NullPathChanger(const string &sym) { return StringRef(sym); }
+    static StringRef NameOnlyPathChanger(const string &sym) {
+      return llvm::sys::path::filename(StringRef(sym));
     }
   } CompFunc(FLAGS_match_mmap_file.empty()
-                 ? (this->BinaryMMapName.empty() ? BinaryFileName
-                                                 : this->BinaryMMapName)
+                 ? (this->binaryMMapName.empty() ? binaryFileName
+                                                 : this->binaryMMapName)
                  : FLAGS_match_mmap_file);
 
   for (const auto &PE : Parser.parsed_events()) {
@@ -1070,40 +1072,40 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
     if (EPtr->event_type_case() != quipper::PerfDataProto_PerfEvent::kMmapEvent)
       continue;
 
-    const quipper::PerfDataProto_MMapEvent &MMap = EPtr->mmap_event();
-    if (!MMap.has_filename()) continue;
+    const quipper::PerfDataProto_MMapEvent &mmap = EPtr->mmap_event();
+    if (!mmap.has_filename()) continue;
 
-    const string &MMapFileName = MMap.filename();
-    if (!CompFunc(MMapFileName) || !MMap.has_start() || !MMap.has_len() ||
-        !MMap.has_pid())
+    const string &MMapFileName = mmap.filename();
+    if (!CompFunc(MMapFileName) || !mmap.has_start() || !mmap.has_len() ||
+        !mmap.has_pid())
       continue;
 
-    if (this->BinaryMMapName.empty()) {
-      this->BinaryMMapName = MMapFileName;
-    } else if (BinaryMMapName != MMapFileName) {
-      LOG(ERROR) << "'" << BinaryFileName
+    if (this->binaryMMapName.empty()) {
+      this->binaryMMapName = MMapFileName;
+    } else if (binaryMMapName != MMapFileName) {
+      LOG(ERROR) << "'" << binaryFileName
                  << "' is not specific enough. It matches both '"
-                 << BinaryMMapName << "' and '" << MMapFileName
+                 << binaryMMapName << "' and '" << MMapFileName
                  << "' in the perf data file '" << PName
                  << "'. Consider using absolute file name.";
       return false;
     }
-    uint64_t LoadAddr = MMap.start();
-    uint64_t LoadSize = MMap.len();
-    uint64_t PageOffset = MMap.has_pgoff() ? MMap.pgoff() : 0;
+    uint64_t loadAddr = mmap.start();
+    uint64_t loadSize = mmap.len();
+    uint64_t pageOffset = mmap.has_pgoff() ? mmap.pgoff() : 0;
 
-    // For the same binary, MMap can only be different if it is a PIE binary. So
+    // For the same binary, mmap can only be different if it is a PIE binary. So
     // for non-PIE binaries, we check all MMaps are equal and merge them into
-    // BinaryMMapByPid[0].
-    uint64_t MPid = BinaryIsPIE ? MMap.pid() : 0;
-    set<MMapEntry> &LoadMap = BinaryMMapByPid[MPid];
+    // binaryMMapByPid[0].
+    uint64_t MPid = binaryIsPIE ? mmap.pid() : 0;
+    set<MMapEntry> &LoadMap = binaryMMapByPid[MPid];
     // Check for mmap conflicts.
-    if (!checkBinaryMMapConflictionAndEmplace(LoadAddr, LoadSize, PageOffset,
+    if (!checkBinaryMMapConflictionAndEmplace(loadAddr, loadSize, pageOffset,
                                               LoadMap)) {
       stringstream SS;
-      SS << "Found conflict MMap event: "
-         << MMapEntry{LoadAddr, LoadSize, PageOffset}
-         << ". Existing MMap entries: " << std::endl;
+      SS << "Found conflict mmap event: "
+         << MMapEntry{loadAddr, loadSize, pageOffset}
+         << ". Existing mmap entries: " << std::endl;
       for (auto &EM : LoadMap) {
         SS << "\t" << EM << std::endl;
       }
@@ -1113,16 +1115,16 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
   }  // End of iterating mmap events.
 
   if (!std::accumulate(
-          BinaryMMapByPid.begin(), BinaryMMapByPid.end(), 0,
-          [](uint64_t V, const decltype(BinaryMMapByPid)::value_type &S)
-              -> uint64_t { return V + S.second.size(); })) {
-    LOG(ERROR) << "Failed to find MMap entries in '" << PName << "' for '"
-               << BinaryFileName << "'.";
+          binaryMMapByPid.begin(), binaryMMapByPid.end(), 0,
+          [](uint64_t V, const decltype(binaryMMapByPid)::value_type &sym)
+              -> uint64_t { return V + sym.second.size(); })) {
+    LOG(ERROR) << "Failed to find mmap entries in '" << PName << "' for '"
+               << binaryFileName << "'.";
     return false;
   }
-  for (auto &M : BinaryMMapByPid) {
+  for (auto &M : binaryMMapByPid) {
     stringstream SS;
-    SS << "Found mmap in '" << PName << "' for binary: '" << BinaryFileName
+    SS << "Found mmap in '" << PName << "' for binary: '" << binaryFileName
        << "', pid=" << dec << M.first << " (0 for non-pie executables)"
        << std::endl;
     for (auto &N : M.second) {
@@ -1134,46 +1136,46 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &Parser,
 }
 
 bool PropellerProfWriter::checkBinaryMMapConflictionAndEmplace(
-    uint64_t LoadAddr, uint64_t LoadSize, uint64_t PageOffset,
+    uint64_t loadAddr, uint64_t loadSize, uint64_t pageOffset,
     set<MMapEntry> &M) {
-  for (const MMapEntry &E : M) {
-    if (E.LoadAddr == LoadAddr && E.LoadSize == LoadSize &&
-        E.PageOffset == PageOffset)
+  for (const MMapEntry &e : M) {
+    if (e.loadAddr == loadAddr && e.loadSize == loadSize &&
+        e.pageOffset == pageOffset)
       return true;
-    if (!((LoadAddr + LoadSize <= E.LoadAddr) ||
-          (E.LoadAddr + E.LoadSize <= LoadAddr)))
+    if (!((loadAddr + loadSize <= e.loadAddr) ||
+          (e.loadAddr + e.loadSize <= loadAddr)))
       return false;
   }
-  auto R = M.emplace(LoadAddr, LoadSize, PageOffset);
-  assert(R.second);
+  auto r = M.emplace(loadAddr, loadSize, pageOffset);
+  assert(r.second);
   return true;
 }
 
 bool PropellerProfWriter::setupBinaryMMapName(quipper::PerfReader &PR,
                                               const string &PName) {
-  this->BinaryMMapName = "";
-  if (FLAGS_ignore_build_id || this->BinaryBuildId.empty()) {
+  this->binaryMMapName = "";
+  if (FLAGS_ignore_build_id || this->binaryBuildId.empty()) {
     return true;
   }
   list<pair<string, string>> ExistingBuildIds;
-  for (const auto &BuildId : PR.build_ids()) {
-    if (BuildId.has_filename() && BuildId.has_build_id_hash()) {
-      string PerfBuildId = BuildId.build_id_hash();
+  for (const auto &buildId : PR.build_ids()) {
+    if (buildId.has_filename() && buildId.has_build_id_hash()) {
+      string PerfBuildId = buildId.build_id_hash();
       quipper::PerfizeBuildIDString(&PerfBuildId);
-      ExistingBuildIds.emplace_back(BuildId.filename(), PerfBuildId);
-      if (PerfBuildId == this->BinaryBuildId) {
-        this->BinaryMMapName = BuildId.filename();
-        LOG(INFO) << "Found file with matching BuildId in perf file '" << PName
-                  << "': " << this->BinaryMMapName;
+      ExistingBuildIds.emplace_back(buildId.filename(), PerfBuildId);
+      if (PerfBuildId == this->binaryBuildId) {
+        this->binaryMMapName = buildId.filename();
+        LOG(INFO) << "Found file with matching buildId in perf file '" << PName
+                  << "': " << this->binaryMMapName;
         return true;
       }
     }
   }
   stringstream SS;
-  SS << "No file with matching BuildId in perf data '" << PName
+  SS << "No file with matching buildId in perf data '" << PName
      << "', which contains the following <file, buildid>:" << std::endl;
-  for (auto &P : ExistingBuildIds) {
-    SS << "\t" << P.first << ": " << BuildIdWrapper(P.second.c_str())
+  for (auto &p : ExistingBuildIds) {
+    SS << "\t" << p.first << ": " << BuildIdWrapper(p.second.c_str())
        << std::endl;
   }
   LOG(INFO) << SS.str();
@@ -1192,64 +1194,64 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
     if (!SEvent.has_pid()) continue;
     auto BRStack = SEvent.branch_stack();
     if (BRStack.empty()) continue;
-    uint64_t Pid = BinaryIsPIE ? SEvent.pid() : 0;
-    if (BinaryMMapByPid.find(Pid) == BinaryMMapByPid.end()) continue;
-    auto &BranchCounters = BranchCountersByPid[Pid];
-    auto &FallthroughCounters = FallthroughCountersByPid[Pid];
+    uint64_t pid = binaryIsPIE ? SEvent.pid() : 0;
+    if (binaryMMapByPid.find(pid) == binaryMMapByPid.end()) continue;
+    auto &BranchCounters = branchCountersByPid[pid];
+    auto &FallthroughCounters = fallthroughCountersByPid[pid];
     uint64_t LastFrom = INVALID_ADDRESS;
     uint64_t LastTo = INVALID_ADDRESS;
     brstackCount += BRStack.size();
     std::vector<SymbolEntry *> SymSeq{};
     SymbolEntry *LastToSym = nullptr;
-    for (int P = BRStack.size() - 1; P >= 0; --P) {
-      const auto &BE = BRStack.Get(P);
-      uint64_t From = BE.from_ip();
-      uint64_t To = BE.to_ip();
+    for (int p = BRStack.size() - 1; p >= 0; --p) {
+      const auto &BE = BRStack.Get(p);
+      uint64_t from = BE.from_ip();
+      uint64_t to = BE.to_ip();
       // TODO: LBR sometimes duplicates the first entry by mistake. For now we
       // treat these to be true entries.
 
-      // if (P == 0 && From == LastFrom && To == LastTo) {
+      // if (p == 0 && from == LastFrom && to == LastTo) {
       //  LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
-      //             From
-      //             << "-> 0x" << To << std::dec << "\n";
+      //             from
+      //             << "-> 0x" << to << std::dec << "\n";
       //  continue;
       //}
 
-      ++(BranchCounters[make_pair(From, To)]);
-      if (LastTo != INVALID_ADDRESS && LastTo <= From)
-        ++(FallthroughCounters[make_pair(LastTo, From)]);
+      ++(BranchCounters[make_pair(from, to)]);
+      if (LastTo != INVALID_ADDRESS && LastTo <= from)
+        ++(FallthroughCounters[make_pair(LastTo, from)]);
 
       // Aggregate path profile information.
       if (FLAGS_gen_path_profile) {
-        auto *FromSym = findSymbolAtAddress(Pid, From);
-        auto *ToSym = findSymbolAtAddress(Pid, To);
-        if (LastTo != INVALID_ADDRESS && LastTo > From) {
-          PProfile.addSymSeq(SymSeq);
+        auto *fromSym = findSymbolAtAddress(pid, from);
+        auto *toSym = findSymbolAtAddress(pid, to);
+        if (LastTo != INVALID_ADDRESS && LastTo > from) {
+          pathProfile.addSymSeq(SymSeq);
           SymSeq.clear();
           goto done_path;
         }
 
-        if (P == 0 && From == LastFrom && To == LastTo) {
+        if (p == 0 && from == LastFrom && to == LastTo) {
           // LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
-          // From
-          //           << "-> 0x" << To << std::dec << "\n";
+          // from
+          //           << "-> 0x" << to << std::dec << "\n";
           goto done_path;
         }
-        if (FromSym && ToSym) {
-          SymSeq.push_back(FromSym);
-          SymSeq.push_back(ToSym);
+        if (fromSym && toSym) {
+          SymSeq.push_back(fromSym);
+          SymSeq.push_back(toSym);
         } else {
-          PProfile.addSymSeq(SymSeq);
+          pathProfile.addSymSeq(SymSeq);
           SymSeq.clear();
         }
       done_path:;
       }  // Done path profile
 
-      LastTo = To;
-      LastFrom = From;
+      LastTo = to;
+      LastFrom = from;
     }  // end of iterating one br record
     if (FLAGS_gen_path_profile) {
-      PProfile.addSymSeq(SymSeq);
+      pathProfile.addSymSeq(SymSeq);
       SymSeq.clear();
     }
   }  // End of iterating all br records.
@@ -1260,19 +1262,19 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &Parser) {
   }
   LOG(INFO) << "Processed " << CommaF(brstackCount) << " lbr records.";
   if (FLAGS_gen_path_profile)
-    for (auto I = PProfile.MaxPaths.begin(), J = PProfile.MaxPaths.end();
-         I != J; ++I)
-      if ((*I)->expandToIncludeFallthroughs(*this))
-        std::cout << *(*I) << std::endl;
+    for (auto i = pathProfile.maxPaths.begin(), J = pathProfile.maxPaths.end();
+         i != J; ++i)
+      if ((*i)->expandToIncludeFallthroughs(*this))
+        std::cout << *(*i) << std::endl;
 
   return true;
 }
 
 bool PropellerProfWriter::findBinaryBuildId() {
-  this->BinaryBuildId = "";
+  this->binaryBuildId = "";
   if (FLAGS_ignore_build_id) return true;
   bool BuildIdFound = false;
-  for (auto &SR : ObjFile->sections()) {
+  for (auto &SR : objFile->sections()) {
     llvm::object::ELFSectionRef ESR(SR);
     StringRef SName;
     auto ExSecRefName = SR.getName();
@@ -1285,31 +1287,31 @@ bool PropellerProfWriter::findBinaryBuildId() {
     if (ESR.getType() == llvm::ELF::SHT_NOTE && SName == ".note.gnu.build-id" &&
         ExpectedSContents && !ExpectedSContents->empty()) {
       StringRef SContents = *ExpectedSContents;
-      const unsigned char *P = SContents.bytes_begin() + 0x10;
-      if (P >= SContents.bytes_end()) {
+      const unsigned char *p = SContents.bytes_begin() + 0x10;
+      if (p >= SContents.bytes_end()) {
         LOG(INFO) << "Section '.note.gnu.build-id' does not contain valid "
                      "build id information.";
         return true;
       }
-      string BuildId((const char *)P, SContents.size() - 0x10);
-      quipper::PerfizeBuildIDString(&BuildId);
-      this->BinaryBuildId = BuildId;
-      LOG(INFO) << "Found Build Id in binary '" << BinaryFileName
-                << "': " << BuildIdWrapper(BuildId.c_str());
+      string buildId((const char *)p, SContents.size() - 0x10);
+      quipper::PerfizeBuildIDString(&buildId);
+      this->binaryBuildId = buildId;
+      LOG(INFO) << "Found Build Id in binary '" << binaryFileName
+                << "': " << BuildIdWrapper(buildId.c_str());
       return true;
     }
   }
-  LOG(INFO) << "No Build Id found in '" << BinaryFileName << "'.";
+  LOG(INFO) << "No Build Id found in '" << binaryFileName << "'.";
   return true;  // always returns true
 }
 
 bool PathProfile::addSymSeq(vector<SymbolEntry *> &symSeq) {
   if (symSeq.size() < MIN_LENGTH) return false;
   auto Range = findPaths(symSeq);
-  Path P1(std::move(symSeq));
-  for (auto I = Range.first; I != Range.second; ++I)
-    if (I->second.mergeableWith(P1)) {
-      Path &mergeable = I->second;
+  path P1(std::move(symSeq));
+  for (auto i = Range.first; i != Range.second; ++i)
+    if (i->second.mergeableWith(P1)) {
+      path &mergeable = i->second;
       removeFromMaxPaths(mergeable);
       mergeable.merge(P1);
       addToMaxPaths(mergeable);
@@ -1317,43 +1319,43 @@ bool PathProfile::addSymSeq(vector<SymbolEntry *> &symSeq) {
     }
 
   // Insert "P1" into PathProfile.
-  Path::Key K = P1.pathKey();
+  path::Key K = P1.pathKey();
   // std::cout << "Added path: " << P1 << std::endl;
   addToMaxPaths(Paths.emplace(K, std::move(P1))->second);
   return true;
 }
 
-bool Path::expandToIncludeFallthroughs(PropellerProfWriter &PPWriter) {
-  auto From = syms.begin(), E = syms.end();
-  auto To = std::next(From);
+bool path::expandToIncludeFallthroughs(PropellerProfWriter &PPWriter) {
+  auto from = syms.begin(), e = syms.end();
+  auto to = std::next(from);
   auto WFrom = cnts.begin(), WEnd = cnts.end();
   auto WTo = std::next(WFrom);
   uint64_t LastCnt;
   SymbolEntry *LastTo = nullptr;
-  for (; To != E; ++From, ++To, ++WFrom, ++WTo) {
+  for (; to != e; ++from, ++to, ++WFrom, ++WTo) {
     if (LastTo) {
       vector<SymbolEntry *> FTs;
-      if (!PPWriter.calculateFallthroughBBs(LastTo, (*From), FTs))
+      if (!PPWriter.calculateFallthroughBBs(LastTo, (*from), FTs))
         return false;
       if (!FTs.empty()) {
-        // Note, after this operation, From / To are still valid.
-        syms.insert(From, FTs.begin(), FTs.end());
+        // Note, after this operation, from / to are still valid.
+        syms.insert(from, FTs.begin(), FTs.end());
         cnts.insert(WFrom, FTs.size(), ((*WFrom + LastCnt) >> 1));
       }
     }
-    LastTo = *To;
+    LastTo = *to;
     LastCnt = *WTo;
   }
   return true;
 }
 
-ostream & operator << (ostream &out, const Path &p) {
-  out << "Path [" << p.syms.size() << "]: ";
-  auto I = p.syms.begin(), J = p.syms.end();
-  auto P = p.cnts.begin();
-  out << (*I)->Ordinal;
-  for (++I, ++P; I != J; ++I, ++P)
-    out << "-(" << *P << ")->" << (*I)->Ordinal;
+ostream & operator << (ostream &out, const path &path) {
+  out << "path [" << path.syms.size() << "]: ";
+  auto i = path.syms.begin(), J = path.syms.end();
+  auto p = path.cnts.begin();
+  out << (*i)->ordinal;
+  for (++i, ++p; i != J; ++i, ++p)
+    out << "-(" << *p << ")->" << (*i)->ordinal;
   return out;
 }
 
