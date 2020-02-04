@@ -562,7 +562,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       if (toSym->containingFunc->addr == adjustedTo) {
         type = 'C';
       } else if (adjustedTo != toSym->addr) {
-        type = 'r';
+        type = 'R';
       }
       brCntSummation[std::make_tuple(fromSym, toSym, type)] += cnt;
     }
