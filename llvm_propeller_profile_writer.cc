@@ -428,7 +428,7 @@ void PropellerProfWriter::writeHotFuncAndBBList(ofstream &fout) {
 void PropellerProfWriter::writeSymbols(ofstream &fout) {
   this->symbolsWritten = 0;
   uint64_t symbolOrdinal = 0;
-  fout << "symbols" << std::endl;
+  fout << "Symbols" << std::endl;
   for (auto &le : addrMap) {
     // Tricky case here:
     // In the same address we have:
