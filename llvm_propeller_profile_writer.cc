@@ -63,7 +63,7 @@ PropellerProfWriter::~PropellerProfWriter() {}
 // object files.
 static bool
 isFunctionForBBName(SymbolEntry *sym, StringRef bbName) {
-  auto a = bbName.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
+  auto a = bbName.split(llvm::propeller::BASIC_BLOCK_SEPARATOR);
   if (a.second == sym->name)
     return true;
   for (auto n : sym->aliases)
@@ -206,17 +206,17 @@ static std::ostream &operator<<(std::ostream &out, const SymNameF &nameF) {
   if (!nameF.name.empty()) {
     // In this case, we only care about name field.
     // name is the form of "aaaa.BB.funcname" or "funcname".
-    auto r = nameF.name.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
+    auto r = nameF.name.split(llvm::propeller::BASIC_BLOCK_SEPARATOR);
     if (r.second.empty())
       out << r.first.str();
     else
-      out << dec << r.first.size() << lld::propeller::BASIC_BLOCK_SEPARATOR
+      out << dec << r.first.size() << llvm::propeller::BASIC_BLOCK_SEPARATOR
           << r.second.str();
     return out;
   }
   auto &sym = nameF.Symbol;
   if (sym.bbTag) {
-    out << dec << sym.name.size() << lld::propeller::BASIC_BLOCK_SEPARATOR
+    out << dec << sym.name.size() << llvm::propeller::BASIC_BLOCK_SEPARATOR
         << (sym.containingFunc ? sym.containingFunc->name.str() : "null_func");
   } else {
     out << sym.name.str().c_str();
@@ -808,12 +808,6 @@ bool PropellerProfWriter::populateSymbolMap() {
           }
           sym->aliases.push_back(name);
           if (sym->size < size) sym->size = size;
-          if (!sym->isFunction() &&
-              type == llvm::object::SymbolRef::ST_Function) {
-            // If any of the aliased symbols is a function, promote the whole
-            // group to function.
-            sym->type = llvm::object::SymbolRef::ST_Function;
-          }
           symbolIsAliasedWith = sym;
           break;
         }
@@ -838,15 +832,16 @@ bool PropellerProfWriter::populateSymbolMap() {
       continue;
     }
 
-    SymbolEntry *newSymbolEntry =
-        new SymbolEntry(0, name, SymbolEntry::AliasesTy(), addr, size, type);
-    addrL.push_back(newSymbolEntry);
-    newSymbolEntry->bbTag = SymbolEntry::isBBSymbol(name);
+    SymbolEntry *newSymbolEntry = *(addrL.insert(
+        addrL.begin(), new SymbolEntry(0, name, SymbolEntry::AliasesTy(), addr,
+                                       size, SymbolEntry::isBBSymbol(name))));
     // Set the BB Tag type according to the first character of the symbol name.
     if (newSymbolEntry->bbTag)
       newSymbolEntry->bbTagType = SymbolEntry::toBBTagType(name.front());
-    else
+    else {
       newSymbolEntry->bbTagType = SymbolEntry::BB_NONE;
+      newSymbolEntry->containingFunc = newSymbolEntry;
+    }
     symbolNameMap.emplace(std::piecewise_construct, std::forward_as_tuple(name),
                           std::forward_as_tuple(newSymbolEntry));
   }  // End of iterating all symbols.
@@ -858,7 +853,7 @@ bool PropellerProfWriter::populateSymbolMap() {
   for (auto p = addrMap.begin(), q = addrMap.end(); p != q; ++p) {
     int funcCount = 0;
     for (auto *sym : p->second) {
-      if (sym->isFunction() && !sym->bbTag) {
+      if (sym->isFunction()) {
         if (++funcCount > 1) {
           // 2 different functions start at the same address, but with different
           // sizes, this is not supported.
@@ -951,7 +946,7 @@ bool PropellerProfWriter::populateSymbolMap() {
       // By doing this, the wrapping func matches "a.BB._zfooc1" correctly.
       //
       if (!containingFunc->aliases.empty()) {
-        auto a = sym->name.split(lld::propeller::BASIC_BLOCK_SEPARATOR);
+        auto a = sym->name.split(llvm::propeller::BASIC_BLOCK_SEPARATOR);
         auto expectFuncName = a.second;
         auto &aliases = containingFunc->aliases;
         if (expectFuncName != containingFunc->name) {

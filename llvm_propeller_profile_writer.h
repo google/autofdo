@@ -15,10 +15,10 @@
 #include <utility>
 #include <vector>
 
-#include "lld/Common/PropellerCommon.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/ProfileData/BBSectionsProf.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 using std::list;
@@ -34,7 +34,7 @@ using std::tuple;
 using std::unique_ptr;
 using std::vector;
 
-using lld::propeller::SymbolEntry;
+using llvm::propeller::SymbolEntry;
 using llvm::SmallVector;
 using llvm::StringRef;
 
