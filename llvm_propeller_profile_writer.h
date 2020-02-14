@@ -3,6 +3,8 @@
 #ifndef _LLVM_PLO_PROFILE_WRITER_H_
 #define _LLVM_PLO_PROFILE_WRITER_H_
 
+#include "llvm_propeller_path_profile.h"
+
 #include <fstream>
 #include <iostream>
 #include <list>
@@ -30,7 +32,7 @@ using std::pair;
 using std::priority_queue;
 using std::set;
 using std::string;
-using std::tuple;
+using std::pair;
 using std::unique_ptr;
 using std::vector;
 
@@ -133,117 +135,7 @@ class MMapEntry {
   bool operator<(const MMapEntry &mm) const {
     return this->loadAddr < mm.loadAddr;
   }
-};
-
-class Path;
-
-ostream & operator << (ostream &out, const Path &path);
-
-class PropellerProfWriter;
-class Path {
- public:
-  using Key = tuple<uint64_t, uint64_t, uint64_t>;
-
-  explicit Path(Path &&path)
-      : syms(std::move(path.syms)),
-        cnts(std::move(path.cnts)),
-        weight(path.weight) {}
-  explicit Path(vector<SymbolEntry *> &&o)
-      : syms(o), cnts(o.size(), 1), weight(o.size()) {}
-
-  bool operator<(const Path &p2) const {
-    return Key(syms[0]->ordinal, syms[1]->ordinal, syms[2]->ordinal) <
-           Key(p2.syms[0]->ordinal, p2.syms[1]->ordinal, p2.syms[2]->ordinal);
-  }
-
-  bool mergeableWith(const Path &path) const {
-    for (auto i = syms.begin(), j = syms.end(), p = path.syms.begin(),
-              q = path.syms.end();
-         i != j && p != q; ++i, ++p)
-      if ((*i)->ordinal != (*p)->ordinal) return false;
-    return true;
-  }
-
-  bool merge(Path &path) {
-    // std::cerr << "Merging " << std::endl;
-    // std::cerr << "\t" << *this << std::endl;
-    // std::cerr << "\t" << path << std::endl;
-    auto i = syms.begin(), j = syms.end(), p = path.syms.begin(),
-         q = path.syms.end();
-    auto c = cnts.begin(), d = cnts.end(), e = path.cnts.begin(),
-         f = path.cnts.end();
-    for (; i != j && p != q && c != d && e != f; ++i, ++p, ++c, ++e) *c += *e;
-    if (i == j) {
-      // "path" is longer than this, append path's syms and cnts to this.
-      syms.insert(j, p, q);
-      cnts.insert(d, e, f);
-    } else {
-      // nothing to do
-      ;
-    }
-    this->weight += path.weight;
-    // std::cerr << "Into " << std::endl;
-    // std::cerr << "\t" << *this << std::endl;
-    return true;
-  }
-
-  bool expandToIncludeFallthroughs(PropellerProfWriter &ppWriter);
-
-  Key pathKey() const {
-    return Key(syms[0]->ordinal, syms[1]->ordinal, syms[2]->ordinal);
-  }
-
-  vector<SymbolEntry *> syms;
-  vector<uint64_t> cnts;
-  uint64_t weight;
-};
-
-class PathProfile {
- public:
-  using PathsTy = std::multimap<Path::Key, Path>;
-  using PathsIterator = PathsTy::iterator;
-
-  PathsTy paths;
-
-  struct PathComparator {
-    bool operator()(Path *p1, Path *p2) const {
-      return p1->weight < p2->weight;
-    }
-  };
-
-  using MaxPathsTy = multiset<Path *, PathComparator>;
-  MaxPathsTy maxPaths;
-
-  bool addSymSeq(vector<SymbolEntry *> &symSequence);
-
-  const static int MIN_LENGTH = 3;
-
-  const static int KEEP_MAX_PATHS = 500;
-
- private:
-  // Do not make this "const", because "path" object returned via this
-  // iterator might be modified.
-  pair<PathsIterator, PathsIterator> findPaths(vector<SymbolEntry *> &symSeq) {
-    return paths.equal_range(
-        Path::Key(symSeq[0]->ordinal, symSeq[1]->ordinal, symSeq[2]->ordinal));
-  }
-
-  void addToMaxPaths(Path &path) {
-    maxPaths.insert(&path);
-    if (maxPaths.size() >= KEEP_MAX_PATHS)
-      // Remove the path w/ minimal weight
-      maxPaths.erase(maxPaths.begin());
-  }
-
-  void removeFromMaxPaths(Path &path) {
-    auto r = maxPaths.equal_range(&path);
-    for (auto i = r.first; i != r.second; ++i) {
-      if (*i == &path) {
-        maxPaths.erase(i);
-        return;
-      }
-    }
-  }
+  
 };
 
 class PropellerProfWriter {

@@ -78,7 +78,7 @@ $(am_profile_update_OBJECTS): $(protoc_outputs)
 
 bin_PROGRAMS += create_llvm_prof
 create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) \
-                           llvm_profile_writer.cc create_llvm_prof.cc llvm_propeller_profile_writer.cc
+                           llvm_profile_writer.cc create_llvm_prof.cc llvm_propeller_profile_writer.cc llvm_propeller_path_profile.cc
 create_llvm_prof_LDADD = $(LLVM_LDFLAGS) $(LLVM_LIBS) libquipper.a libglog.a \
                          libsymbolize.a libgflags.a $(LIBELF) $(PROTOBUF_DEP)
 create_llvm_prof_CXXFLAGS = $(LLVM_CXXFLAGS) -DCREATE_LLVM_PROF

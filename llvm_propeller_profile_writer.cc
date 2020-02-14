@@ -1,6 +1,7 @@
 #include "config.h"
 #if defined(HAVE_LLVM)
 #include "llvm_propeller_profile_writer.h"
+#include "llvm_propeller_profile_format.h"
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -116,174 +117,6 @@ SymbolEntry *PropellerProfWriter::findSymbolAtAddress(uint64_t pid,
   // Return the smallest symbol that contains address.
   return *candidates.begin();
 }
-
-namespace {
-struct DecOut {
-} dec;
-
-struct HexOut {
-} hex;
-
-struct Hex0xOut {
-} hex0x;
-
-struct SymBaseF {
-  SymBaseF(const SymbolEntry &sym) : Symbol(sym) {}
-  const SymbolEntry &Symbol;
-
-  static SymbolEntry dummySymbolEntry;
-};
-
-SymbolEntry SymBaseF::dummySymbolEntry(0, "", SymbolEntry::AliasesTy(),
-                                       0, 0,  0);
-
-struct SymNameF : public SymBaseF {
-  SymNameF(const SymbolEntry &sym) : SymBaseF(sym), name("") {}
-  SymNameF(const SymbolEntry *sym) : SymBaseF(*sym), name("") {}
-  // Use explicit to prevent StringRef being casted to SymNameF.
-  explicit SymNameF(const StringRef N)
-      : SymBaseF(SymBaseF::dummySymbolEntry), name(N) {}
-
-  StringRef name;
-};
-
-struct SymOrdinalF : public SymBaseF {
-  SymOrdinalF(const SymbolEntry &sym) : SymBaseF(sym) {}
-  SymOrdinalF(const SymbolEntry *sym) : SymBaseF(*sym) {}
-};
-
-struct SymSizeF : public SymBaseF {
-  SymSizeF(const SymbolEntry &sym) : SymBaseF(sym) {}
-};
-
-struct SymShortF : public SymBaseF {
-  SymShortF(const SymbolEntry &sym) : SymBaseF(sym) {}
-  SymShortF(const SymbolEntry *sym) : SymBaseF(*sym) {}
-};
-
-struct countF {
-  countF(uint64_t c) : cnt(c){};
-  uint64_t cnt;
-};
-
-struct CommaF {
-  CommaF(uint64_t v) : value(v) {}
-  uint64_t value;
-};
-
-struct PercentageF {
-  PercentageF(double d) : value(d) {}
-  PercentageF(uint64_t a, uint64_t b) : value((double)a / (double)b) {}
-  template<class Clazz>
-  PercentageF(Clazz &c, uint64_t b) : value((double)c.size() / (double)b) {}
-  template<class Clazz, class D>
-  PercentageF(Clazz &c, D &d) : value((double)c.size() / (double)d.size()) {}
-  double value;
-};
-
-struct BuildIdWrapper {
-  BuildIdWrapper(const quipper::PerfDataProto_PerfBuildID &buildId)
-      : data(buildId.build_id_hash().c_str()) {}
-
-  BuildIdWrapper(const char *p) : data(p) {}
-
-  const char *data;
-};
-
-static std::ostream &operator<<(std::ostream &out, const struct DecOut &) {
-  return out << std::dec << std::noshowbase;
-}
-
-static std::ostream &operator<<(std::ostream &out, const struct HexOut &) {
-  return out << std::hex << std::noshowbase;
-}
-
-static std::ostream &operator<<(std::ostream &out, const struct Hex0xOut &) {
-  return out << std::hex << std::showbase;
-}
-
-static std::ostream &operator<<(std::ostream &out, const SymNameF &nameF) {
-  if (!nameF.name.empty()) {
-    // In this case, we only care about name field.
-    // name is the form of "aaaa.BB.funcname" or "funcname".
-    auto r = nameF.name.split(llvm::propeller::BASIC_BLOCK_SEPARATOR);
-    if (r.second.empty())
-      out << r.first.str();
-    else
-      out << dec << r.first.size() << llvm::propeller::BASIC_BLOCK_SEPARATOR
-          << r.second.str();
-    return out;
-  }
-  auto &sym = nameF.Symbol;
-  if (sym.bbTag) {
-    out << dec << sym.name.size() << llvm::propeller::BASIC_BLOCK_SEPARATOR
-        << (sym.containingFunc ? sym.containingFunc->name.str() : "null_func");
-  } else {
-    out << sym.name.str().c_str();
-    for (auto a : sym.aliases) out << "/" << a.str();
-  }
-  return out;
-}
-
-static std::ostream &operator<<(std::ostream &out,
-                                const SymOrdinalF &ordinalF) {
-  return out << dec << ordinalF.Symbol.ordinal;
-}
-
-static std::ostream &operator<<(std::ostream &out, const SymSizeF &sizeF) {
-  return out << hex << sizeF.Symbol.size;
-}
-
-static std::ostream &operator<<(std::ostream &out, const SymShortF &symSF) {
-  return out << "symbol '" << SymNameF(symSF.Symbol) << "@" << hex0x
-             << symSF.Symbol.addr << "'";
-}
-
-static std::ostream &operator<<(std::ostream &out, const countF &countF) {
-  return out << dec << countF.cnt;
-}
-
-static std::ostream &operator<<(std::ostream &os, const MMapEntry &me) {
-  return os << "[" << hex0x << me.loadAddr << ", " << hex0x << me.getEndAddr()
-            << "] (PgOff=" << hex0x << me.pageOffset << ", size=" << hex0x
-            << me.loadSize << ")";
-};
-
-static std::ostream &operator<<(std::ostream &out, const BuildIdWrapper &bw) {
-  for (int i = 0; i < quipper::kBuildIDArraySize; ++i) {
-    out << std::setw(2) << std::setfill('0') << std::hex
-        << ((int)(bw.data[i]) & 0xFF);
-  }
-  return out;
-}
-
-// Output integer numbers in "," separated format.
-static std::ostream &operator<<(std::ostream &out, const CommaF &cf) {
-  std::list<int> seg;
-  uint64_t value = cf.value;
-  while (value) {
-    seg.insert(seg.begin(), value % 1000);
-    value /= 1000;
-  }
-  if (seg.empty()) seg.insert(seg.begin(), 0);
-  auto of = out.fill();
-  auto ow = out.width();
-  auto i = seg.begin();
-  out << std::setfill('\0') << *i;
-  for (++i; i != seg.end(); ++i)
-    out << "," << std::setw(3) << std::setfill('0') << dec << *i;
-  out.fill(of);
-  out.width(ow);
-  return out;
-}
-
-static std::ostream &operator<<(std::ostream &out, const PercentageF &pf) {
-  out << std::setprecision(3);
-  out << (pf.value * 100) << '%';
-  return out;
-}
-
-}  // namespace
 
 bool PropellerProfWriter::write() {
   if (!initBinaryFile() || !findBinaryBuildId() || !populateSymbolMap())
@@ -459,7 +292,7 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
       if (se.bbTag) {
         fout << SymOrdinalF(se.containingFunc) << ".";
         StringRef bbIndex = se.name;
-        fout << dec << (uint64_t)(bbIndex.size());
+        fout << ::dec << (uint64_t)(bbIndex.size());
         if (bbIndex.front() != 'a')
           fout << bbIndex.front();
         fout << std::endl;
@@ -637,7 +470,7 @@ bool PropellerProfWriter::calculateFallthroughBBs(
   }
   if (path.size() >= 200)
     LOG(ERROR) << "too many BBs along fallthrough (" << SymShortF(from)
-               << " -> " << SymShortF(to) << "): " << dec << path.size()
+               << " -> " << SymShortF(to) << "): " << ::dec << path.size()
                << " BBs.";
   return true;
 }
@@ -858,7 +691,7 @@ bool PropellerProfWriter::populateSymbolMap() {
           // 2 different functions start at the same address, but with different
           // sizes, this is not supported.
           LOG(ERROR)
-              << "Analyzing failure: at address 0x" << hex << p->first
+              << "Analyzing failure: at address " << hex0x << p->first
               << ", there are more than 1 functions that have different sizes.";
           return false;
         }
@@ -884,7 +717,7 @@ bool PropellerProfWriter::populateSymbolMap() {
             // Already has a containing function, so we have at least 2
             // different functions with different sizes but start at the same
             // address, impossible?
-            LOG(ERROR) << "Analyzing failure: at address 0x" << hex
+            LOG(ERROR) << "Analyzing failure: at address " << hex0x
                        << lastFuncPos->first
                        << ", there are 2 different functions: "
                        << SymNameF(containingFunc) << " and "
@@ -979,7 +812,7 @@ bool PropellerProfWriter::populateSymbolMap() {
     }  // End of iterating p->second
   }    // End of iterating addrMap.
   if (bbSymbolDropped)
-    LOG(INFO) << "Dropped " << dec << CommaF(bbSymbolDropped)
+    LOG(INFO) << "Dropped " << ::dec << CommaF(bbSymbolDropped)
               << " bb symbol(s).";
   return true;
 }
@@ -1123,7 +956,7 @@ bool PropellerProfWriter::setupMMaps(quipper::PerfParser &parser,
   for (auto &mpid : binaryMMapByPid) {
     stringstream ss;
     ss << "Found mmap in '" << pName << "' for binary: '" << binaryFileName
-       << "', pid=" << dec << mpid.first << " (0 for non-pie executables)"
+       << "', pid=" << ::dec << mpid.first << " (0 for non-pie executables)"
        << std::endl;
     for (auto &mm : mpid.second) {
       ss << "\t" << mm << std::endl;
@@ -1221,13 +1054,13 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &parser) {
 
       // Aggregate path profile information.
       if (FLAGS_gen_path_profile) {
-        auto *fromSym = findSymbolAtAddress(pid, from);
-        auto *toSym = findSymbolAtAddress(pid, to);
-        if (lastTo != INVALID_ADDRESS && lastTo > from) {
-          pathProfile.addSymSeq(symSeq);
-          symSeq.clear();
-          goto done_path;
-        }
+        SymbolEntry *fromSym, *toSym;
+        if (lastTo != INVALID_ADDRESS && lastTo > from)
+          goto save_path;
+
+        fromSym = findSymbolAtAddress(pid, from);
+        toSym = findSymbolAtAddress(pid, to);
+
 
         if (p == 0 && from == lastFrom && to == lastTo) {
           // LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
@@ -1235,13 +1068,27 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &parser) {
           //           << "-> 0x" << to << std::dec << "\n";
           goto done_path;
         }
-        if (fromSym && toSym) {
-          symSeq.push_back(fromSym);
-          symSeq.push_back(toSym);
-        } else {
-          pathProfile.addSymSeq(symSeq);
-          symSeq.clear();
+
+        // if (fromSym && toSym)
+        //   std::cout << "pair is: " << SymNameF(fromSym)
+        //             << " -> " << SymNameF(toSym) << std::endl;
+
+        if (fromSym && (symSeq.empty() || symSeq.back()->containingFunc ==
+                                              fromSym->containingFunc)) {
+          // If we have 1->2 2->3, we only record 1->2->3.
+          if (symSeq.empty() || symSeq.back() != fromSym)
+            symSeq.push_back(fromSym);
+
+          if (/*from < to && */toSym &&
+              toSym->containingFunc == fromSym->containingFunc) {
+            symSeq.push_back(toSym);
+            goto done_path;
+          }
+          // else fallthrough to save_path.
         }
+      save_path:
+        pathProfile.addSymSeq(symSeq);
+        symSeq.clear();
       done_path:;
       }  // Done path profile
 
@@ -1259,11 +1106,9 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &parser) {
     return false;
   }
   LOG(INFO) << "Processed " << CommaF(brStackCount) << " lbr records.";
-  if (FLAGS_gen_path_profile)
-    for (auto i = pathProfile.maxPaths.begin(), j = pathProfile.maxPaths.end();
-         i != j; ++i)
-      if ((*i)->expandToIncludeFallthroughs(*this))
-        std::cout << *(*i) << std::endl;
+  if (FLAGS_gen_path_profile) {
+    pathProfile.printPaths(std::cout);
+  }
 
   return true;
 }
@@ -1303,26 +1148,6 @@ bool PropellerProfWriter::findBinaryBuildId() {
   return true;  // always returns true
 }
 
-bool PathProfile::addSymSeq(vector<SymbolEntry *> &symSeq) {
-  if (symSeq.size() < MIN_LENGTH) return false;
-  auto range = findPaths(symSeq);
-  Path p1(std::move(symSeq));
-  for (auto i = range.first; i != range.second; ++i)
-    if (i->second.mergeableWith(p1)) {
-      Path &mergeable = i->second;
-      removeFromMaxPaths(mergeable);
-      mergeable.merge(p1);
-      addToMaxPaths(mergeable);
-      return true;
-    }
-
-  // Insert "p1" into PathProfile.
-  Path::Key k = p1.pathKey();
-  // std::cout << "Added path: " << p1 << std::endl;
-  addToMaxPaths(paths.emplace(k, std::move(p1))->second);
-  return true;
-}
-
 bool Path::expandToIncludeFallthroughs(PropellerProfWriter &PPWriter) {
   auto from = syms.begin(), e = syms.end();
   auto to = std::next(from);
@@ -1345,16 +1170,6 @@ bool Path::expandToIncludeFallthroughs(PropellerProfWriter &PPWriter) {
     LastCnt = *wTo;
   }
   return true;
-}
-
-ostream & operator << (ostream &out, const Path &path) {
-  out << "path [" << path.syms.size() << "]: ";
-  auto i = path.syms.begin(), j = path.syms.end();
-  auto p = path.cnts.begin();
-  out << (*i)->ordinal;
-  for (++i, ++p; i != j; ++i, ++p)
-    out << "-(" << *p << ")->" << (*i)->ordinal;
-  return out;
 }
 
 #endif
