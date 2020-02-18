@@ -5,6 +5,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ProfileData/BBSectionsProf.h"
 
+#include <list>
 #include <map>
 #include <ostream>
 #include <vector>
@@ -48,13 +49,14 @@ class Path {
     return *this;
   }
 
-  bool operator<(const Path &p2) const { 
-    if (syms.empty() || p2.syms.empty())
-      return syms.empty();
+  bool operator<(const Path &p2) const {
+    if (syms.empty() || p2.syms.empty()) return syms.empty();
     return syms[0]->addr < p2.syms[0]->addr;
   }
 
   bool tryMerge(const Path &path, Path &mergedPath) const;
+
+  bool tryCollapseLoop();
 
   bool expandToIncludeFallthroughs(PropellerProfWriter &ppWriter);
 
@@ -66,6 +68,8 @@ class Path {
     return syms.empty() ? "" : syms[0]->containingFunc->name;
   }
 
+  const uint64_t length() const { return syms.size(); }
+
   const std::ostream &print(std::ostream &out) const;
 
   // Data field.
@@ -76,7 +80,7 @@ class Path {
 
 class PathProfile {
  public:
-  using FuncPathsTy = std::map<llvm::StringRef, std::multiset<Path>>;
+  using FuncPathsTy = std::map<llvm::StringRef, std::list<Path>>;
   FuncPathsTy funcPaths;
 
   struct PathComparator {
@@ -87,7 +91,7 @@ class PathProfile {
 
   bool addSymSeq(std::vector<SymbolEntry *> &symSequence);
 
-  void printPaths(std::ostream &out) const;
+  void printPaths(std::ostream &out, PropellerProfWriter &ppWriter);
 
   const static int MIN_LENGTH = 2;
 };

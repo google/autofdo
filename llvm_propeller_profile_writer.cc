@@ -239,23 +239,24 @@ void PropellerProfWriter::writeOuts(ofstream &fout) {
 void PropellerProfWriter::writeHotFuncAndBBList(ofstream &fout) {
   SymbolEntry *LastFuncSymbol = nullptr;
   uint32_t bbCount = 0;
+  auto startNewFunctionParagraph = [&fout, &bbCount,
+                                    &LastFuncSymbol](SymbolEntry *fSymbol) {
+    // If we haven't output any BB symbols for LastFuncSymbol, we then
+    // output "!!0" which means the entry block is hot, before we switch
+    // to processing another hot function.
+    if (LastFuncSymbol && !bbCount) fout << "!!0" << std::endl;
+    fout << '!' << SymNameF(fSymbol) << std::endl;
+    LastFuncSymbol = fSymbol;
+    bbCount = 0;
+  };
   for (auto *se : hotSymbols)
     if (se->bbTag) {
-      if (LastFuncSymbol != se->containingFunc) {
-        fout << "!" << SymNameF(se->containingFunc) << std::endl;
-        // If we haven't output any BB symbols for LastFuncSymbol, we then
-        // output "!!0" which means the entry block is hot, before we switch
-        // to processing another hot function.
-        if (!bbCount && LastFuncSymbol)
-          fout << "!!0" << std::endl;
-        LastFuncSymbol = se->containingFunc;
-      }
+      if (LastFuncSymbol != se->containingFunc)
+        startNewFunctionParagraph(se->containingFunc);
       fout << "!!" << se->name.size() << std::endl;
       ++bbCount;
-    } else {
-      fout << "!" << SymNameF(se) << std::endl;
-      LastFuncSymbol = se;
-    }
+    } else
+      startNewFunctionParagraph(se);
 }
 
 void PropellerProfWriter::writeSymbols(ofstream &fout) {
@@ -1106,10 +1107,8 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &parser) {
     return false;
   }
   LOG(INFO) << "Processed " << CommaF(brStackCount) << " lbr records.";
-  if (FLAGS_gen_path_profile) {
-    pathProfile.printPaths(std::cout);
-  }
-
+  if (FLAGS_gen_path_profile)
+    pathProfile.printPaths(std::cout, *this);
   return true;
 }
 
@@ -1146,30 +1145,6 @@ bool PropellerProfWriter::findBinaryBuildId() {
   }
   LOG(INFO) << "No Build Id found in '" << binaryFileName << "'.";
   return true;  // always returns true
-}
-
-bool Path::expandToIncludeFallthroughs(PropellerProfWriter &PPWriter) {
-  auto from = syms.begin(), e = syms.end();
-  auto to = std::next(from);
-  auto wFrom = cnts.begin();
-  auto wTo = std::next(wFrom);
-  uint64_t LastCnt;
-  SymbolEntry *lastTo = nullptr;
-  for (; to != e; ++from, ++to, ++wFrom, ++wTo) {
-    if (lastTo) {
-      vector<SymbolEntry *> FTs;
-      if (!PPWriter.calculateFallthroughBBs(lastTo, (*from), FTs))
-        return false;
-      if (!FTs.empty()) {
-        // Note, after this operation, from / to are still valid.
-        syms.insert(from, FTs.begin(), FTs.end());
-        cnts.insert(wFrom, FTs.size(), ((*wFrom + LastCnt) >> 1));
-      }
-    }
-    lastTo = *to;
-    LastCnt = *wTo;
-  }
-  return true;
 }
 
 #endif
