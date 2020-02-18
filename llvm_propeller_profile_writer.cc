@@ -1062,7 +1062,6 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &parser) {
         fromSym = findSymbolAtAddress(pid, from);
         toSym = findSymbolAtAddress(pid, to);
 
-
         if (p == 0 && from == lastFrom && to == lastTo) {
           // LOG(INFO) << "Ignoring duplicate LBR entry: 0x" << std::hex <<
           // from

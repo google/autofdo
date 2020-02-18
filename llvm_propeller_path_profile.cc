@@ -97,10 +97,9 @@ bool Path::tryCollapseLoop() {
   using SymIter = std::vector<SymbolEntry *>::iterator;
   // This stores the last position that a symbol appears in the path.
   std::unordered_map<SymbolEntry *, SymIter> mnp;
-  SymIter i, send;
+  SymIter i = syms.begin();
   do {
-    mnp.clear();
-    for (i = syms.begin(), send = syms.end(); i != send; ++i) {
+    for (; i != syms.end(); ++i) {
       SymbolEntry *csym = *i;
       auto r = mnp.find(csym);
       if (r == mnp.end()) {
@@ -124,15 +123,13 @@ bool Path::tryCollapseLoop() {
         // Deletion must happen at the end, because after erasion, all
         // iterators are invalidated, including end iterator.
         cnts.erase(iCnt, qCnt);
-        syms.erase(i, q);
-        // This is to make outer loop condition "while (i != send)" valid.
-        i = syms.begin();
-        send = syms.end();
+        // Now i points to the next element after collapsing.
+        i = syms.erase(i, q);
         break;
       }
       mnp[csym] = i;  // update the map
     }
-  } while (i != send);
+  } while (i != syms.end());
   return true;
 }
 
