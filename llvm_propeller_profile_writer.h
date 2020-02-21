@@ -155,7 +155,7 @@ class PropellerProfWriter {
   unique_ptr<llvm::MemoryBuffer> binaryFileContent;
   unique_ptr<llvm::object::ObjectFile> objFile;
   // All symbol handlers.
-  map<StringRef, unique_ptr<SymbolEntry>> symbolNameMap;
+  map<StringRef, map<StringRef, unique_ptr<SymbolEntry>>> symbolNameMap;
   // Symbol start address -> Symbol list.
   map<uint64_t, list<SymbolEntry *>> addrMap;
   using CounterTy = map<pair<uint64_t, uint64_t>, uint64_t>;
@@ -242,6 +242,7 @@ class PropellerProfWriter {
 
   bool initBinaryFile();
   bool populateSymbolMap();
+  bool populateSymbolMap2();
   bool parsePerfData();
   bool parsePerfData(const string &pName);
   void writeOuts(ofstream &fout);

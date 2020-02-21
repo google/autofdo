@@ -1,5 +1,6 @@
 #include "config.h"
 #if defined(HAVE_LLVM)
+#include "llvm_propeller_flags.h"
 #include "llvm_propeller_profile_writer.h"
 #include "llvm_propeller_profile_format.h"
 
@@ -33,10 +34,6 @@
 
 #include "third_party/perf_data_converter/src/quipper/perf_parser.h"
 #include "third_party/perf_data_converter/src/quipper/perf_reader.h"
-
-DEFINE_string(match_mmap_file, "", "Match mmap event file path.");
-DEFINE_bool(ignore_build_id, false, "Ignore build id match.");
-DEFINE_bool(gen_path_profile, false, "Generate path profile.");
 
 using llvm::dyn_cast;
 using llvm::StringRef;
@@ -119,7 +116,9 @@ SymbolEntry *PropellerProfWriter::findSymbolAtAddress(uint64_t pid,
 }
 
 bool PropellerProfWriter::write() {
-  if (!initBinaryFile() || !findBinaryBuildId() || !populateSymbolMap())
+  if (!(initBinaryFile() && findBinaryBuildId() &&
+        ((FLAGS_dot_number_encoding && populateSymbolMap2()) ||
+          populateSymbolMap())))
     return false;
 
   std::fstream::pos_type partBegin, partEnd, partNew;
@@ -205,13 +204,12 @@ void PropellerProfWriter::summarize() {
   }
   uint64_t totalFuncs = 0;
   uint64_t totalBBsAll = 0;
-  for (auto &p : this->symbolNameMap) {
-    SymbolEntry *sym = p.second.get();
-    if (sym->bbTag)
-      ++totalBBsAll;
-    else
-      ++totalFuncs;
-  }
+  for (auto &p : symbolNameMap)
+    for (auto &q : p.second)
+      if (q.second->bbTag)
+        ++totalBBsAll;
+      else
+        ++totalFuncs;
   LOG(INFO) << CommaF(totalFuncs) << " functions, "
             << CommaF(funcsWithProf.size()) << " functions with prof ("
             << PercentageF(funcsWithProf, totalFuncs) << ")"
@@ -253,7 +251,12 @@ void PropellerProfWriter::writeHotFuncAndBBList(ofstream &fout) {
     if (se->bbTag) {
       if (LastFuncSymbol != se->containingFunc)
         startNewFunctionParagraph(se->containingFunc);
-      fout << "!!" << se->name.size() << std::endl;
+      if (FLAGS_dot_number_encoding) {
+        auto funcPartPos = se->name.find_first_of('.');
+        StringRef bbPart = se->name.substr(funcPartPos + 1);
+        fout << "!!" << bbPart.drop_back(1).str() << std::endl;
+      } else
+        fout << "!!" << se->name.size() << std::endl;
       ++bbCount;
     } else
       startNewFunctionParagraph(se);
@@ -264,28 +267,32 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
   uint64_t symbolOrdinal = 0;
   fout << "Symbols" << std::endl;
   for (auto &le : addrMap) {
-    // Tricky case here:
-    // In the same address we have:
-    //    foo.bb.1
-    //    foo
-    // So we first output foo.bb.1, and at this time
-    //   foo.bb.1->containingFunc->Index == 0.
-    // We output 0.1, wrong!.
-    // to handle this, we sort le by bbTag:
-    if (le.second.size() > 1) {
-      le.second.sort([](SymbolEntry *s1, SymbolEntry *s2) {
-        if (s1->bbTag != s2->bbTag) {
-          return !s1->bbTag;
-        }
-        // order irrelevant, but choose a stable relation.
-        if (s1->size != s2->size) return s1->size < s2->size;
-        return s1->name < s2->name;
-      });
+
+    if (!FLAGS_dot_number_encoding) {
+      // Tricky case here:
+      // In the same address we have:
+      //    foo.bb.1
+      //    foo
+      // So we first output foo.bb.1, and at this time
+      //   foo.bb.1->containingFunc->Index == 0.
+      // We output 0.1, wrong!.
+      // to handle this, we sort le by bbTag:
+      if (le.second.size() > 1) {
+        le.second.sort([](SymbolEntry *s1, SymbolEntry *s2) {
+          if (s1->bbTag != s2->bbTag) {
+            return !s1->bbTag;
+          }
+          // order irrelevant, but choose a stable relation.
+          if (s1->size != s2->size) return s1->size < s2->size;
+          return s1->name < s2->name;
+        });
+      }
+      // Then apply ordial to all before accessing.
+      for (auto *sePtr : le.second) {
+        sePtr->ordinal = ++symbolOrdinal;
+      }
     }
-    // Then apply ordial to all before accessing.
-    for (auto *sePtr : le.second) {
-      sePtr->ordinal = ++symbolOrdinal;
-    }
+
     for (auto *sePtr : le.second) {
       SymbolEntry &se = *sePtr;
       fout << SymOrdinalF(se) << " " << SymSizeF(se) << " ";
@@ -293,9 +300,16 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
       if (se.bbTag) {
         fout << SymOrdinalF(se.containingFunc) << ".";
         StringRef bbIndex = se.name;
-        fout << ::dec << (uint64_t)(bbIndex.size());
-        if (bbIndex.front() != 'a')
-          fout << bbIndex.front();
+        if (FLAGS_dot_number_encoding) {
+          bbIndex = se.name.substr(se.name.find_first_of('.') + 1);
+          if (se.bbTagType != SymbolEntry::BB_NORMAL)
+            fout << bbIndex.str();
+          else
+            fout << bbIndex.drop_back(1).str();
+        } else {
+          fout << ::dec << (uint64_t)(bbIndex.size());
+          if (bbIndex.front() != 'a') fout << bbIndex.front();
+        }
         fout << std::endl;
         ++funcBBCounter[se.containingFunc->ordinal];
       } else {
@@ -595,6 +609,225 @@ bool PropellerProfWriter::initBinaryFile() {
   return true;
 }
 
+bool PropellerProfWriter::populateSymbolMap2() {
+  auto symbols = objFile->symbols();
+  auto isBBSym = [](StringRef sname, uint8_t sbinding, StringRef &bbIndex) {
+    const static char DIGITS[] = "0123456789";
+    if (sbinding == llvm::ELF::STB_LOCAL) {
+      size_t r = sname.find_first_not_of(DIGITS, 0);
+      if (r != StringRef::npos && r > 0 && sname[r] == '.' &&
+          r + 1 < sname.size() &&
+          sname.find_first_not_of(DIGITS, r + 1) == sname.size() - 1 &&
+          (sname.back() == 'a' || sname.back() == 'l' || sname.back() == 'r' ||
+           sname.back() == 'L')) {
+        bbIndex = sname.substr(r + 1);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  auto getBBFuncPart = [](StringRef bbFullName) -> StringRef {
+    return bbFullName.substr(0, bbFullName.find_first_of('.'));
+  };
+
+  auto getBBIndexPart = [](StringRef bbFullName) -> StringRef {
+    return bbFullName.substr(bbFullName.find_first_of('.') + 1);
+  };
+
+  for (const auto &sym : symbols) {
+    auto addrR = sym.getAddress();
+    auto secR = sym.getSection();
+    auto NameR = sym.getName();
+    auto typeR = sym.getType();
+    auto sectionR = sym.getSection();
+
+    if (!(addrR && *addrR && secR && (*secR)->isText() && NameR && typeR &&
+          sectionR))
+      continue;
+
+    StringRef name = *NameR;
+    if (name.empty()) continue;
+    uint64_t addr = *addrR;
+    uint8_t type(*typeR);
+    llvm::object::ELFSymbolRef elfSym(sym);
+    uint64_t size = elfSym.getSize();
+    uint8_t binding = elfSym.getBinding();
+    uint64_t shndx = (*sectionR)->getIndex();
+
+    StringRef bbIndex;
+    bool isFunction = (type == llvm::object::SymbolRef::ST_Function);
+    bool isBB = isBBSym(name, binding, bbIndex);
+    if (!isFunction && !isBB) continue;
+
+    auto &addrL = addrMap[addr];
+    if (!addrL.empty()) {
+      SymbolEntry *symbolIsAliasedWith = nullptr;
+      for (auto *sym : addrL) {
+        if (sym->size == size || isFunction && !sym->bbTag) {
+          sym->aliases.push_back(name);
+          symbolIsAliasedWith = sym;
+          break;
+        }
+      }
+      if (symbolIsAliasedWith) continue;
+    }
+
+    SymbolEntry *incompleteSymbol = *(addrL.insert(
+        addrL.begin(), new SymbolEntry(0, name, SymbolEntry::AliasesTy(), addr,
+                                       size, isBB, nullptr)));
+    incompleteSymbol->bbTagType =
+        (isBB ? SymbolEntry::toBBTagType(bbIndex.back())
+              : SymbolEntry::BB_NONE);
+  }
+
+  auto emplaceSymbol = [this, &getBBIndexPart](SymbolEntry *se) -> bool {
+    if (!symbolNameMap[se->containingFunc->name]
+             .emplace((se->bbTag ? getBBIndexPart(se->name) : StringRef("")),
+                      se)
+             .second) {
+      LOG(ERROR) << "Found symbols with duplicated name: '"
+                 << se->containingFunc->name.str()
+                 << (se->bbTag ? std::string(".") + se->name.str()
+                               : std::string(""))
+                 << "'.";
+
+      return false;
+    }
+    return true;
+  };
+
+  uint64_t symbolOrdinal = 0;
+  auto processSameAddressBBs = [&symbolOrdinal, &emplaceSymbol](
+                                   uint64_t addr, list<SymbolEntry *> &bbs,
+                                   SymbolEntry *containingFuc) -> bool {
+    if (bbs.size() > 2) {
+      LOG(ERROR) << "Analyzing failure: more than 2 (>2) bbs defined on the "
+                    "same address "
+                 << hex0x << addr;
+      return false;
+    }
+    if (bbs.size() > 1) {
+      bbs.sort([](SymbolEntry *s1, SymbolEntry *s2) { return s1->size == 0; });
+      if (bbs.front()->size != 0 && bbs.back()->size != 0) {
+        LOG(ERROR) << "Analyzing failure: at address " << hex0x << addr
+                   << ", there are 2 non-empty bbs.";
+        return false;
+      }
+    }
+    for (auto *se : bbs) {
+      assert(se->bbTag);
+      se->ordinal = ++symbolOrdinal;
+      se->containingFunc = containingFuc;
+      // recordFuncIndex(se);
+      emplaceSymbol(se);
+    }
+    return true;
+  };
+
+  auto sortByOrdinal = [](list<SymbolEntry *> &sl) {
+    sl.sort([](SymbolEntry *s1, SymbolEntry *s2) {
+      return s1->ordinal < s2->ordinal;
+    });
+  };
+
+  SymbolEntry *currentFunc = nullptr;
+  for (auto p = addrMap.begin(); p != addrMap.end(); ++p) {
+    uint64_t addr = p->first;
+    auto &symL = p->second;
+    if (symL.empty()) continue;
+    if (symL.size() == 1) {
+      SymbolEntry *se = symL.front();
+      if (se->bbTag) {
+        if (currentFunc) {
+          se->containingFunc = currentFunc;
+        } else {
+          LOG(ERROR) << "Analyzing failure: at address " << hex0x << addr
+                     << ", symbol '" << se->name.str()
+                     << "' does not have a containing function.";
+          return false;
+        }
+      } else {
+        se->containingFunc = se;
+        currentFunc = se;
+      }
+      if (!emplaceSymbol(se)) return false;
+      se->ordinal = ++symbolOrdinal;
+      // recordFuncIndex(se);
+      continue;
+    }
+
+    // We have multiple symbols at address.
+    bool allAreBBs = true;
+    SymbolEntry *funcSym = nullptr;
+    for (SymbolEntry *s : symL) {
+      allAreBBs &= s->bbTag;
+      if (!s->bbTag) {
+        if (funcSym) {
+          LOG(ERROR) << "Analyzing failure: at address " << hex0x << addr
+                     << ", more than 1 function symbols defined.";
+          return false;
+        }
+        funcSym = s;
+      }
+    }
+    if (allAreBBs) {
+      if (!currentFunc) {
+        LOG(ERROR) << "Analyzing failure: at address " << hex0x << addr
+                   << ", symbols do not have a containing func.";
+        return false;
+      }
+      processSameAddressBBs(addr, symL, currentFunc);
+      sortByOrdinal(symL);
+      continue;
+    }
+
+    if (symL.size() == 2) {
+      SymbolEntry *s1 = symL.front(), *s2 = symL.back();
+      if (s1 != funcSym && s2 != funcSym) {
+        LOG(ERROR) << "Analyzing failure: internal error a at address " << hex0x
+                   << addr;
+        return false;
+      }
+      SymbolEntry *bbSym = s1 == funcSym ? s2 : s1;
+      if (!bbSym->bbTag) {
+        LOG(ERROR) << "Analyzing failure: unexpected non-bb symbol at " << hex0x
+                   << addr;
+        return false;
+      }
+      // So now we have funcSym and bbSym on the same address.
+      // Case 1:
+      // 00000000018a3047 000000000000000c t 99.6r
+      // 00000000018a3060 000000000000000c t 100.1a
+      // 00000000018a3060 000000000000000d W _ZN4llvm1
+      SymbolEntry *lastSym = nullptr;
+      if (p != addrMap.begin())
+        lastSym = std::prev(p)->second.back();
+      symL.clear();
+      if (lastSym && lastSym->bbTag &&
+          getBBFuncPart(lastSym->name) == getBBFuncPart(bbSym->name)) {
+        bbSym->containingFunc = lastSym->containingFunc;
+        symL.push_back(bbSym);
+        symL.push_back(funcSym);
+      } else {
+        bbSym->containingFunc = funcSym;
+        symL.push_back(funcSym);
+        symL.push_back(bbSym);
+      }
+      funcSym->containingFunc = funcSym;
+      symL.front()->ordinal = ++symbolOrdinal;
+      symL.back()->ordinal = ++symbolOrdinal;
+      currentFunc = funcSym;
+    } else {
+      LOG(ERROR) << "Analyzing failure: multiple func/bb symbol mixed on the "
+                    "same address "
+                 << hex0x << addr;
+      return false;
+    }
+  }  // end of iterating all address.
+  return true;
+}
+
 bool PropellerProfWriter::populateSymbolMap() {
   auto symbols = objFile->symbols();
   const set<StringRef> excludedSymbols{"__cxx_global_array_dtor"};
@@ -650,14 +883,13 @@ bool PropellerProfWriter::populateSymbolMap() {
     }
 
     // Delete symbol with same name from symbolNameMap and addrMap.
-    map<StringRef, unique_ptr<SymbolEntry>>::iterator existingNameR =
-        symbolNameMap.find(name);
+    auto existingNameR = symbolNameMap.find(name);
     if (existingNameR != symbolNameMap.end()) {
       LOG(INFO) << "Dropped duplicate symbol \"" << SymNameF(name) << "\". "
                 << "Consider using \"-funique-internal-funcnames\" to "
                    "dedupe internal function names.";
       map<uint64_t, list<SymbolEntry *>>::iterator existingLI =
-          addrMap.find(existingNameR->second->addr);
+          addrMap.find(existingNameR->second[name].get()->addr);
       if (existingLI != addrMap.end()) {
         existingLI->second.remove_if(
             [&name](SymbolEntry *sym) { return sym->name == name; });
@@ -676,8 +908,9 @@ bool PropellerProfWriter::populateSymbolMap() {
       newSymbolEntry->bbTagType = SymbolEntry::BB_NONE;
       newSymbolEntry->containingFunc = newSymbolEntry;
     }
-    symbolNameMap.emplace(std::piecewise_construct, std::forward_as_tuple(name),
-                          std::forward_as_tuple(newSymbolEntry));
+    symbolNameMap[name].emplace(std::piecewise_construct,
+                                std::forward_as_tuple(name),
+                                std::forward_as_tuple(newSymbolEntry));
   }  // End of iterating all symbols.
 
   // Now scan all the symbols in address order to create function <-> bb
