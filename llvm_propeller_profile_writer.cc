@@ -235,21 +235,21 @@ void PropellerProfWriter::writeOuts(ofstream &fout) {
 }
 
 void PropellerProfWriter::writeHotFuncAndBBList(ofstream &fout) {
-  SymbolEntry *LastFuncSymbol = nullptr;
+  SymbolEntry *lastFuncSymbol = nullptr;
   uint32_t bbCount = 0;
   auto startNewFunctionParagraph = [&fout, &bbCount,
-                                    &LastFuncSymbol](SymbolEntry *fSymbol) {
-    // If we haven't output any BB symbols for LastFuncSymbol, we then
+                                    &lastFuncSymbol](SymbolEntry *fSymbol) {
+    // If we haven't output any BB symbols for lastFuncSymbol, we then
     // output "!!0" which means the entry block is hot, before we switch
     // to processing another hot function.
-    if (LastFuncSymbol && !bbCount) fout << "!!0" << std::endl;
+    if (lastFuncSymbol && !bbCount) fout << "!!0" << std::endl;
     fout << '!' << SymNameF(fSymbol) << std::endl;
-    LastFuncSymbol = fSymbol;
+    lastFuncSymbol = fSymbol;
     bbCount = 0;
   };
   for (auto *se : hotSymbols)
     if (se->bbTag) {
-      if (LastFuncSymbol != se->containingFunc)
+      if (lastFuncSymbol != se->containingFunc)
         startNewFunctionParagraph(se->containingFunc);
       if (FLAGS_dot_number_encoding) {
         auto funcPartPos = se->name.find_first_of('.');

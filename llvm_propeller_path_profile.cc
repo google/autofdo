@@ -156,25 +156,33 @@ void PathProfile::printPaths(std::ostream &out, PropellerProfWriter &ppWriter) {
 }
 
 bool Path::expandToIncludeFallthroughs(PropellerProfWriter &ppWriter) {
-  auto from = syms.begin(), e = syms.end();
+  // Use list so iterators do not get invalidated after insertion.
+  std::list<SymbolEntry *> symList(syms.begin(), syms.end());
+  std::list<uint64_t> cntList(cnts.begin(), cnts.end());
+  bool changed = false;
+  auto from = symList.begin(), e = symList.end();
   auto to = std::next(from);
-  auto wFrom = cnts.begin();
+  auto wFrom = cntList.begin();
   auto wTo = std::next(wFrom);
-  uint64_t lastCnt;
-  SymbolEntry *lastTo = nullptr;
-  for (; to != e; ++from, ++to, ++wFrom, ++wTo) {
-    if (lastTo) {
-      vector<SymbolEntry *> fts;
-      if (!ppWriter.calculateFallthroughBBs(lastTo, (*from), fts))
-        return false;
-      if (!fts.empty()) {
-        // Note, after this operation, from / to are still valid.
-        syms.insert(from, fts.begin(), fts.end());
-        cnts.insert(wFrom, fts.size(), ((*wFrom + lastCnt) >> 1));
-      }
+  for (; to != e; ++to, ++wTo) {
+    vector<SymbolEntry *> fts;
+    if ((*from)->addr >= (*to)->addr ||
+        !ppWriter.calculateFallthroughBBs(*from, *to, fts))
+      continue;
+    if (!fts.empty()) {
+      // Note, after this operation, no iterators are invalidated.
+      symList.insert(to, fts.begin(), fts.end());
+      cntList.insert(wTo, fts.size(), ((*wFrom + *wTo) >> 1));
+      changed = true;
+      weight += fts.size() * ((*wFrom + *wTo) >> 1);
     }
-    lastTo = *to;
-    lastCnt = *wTo;
+    from = to;
+    wFrom = wTo;
+  }
+  if (changed) {
+    fprintf(stderr, "Expanded.\n");
+    syms = std::vector<SymbolEntry *>(symList.begin(), symList.end());
+    cnts = std::vector<uint64_t>(cntList.begin(), cntList.end());
   }
   return true;
 }
