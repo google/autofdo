@@ -134,6 +134,9 @@ bool PropellerProfWriter::write() {
     if (!parsePerfData()) return false;
     writeBranches(fout);
     writeFallthroughs(fout);
+
+    if (FLAGS_gen_path_profile) pathProfile.printPaths(fout, *this);
+
     partBegin = fout.tellp();
     writeHotFuncAndBBList(fout);
     partEnd = fout.tellp();
@@ -1339,8 +1342,6 @@ bool PropellerProfWriter::aggregateLBR(quipper::PerfParser &parser) {
     return false;
   }
   LOG(INFO) << "Processed " << CommaF(brStackCount) << " lbr records.";
-  if (FLAGS_gen_path_profile)
-    pathProfile.printPaths(std::cout, *this);
   return true;
 }
 

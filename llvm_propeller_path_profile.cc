@@ -22,7 +22,6 @@ bool PathProfile::addSymSeq(std::vector<SymbolEntry *> &symSeq) {
   }
 
   Path p1(std::move(symSeq));
-  const Path::Key k1 = p1.pathKey();
   auto pi = fi->second.begin(), pe = fi->second.end();
   Path merged;
   for (; pi != pe; ++pi) {
@@ -84,12 +83,6 @@ bool Path::tryMerge(const Path &path, Path &mergedPath) const {
   copyRest(subsymi, path.syms.end(), subcnti, cnts.end());
   newWeight = weight + path.weight;
   mergedPath = Path(std::move(newSyms), std::move(newCnts), newWeight);
-
-  // std::cout << "(======\n";
-  // this->print(std::cout);
-  // path.print(std::cout);
-  // std::cout << "\n======)==>";
-  // mergedPath.print(std::cout);
   return true;
 }
 
@@ -127,7 +120,10 @@ bool Path::tryCollapseLoop() {
         i = syms.erase(i, q);
         break;
       }
-      mnp[csym] = i;  // update the map
+      // Duplicated Symbols appears in the path and they belong to different
+      // branches, so return false; 
+      // mnp[csym] = i;  // update the map
+      return false;
     }
   } while (i != syms.end());
   return true;
@@ -135,22 +131,40 @@ bool Path::tryCollapseLoop() {
 
 void PathProfile::printPaths(std::ostream &out, PropellerProfWriter &ppWriter) {
   for (auto &fp : funcPaths) {
-    out << "Function paths: " << fp.first.str() << "\n";
     int t = 0;
+    Path *heaviestPath = nullptr;
     for (auto &p : fp.second) {
       if (p.weight > 1000) {
-        auto lengthBeforeCollapse = p.length();
-        out << ">>>>>>\n";
-        out << "      Prestine path " << ++t << ": " << p << std::endl;
-        p.tryCollapseLoop();
-        if (lengthBeforeCollapse != p.length())
-          out << "    Collapsed into: " << p << std::endl;
-        auto lengthBeforeExpand = p.length();
+        if (!p.tryCollapseLoop()) continue;
         p.expandToIncludeFallthroughs(ppWriter);
-        if (lengthBeforeExpand != p.length())
-          out << "    Expanded into: " << p << std::endl;
-        out << "<<<<<<\n";
+        if (!heaviestPath || heaviestPath->density() < p.density())
+          heaviestPath = &p;
+        // const uint64_t adjust = p.weight / p.length();
+        // for (int i = 1; adjust > 10 && i < p.length(); ++i) {
+        //   SymbolEntry *from = p.syms[i-1];
+        //   SymbolEntry *to = p.syms[i];
+        //   out << SymOrdinalF(from) << " " << SymOrdinalF(to) << " "
+        //       << countF(adjust) << " P" << std::endl;
+        // }
+
+        // auto lengthBeforeCollapse = p.length();
+        // out << ">>>>>>\n";
+        // out << "      Prestine path " << ++t << ": " << p << std::endl;
+        // p.tryCollapseLoop();
+        // if (lengthBeforeCollapse != p.length())
+        //   out << "    Collapsed into: " << p << std::endl;
+        // auto lengthBeforeExpand = p.length();
+        // p.expandToIncludeFallthroughs(ppWriter);
+        // if (lengthBeforeExpand != p.length())
+        //   out << "    Expanded into: " << p << std::endl;
+        // out << "<<<<<<\n";
       }
+    }
+    if (heaviestPath) {
+      out << heaviestPath->getFuncName().str();
+      for (auto *sym: heaviestPath->syms) 
+        out << " " << SymOrdinalF(sym);
+      out << " P\n";
     }
   }
 }
@@ -173,14 +187,13 @@ bool Path::expandToIncludeFallthroughs(PropellerProfWriter &ppWriter) {
       // Note, after this operation, no iterators are invalidated.
       symList.insert(to, fts.begin(), fts.end());
       cntList.insert(wTo, fts.size(), ((*wFrom + *wTo) >> 1));
-      changed = true;
       weight += fts.size() * ((*wFrom + *wTo) >> 1);
+      changed = true;
     }
     from = to;
     wFrom = wTo;
   }
   if (changed) {
-    fprintf(stderr, "Expanded.\n");
     syms = std::vector<SymbolEntry *>(symList.begin(), symList.end());
     cnts = std::vector<uint64_t>(cntList.begin(), cntList.end());
   }

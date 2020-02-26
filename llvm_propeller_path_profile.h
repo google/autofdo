@@ -20,12 +20,14 @@ class Path {
  public:
   using Key = std::pair<uint64_t, uint64_t>;
 
+  Path(const Path &p) = delete;
+
   Path() {}
 
   explicit Path(Path &&path)
-      : syms(std::move(path.syms)),
+      : weight(path.weight),
         cnts(std::move(path.cnts)),
-        weight(path.weight) {
+        syms(std::move(path.syms)) {
     assert(syms.size() == cnts.size());
   }
 
@@ -40,7 +42,7 @@ class Path {
     assert(syms.size() == cnts.size());
   }
 
-  const Path &operator=(Path &&o) {
+  Path &operator=(Path &&o) {
     syms.clear();
     cnts.clear();
     syms = std::move(o.syms);
@@ -60,19 +62,17 @@ class Path {
 
   bool expandToIncludeFallthroughs(PropellerProfWriter &ppWriter);
 
-  const Key pathKey() const {
-    return Key(syms[0]->addr, syms.back()->addr);
-  }
-
-  const StringRef getFuncName() const {
+  StringRef getFuncName() const {
     return syms.empty() ? "" : syms[0]->containingFunc->name;
   }
 
-  const uint64_t length() const { return syms.size(); }
+  uint64_t length() const { return syms.size(); }
 
-  const std::ostream &print(std::ostream &out) const;
+  double density() const { return (double)weight / (double)length(); }
 
-  // Data field.
+  std::ostream &print(std::ostream &out) const;
+
+  // Data field, do not change order.
   uint64_t weight;
   std::vector<uint64_t> cnts;
   std::vector<SymbolEntry *> syms;
