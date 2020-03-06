@@ -81,7 +81,14 @@ create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) \
                            llvm_profile_writer.cc create_llvm_prof.cc \
                            llvm_propeller_flags.cc \
                            llvm_propeller_path_profile.cc \
-                           llvm_propeller_profile_writer.cc
+                           llvm_propeller_profile_writer.cc \
+			   CodeLayout/PropellerCFG.cpp \
+			   CodeLayout/CodeLayout.cpp \
+			   CodeLayout/NodeChainClustering.cpp \
+			   CodeLayout/NodeChain.cpp \
+			   CodeLayout/NodeChainBuilder.cpp \
+			   CodeLayout/NodeChainAssembly.cpp
+
                             
 create_llvm_prof_LDADD = $(LLVM_LDFLAGS) $(LLVM_LIBS) libquipper.a libglog.a \
                          libsymbolize.a libgflags.a $(LIBELF) $(PROTOBUF_DEP)

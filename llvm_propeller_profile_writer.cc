@@ -135,6 +135,18 @@ bool PropellerProfWriter::write() {
     writeBranches(fout);
     writeFallthroughs(fout);
 
+    for(auto& cfgElem: cfgs)
+      cfgElem.second->calculateNodeFreqs();
+
+    std::list<std::string> symbolList(1, "hot");
+    const auto hotPlaceHolder = symbolList.begin();
+    const auto coldPlaceHolder = symbolList.end();
+    lld::propeller::CodeLayout().doSplitOrder(cfgs, symbolList, hotPlaceHolder, coldPlaceHolder);
+
+    fout << "LAYOUT\n";
+    for(auto& symbolName: symbolList)
+      fout << symbolName << "\n";
+
     if (FLAGS_gen_path_profile) pathProfile.printPaths(fout, *this);
 
     partBegin = fout.tellp();
@@ -147,6 +159,7 @@ bool PropellerProfWriter::write() {
         << "Warn: failed to reorder propeller section, performance may suffer.";
   }
   summarize();
+  //calculateLegacy(symbolList, hotPlaceHolder, coldPlaceHolder);
   return true;
 }
 
@@ -332,9 +345,11 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
       // Landing pads are always treated as not hot.
       LOG(WARNING) << "*** HOT LANDING PAD: " << sym->name.str() << "\t"
                    << sym->containingFunc->name.str() << "\n";
-    else
+    else {
       // Dups are properly handled by set.
       hotSymbols.insert(sym);
+      sym->hotTag = true;
+    }
   };
 
   using BrCntSummationKey = tuple<SymbolEntry *, SymbolEntry *, char>;
@@ -431,6 +446,16 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
     }
     fout << std::endl;
     ++this->branchesWritten;
+
+    CFGNode *fromN = symbolNodeMap[fromSym];
+    CFGNode *toN = symbolNodeMap[toSym];
+    if (!fromN || !toN)
+      continue;
+    if (fromN->controlFlowGraph == toN->controlFlowGraph)
+      fromN->controlFlowGraph->mapBranch(fromN, toN, cnt, type == 'C', type == 'R');
+    else
+      fromN->controlFlowGraph->mapCallOut(fromN, toN, 0, cnt, type == 'C',
+                                            type == 'R');
   }
 }
 
@@ -444,6 +469,11 @@ bool PropellerProfWriter::calculateFallthroughBBs(
   if (from->addr > to->addr) {
     LOG(WARNING) << "*** Internal error: fallthrough path start address is "
                   "larger than end address. ***";
+    return false;
+  }
+
+  if (!from->isFallthroughBlock()) {
+    LOG(WARNING) << "*** Skipping non-fallthrough ***" << from->name.str() ;
     return false;
   }
 
@@ -474,8 +504,13 @@ bool PropellerProfWriter::calculateFallthroughBBs(
                      << ".";
         }
         // Add the symbol entry to path, unless it is the the "to" symbol.
-        if (se != to)
+        if (se != to) {
+          if (!se->isFallthroughBlock()) {
+            LOG(WARNING) << "*** skipping non-fallthrough ***" << se->name.str();
+            return false;
+          }
           path.emplace_back(se);
+        }
         lastFoundSymbol = se;
       }
     }
@@ -520,12 +555,24 @@ void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
       // Note, fallthroughFrom/to are not included in "path".
       hotSymbols.insert(fallthroughFrom);
       hotSymbols.insert(fallthroughTo);
+      fallthroughFrom->hotTag = fallthroughTo->hotTag = true;
       for (auto *sym : path) {
         if (sym->isLandingPadBlock()) {
           LOG(WARNING) << "*** HOT LANDING PAD: " << sym->name.str() << "\t"
                        << sym->containingFunc->name.str() << "\n";
         }
         extraBBsIncludedInFallthroughs += hotSymbols.insert(sym).second ? 1 : 0;
+        sym->hotTag = true;
+      }
+
+      path.push_back(fallthroughTo);
+      auto * fromSym = fallthroughFrom;
+      for(auto * sym: path) {
+        CFGNode *fromN = symbolNodeMap[fromSym];
+        CFGNode *toN = symbolNodeMap[sym];
+        if (fromN && toN && fromN != toN)
+          fromN->controlFlowGraph->createEdge(fromN, toN, lld::propeller::CFGEdge::INTRA_FUNC)->weight += fc.second;
+        fromSym = sym;
       }
     }
 
@@ -886,24 +933,30 @@ bool PropellerProfWriter::populateSymbolMap() {
     }
 
     // Delete symbol with same name from symbolNameMap and addrMap.
-    auto existingNameR = symbolNameMap.find(name);
-    if (existingNameR != symbolNameMap.end()) {
-      LOG(INFO) << "Dropped duplicate symbol \"" << SymNameF(name) << "\". "
-                << "Consider using \"-funique-internal-funcnames\" to "
-                   "dedupe internal function names.";
-      map<uint64_t, list<SymbolEntry *>>::iterator existingLI =
-          addrMap.find(existingNameR->second[name].get()->addr);
-      if (existingLI != addrMap.end()) {
-        existingLI->second.remove_if(
-            [&name](SymbolEntry *sym) { return sym->name == name; });
+    StringRef funcName = name;
+    bool isBBSym = SymbolEntry::isBBSymbol(name, &funcName);
+    auto existingFuncNameR = symbolNameMap.find(funcName);
+    if (existingFuncNameR != symbolNameMap.end()) {
+      auto existingNameR = existingFuncNameR->second.find(name);
+      if (existingNameR != existingFuncNameR->second.end()) {
+        LOG(INFO) << "Dropped duplicate symbol \"" << SymNameF(name) << "\". "
+                  << "Consider using \"-funique-internal-funcnames\" to "
+                     "dedupe internal function names.";
+        map<uint64_t, list<SymbolEntry *>>::iterator existingLI =
+            addrMap.find(existingNameR->second.get()->addr);
+        if (existingLI != addrMap.end()) {
+          existingLI->second.remove_if(
+              [&name](SymbolEntry *sym) { return sym->name == name; });
+        }
+        existingFuncNameR->second.erase(existingNameR);
+        //symbolNameMap.erase(existingNameR);
+        continue;
       }
-      symbolNameMap.erase(existingNameR);
-      continue;
     }
 
     SymbolEntry *newSymbolEntry = *(addrL.insert(
         addrL.begin(), new SymbolEntry(0, name, SymbolEntry::AliasesTy(), addr,
-                                       size, SymbolEntry::isBBSymbol(name))));
+                                       size, isBBSym)));
     // Set the BB Tag type according to the first character of the symbol name.
     if (newSymbolEntry->bbTag)
       newSymbolEntry->bbTagType = SymbolEntry::toBBTagType(name.front());
@@ -911,7 +964,7 @@ bool PropellerProfWriter::populateSymbolMap() {
       newSymbolEntry->bbTagType = SymbolEntry::BB_NONE;
       newSymbolEntry->containingFunc = newSymbolEntry;
     }
-    symbolNameMap[name].emplace(std::piecewise_construct,
+    symbolNameMap[funcName].emplace(std::piecewise_construct,
                                 std::forward_as_tuple(name),
                                 std::forward_as_tuple(newSymbolEntry));
   }  // End of iterating all symbols.
@@ -1051,6 +1104,18 @@ bool PropellerProfWriter::populateSymbolMap() {
   if (bbSymbolDropped)
     LOG(INFO) << "Dropped " << ::dec << CommaF(bbSymbolDropped)
               << " bb symbol(s).";
+  for (auto& p: addrMap)
+    for(auto *se: p.second)
+      symbolEntryMap[se->containingFunc].push_back(se);
+  for (auto &elem: symbolEntryMap) {
+    auto * cfg = new ControlFlowGraph(elem.first->name, 0 , elem.second);
+    cfg->forEachNodeRef([this](CFGNode &n) {
+      symbolNodeMap.emplace(n.symbol, &n);
+    });
+    cfgs.emplace(elem.first->name, cfg);
+  }
+
+
   return true;
 }
 
