@@ -541,8 +541,8 @@ bool NodeChainBuilder::updateNodeChainAssembly(NodeChain *splitChain,
        slicePos != splitChain->nodeBundles.end(); ++slicePos) {
     // If the split position is at the beginning (no splitting), only consider
     // one MergeOrder
-    auto mergeOrderEnd = (slicePos == splitChain->nodeBundles.begin()
-                          || (splitChain->bundled && (*std::prev(slicePos))->delegateNode->controlFlowGraph == (*slicePos)->delegateNode->controlFlowGraph))
+    auto mergeOrderEnd = (slicePos == splitChain->nodeBundles.begin())
+                          //|| (splitChain->bundled && (*std::prev(slicePos))->delegateNode->controlFlowGraph == (*slicePos)->delegateNode->controlFlowGraph))
                              ? MergeOrder::BeginNext
                              : MergeOrder::End;
     for (uint8_t MI = MergeOrder::Begin; MI != mergeOrderEnd; MI++) {

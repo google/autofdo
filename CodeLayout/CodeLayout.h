@@ -32,9 +32,7 @@ private:
 
 public:
   void doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGraph>> &cfgs,
-                    std::list<std::string> &symbolList,
-                    std::list<std::string>::iterator hotPlaceHolder,
-                    std::list<std::string>::iterator coldPlaceHolder);
+                    std::list<std::string> &symbolList);
 
   void printStats();
 };

@@ -135,23 +135,24 @@ bool PropellerProfWriter::write() {
     writeBranches(fout);
     writeFallthroughs(fout);
 
-    for(auto& cfgElem: cfgs)
-      cfgElem.second->calculateNodeFreqs();
-
-    std::list<std::string> symbolList(1, "hot");
-    const auto hotPlaceHolder = symbolList.begin();
-    const auto coldPlaceHolder = symbolList.end();
-    lld::propeller::CodeLayout().doSplitOrder(cfgs, symbolList, hotPlaceHolder, coldPlaceHolder);
-
-    fout << "LAYOUT\n";
-    for(auto& symbolName: symbolList)
-      fout << symbolName << "\n";
-
     if (FLAGS_gen_path_profile) pathProfile.printPaths(fout, *this);
 
+    for(auto& cfgElem: cfgs) {
+      cfgElem.second->calculateNodeFreqs();
+      cfgElem.second->coalesceColdNodes();
+    }
+
+    std::list<std::string> symbolList;
+    lld::propeller::CodeLayout().doSplitOrder(cfgs, symbolList);
+
     partBegin = fout.tellp();
-    writeHotFuncAndBBList(fout);
+    for(auto& symbolName: symbolList)
+      fout << symbolName << "\n";
     partEnd = fout.tellp();
+
+    //partBegin = fout.tellp();
+    //writeHotFuncAndBBList(fout);
+    //partEnd = fout.tellp();
   }
   // This must be done after "fout" is closed.
   if (!reorderSections(partBegin, partEnd, partNew)) {

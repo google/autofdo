@@ -40,9 +40,7 @@ extern uint64_t getEdgeExtTSPScore(const CFGEdge &edge,
 // creating all the node chains, it hands the basic block chains to a
 // ChainClustering instance for further rerodering.
 void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGraph>> &cfgs,
-                              std::list<std::string> &symbolList,
-                              std::list<std::string>::iterator hotPlaceHolder,
-                              std::list<std::string>::iterator coldPlaceHolder) {
+                              std::list<std::string> &symbolList) {
   std::chrono::steady_clock::time_point start =
       std::chrono::steady_clock::now();
 
@@ -106,11 +104,18 @@ void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGra
   clustering->doOrder(HotOrder, ColdOrder);
 
   // Transfter the order to the symbol list.
-  for (CFGNode *n : HotOrder)
-    symbolList.insert(hotPlaceHolder, n->getFullName());
+  ControlFlowGraph * cfg = nullptr;
+  for (CFGNode *n : HotOrder) {
+    if (cfg != n->controlFlowGraph) {
+      cfg = n->controlFlowGraph;
+      symbolList.push_back(std::string("!") + cfg->name.str());
+    }
+    symbolList.push_back(std::string("!!")+ std::to_string(n->getBBIndex()));
+  }
 
+  symbolList.push_back("#COLD");
   for (CFGNode *n : ColdOrder)
-    symbolList.insert(coldPlaceHolder, n->getFullName());
+    symbolList.push_back(std::string("!!") + n->controlFlowGraph->name.str());
 
   std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
   fprintf(stderr, "[Propeller]: bb reordering took: %d",

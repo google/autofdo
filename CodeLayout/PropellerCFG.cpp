@@ -107,7 +107,20 @@ void ControlFlowGraph::calculateNodeFreqs() {
       //    node.ftEdge->weight = node.freq;
       //}
     });
+}
 
+void ControlFlowGraph::coalesceColdNodes() {
+  CFGNode * firstColdNode = nullptr;
+  nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&firstColdNode] (std::unique_ptr<CFGNode>& n) {
+    if (!n->freq){
+      if (firstColdNode) {
+        firstColdNode->symSize += n->symSize;
+        return true;
+      } else
+        firstColdNode = n.get();
+    }
+    return false;
+  }), nodes.end());
 }
 
 // Create an edge for "from->to".

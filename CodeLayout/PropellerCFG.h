@@ -170,6 +170,8 @@ public:
 
   void calculateNodeFreqs();
 
+  void coalesceColdNodes();
+
   ControlFlowGraph(const StringRef &n, uint64_t s, std::vector<SymbolEntry*> &symbols)
       : name(n), size(s), hot(false) {
     debugCFG = std::find(propConfig.optDebugSymbols.begin(),
