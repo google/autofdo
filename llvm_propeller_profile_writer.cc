@@ -143,11 +143,19 @@ bool PropellerProfWriter::write() {
     }
 
     std::list<std::string> symbolList;
-    lld::propeller::CodeLayout().doSplitOrder(cfgs, symbolList);
+    StringMap<std::vector<std::vector<unsigned>>> bbClusterMap;
+    lld::propeller::CodeLayout().doSplitOrder(cfgs, symbolList, bbClusterMap);
 
     partBegin = fout.tellp();
-    for(auto& symbolName: symbolList)
-      fout << symbolName << "\n";
+    for(auto &elem: bbClusterMap){
+      fout << "!" << elem.getKey().str() <<"\n";
+      for(auto& cluster: elem.getValue()) {
+        fout << "!!";
+        for(unsigned bbIndex: cluster)
+          fout << " " << bbIndex;
+        fout << "\n";
+      }
+    }
     partEnd = fout.tellp();
 
     //partBegin = fout.tellp();

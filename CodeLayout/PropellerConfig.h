@@ -32,7 +32,7 @@ struct PropellerConfig {
   bool optReorderBlocks = true;
   bool optReorderFuncs = true;
   bool optSplitFuncs = true;
-  bool optReorderIP = true;
+  bool optReorderIP = false;
 
   PropellerConfig() {
   // Scale weights for use in the computation of ExtTSP score.

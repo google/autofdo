@@ -32,7 +32,8 @@ private:
 
 public:
   void doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGraph>> &cfgs,
-                    std::list<std::string> &symbolList);
+                    std::list<std::string> &symbolList,
+                    StringMap<std::vector<std::vector<unsigned>>> &bbClusterMap);
 
   void printStats();
 };
