@@ -109,7 +109,7 @@ void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGra
   ControlFlowGraph * cfg = nullptr;
   std::vector<unsigned> cluster;
   for (CFGNode *n : HotOrder) {
-    if (cfg != n->controlFlowGraph) {
+    if (cfg != n->controlFlowGraph || n->isEntryNode()) {
       cfg = n->controlFlowGraph;
       bbClusterMapIt = bbClusterMap.try_emplace(cfg->name).first;
       bbClusterMapIt->second.emplace_back();
