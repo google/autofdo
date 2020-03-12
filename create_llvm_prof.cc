@@ -29,6 +29,7 @@ DEFINE_string(profiler, "perf",
               "Input profile type. Possible values: perf, text, or prefetch");
 DEFINE_string(prefetch_hints, "", "Input cache prefetch hints");
 DEFINE_string(out, "", "Output profile file name");
+DEFINE_string(sym_order_out, "", "Symbol ordering file output file name");
 DEFINE_string(gcov, "",
               "Output profile file name. Alias for --out; used for "
               "flag compatibility with create_gcov");
@@ -74,7 +75,7 @@ int main(int argc, char **argv) {
   } else if (FLAGS_format == "binary") {
     writer.reset(new autofdo::LLVMProfileWriter(llvm::sampleprof::SPF_Binary));
   } else if (FLAGS_format == "propeller") {
-    PropellerProfWriter PPWriter(FLAGS_binary, FLAGS_profile, FLAGS_out);
+    PropellerProfWriter PPWriter(FLAGS_binary, FLAGS_profile, FLAGS_out, FLAGS_sym_order_out);
     return PPWriter.write() ? 0 : 1;
   } else {
     LOG(ERROR) << "--format must be one of 'text', 'binary' or 'properller'.";

@@ -145,7 +145,7 @@ class MMapEntry {
 
 class PropellerProfWriter {
  public:
-  PropellerProfWriter(const string &bfn, const string &pfn, const string &ofn);
+  PropellerProfWriter(const string &bfn, const string &pfn, const string &ofn, const string &sofn);
   ~PropellerProfWriter();
 
   bool write();
@@ -154,6 +154,7 @@ class PropellerProfWriter {
   const string binaryFileName;
   const string perfFileName;
   const string propOutFileName;
+  const string symOrderFileName;
 
   // binaryFileContent must be the last one to be destroyed.
   // So it appears first in this section.

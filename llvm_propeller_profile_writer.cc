@@ -50,8 +50,8 @@ using std::stringstream;
 using std::tuple;
 
 PropellerProfWriter::PropellerProfWriter(const string &bfn, const string &pfn,
-                                         const string &ofn)
-    : binaryFileName(bfn), perfFileName(pfn), propOutFileName(ofn) {}
+                                         const string &ofn, const string &sofn)
+    : binaryFileName(bfn), perfFileName(pfn), propOutFileName(ofn), symOrderFileName(sofn) {}
 
 PropellerProfWriter::~PropellerProfWriter() {}
 
@@ -128,6 +128,13 @@ bool PropellerProfWriter::write() {
       LOG(ERROR) << "Failed to open '" << propOutFileName << "' for writing.";
       return false;
     }
+
+    ofstream sout(symOrderFileName);
+    if (sout.bad()) {
+      LOG(ERROR) << "Failed to open '" << symOrderFileName << "' for writing.";
+      return false;
+    }
+
     writeOuts(fout);
     partNew = fout.tellp();
     writeSymbols(fout);
@@ -158,10 +165,10 @@ bool PropellerProfWriter::write() {
     }
     partEnd = fout.tellp();
 
-    //partBegin = fout.tellp();
-    //writeHotFuncAndBBList(fout);
-    //partEnd = fout.tellp();
+    for(auto &sym: symbolList)
+      sout << sym << "\n";
   }
+
   // This must be done after "fout" is closed.
   if (!reorderSections(partBegin, partEnd, partNew)) {
     LOG(ERROR)
