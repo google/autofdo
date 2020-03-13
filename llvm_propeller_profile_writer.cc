@@ -150,16 +150,24 @@ bool PropellerProfWriter::write() {
     }
 
     std::list<std::string> symbolList;
-    StringMap<std::vector<std::vector<unsigned>>> bbClusterMap;
+    std::unordered_map<SymbolEntry *, std::vector<std::vector<unsigned>>> bbClusterMap;
     lld::propeller::CodeLayout().doSplitOrder(cfgs, symbolList, bbClusterMap);
 
     partBegin = fout.tellp();
     for(auto &elem: bbClusterMap){
-      fout << "!" << elem.getKey().str() <<"\n";
-      for(auto& cluster: elem.getValue()) {
+      fout << "!";
+      auto *se = elem.first;
+      fout << se->name.str();
+      for (size_t i=1 ; i<se->aliases.size(); ++i)
+        fout << "/" << se->aliases[i].str();
+      fout << "\n";
+      for(auto& cluster: elem.second) {
         fout << "!!";
-        for(unsigned bbIndex: cluster)
-          fout << " " << bbIndex;
+        for(size_t i=0; i<cluster.size(); ++i) {
+          if (i)
+            fout << " ";
+          fout << cluster[i];
+        }
         fout << "\n";
       }
     }
@@ -168,14 +176,12 @@ bool PropellerProfWriter::write() {
     for(auto &sym: symbolList)
       sout << sym << "\n";
   }
-
   // This must be done after "fout" is closed.
   if (!reorderSections(partBegin, partEnd, partNew)) {
     LOG(ERROR)
         << "Warn: failed to reorder propeller section, performance may suffer.";
   }
   summarize();
-  //calculateLegacy(symbolList, hotPlaceHolder, coldPlaceHolder);
   return true;
 }
 

@@ -41,7 +41,7 @@ extern uint64_t getEdgeExtTSPScore(const CFGEdge &edge,
 // ChainClustering instance for further rerodering.
 void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGraph>> &cfgs,
                               std::list<std::string> &symbolList,
-                              StringMap<std::vector<std::vector<unsigned>>> &bbClusterMap) {
+                              std::unordered_map<SymbolEntry *, std::vector<std::vector<unsigned>>> &bbClusterMap) {
   std::chrono::steady_clock::time_point start =
       std::chrono::steady_clock::now();
 
@@ -104,14 +104,16 @@ void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGra
   // the final reordering and populate the hot and cold cfg node orders.
   clustering->doOrder(HotOrder, ColdOrder);
 
-  StringMap<std::vector<std::vector<unsigned>>>::iterator bbClusterMapIt;
+  std::unordered_map<SymbolEntry *, std::vector<std::vector<unsigned>>>::iterator bbClusterMapIt;
   // Transfter the order to the symbol list.
   ControlFlowGraph * cfg = nullptr;
   std::vector<unsigned> cluster;
   for (CFGNode *n : HotOrder) {
     if (cfg != n->controlFlowGraph || n->isEntryNode()) {
       cfg = n->controlFlowGraph;
-      bbClusterMapIt = bbClusterMap.try_emplace(cfg->name).first;
+      bbClusterMapIt = bbClusterMap.emplace(std::piecewise_construct,
+                                       std::forward_as_tuple(cfg->getEntryNode()->symbol),
+                                       std::forward_as_tuple()).first;
       bbClusterMapIt->second.emplace_back();
     }
     if (bbClusterMapIt->second.back().empty())
@@ -119,8 +121,8 @@ void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGra
     bbClusterMapIt->second.back().push_back(n->getBBIndex());
   }
 
-  for (CFGNode *n : ColdOrder)
-    symbolList.push_back(std::string(n->controlFlowGraph->name.str()) + ".cold");
+  //for (CFGNode *n : ColdOrder)
+  //  symbolList.push_back(std::string(n->controlFlowGraph->name.str()) + ".cold");
 
   std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
   fprintf(stderr, "[Propeller]: bb reordering took: %d",
