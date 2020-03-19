@@ -121,8 +121,8 @@ void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGra
     bbClusterMapIt->second.back().push_back(n->getBBIndex());
   }
 
-  //for (CFGNode *n : ColdOrder)
-  //  symbolList.push_back(std::string(n->controlFlowGraph->name.str()) + ".cold");
+  for (CFGNode *n : ColdOrder)
+    symbolList.push_back(std::string(n->controlFlowGraph->name.str()) + ".cold");
 
   std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
   fprintf(stderr, "[Propeller]: bb reordering took: %d",

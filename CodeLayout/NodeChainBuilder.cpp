@@ -147,6 +147,7 @@ void NodeChainBuilder::coalesceChains() {
 
         // Place the entry node's chain before other chains
         auto *entryNode = c1->controlFlowGraph->getEntryNode();
+        fprintf(stderr, "Entry node: %s\n", entryNode->getFullName().c_str());
         if (getNodeChain(entryNode) == c1)
           return true;
         if (getNodeChain(entryNode) == c2)

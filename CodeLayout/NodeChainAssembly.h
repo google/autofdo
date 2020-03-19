@@ -149,7 +149,7 @@ public:
     scoreGain = assemblyScore > chainsScore ? assemblyScore - chainsScore : 0;
   }
 
-  bool isValid() { return scoreGain; }
+  bool isValid() { return scoreGain > 0 && (propConfig.optReorderIP || (!splitChain()->firstNode()->isEntryNode() && !unsplitChain()->firstNode()->isEntryNode()) || getFirstNode()->isEntryNode()); }
 
   // Find the NodeChainSlice in this NodeChainAssembly which contains the given
   // node. If the node is not contained in this NodeChainAssembly, then return
