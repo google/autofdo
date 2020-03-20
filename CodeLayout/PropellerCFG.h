@@ -43,7 +43,7 @@
 
 using llvm::propeller::SymbolEntry;
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 class CFGNode;
@@ -230,5 +230,5 @@ std::ostream &operator<<(std::ostream &out, const CFGNode &node);
 std::ostream &operator<<(std::ostream &out, const CFGEdge &edge);
 std::ostream &operator<<(std::ostream &out, const ControlFlowGraph &cfg);
 } // namespace propeller
-} // namespace lld
+} // namespace llvm
 #endif

@@ -24,7 +24,7 @@
 #include <list>
 #include <vector>
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 uint64_t getEdgeExtTSPScore(const CFGEdge &edge, int64_t srcSinkDistance);
@@ -201,6 +201,6 @@ public:
 std::string toString(NodeChainAssembly &assembly);
 
 } // namespace propeller
-} // namespace lld
+} // namespace llvm
 
 #endif

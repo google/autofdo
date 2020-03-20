@@ -24,7 +24,7 @@
 
 using llvm::detail::DenseMapPair;
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 void ChainClustering::addChain(std::unique_ptr<NodeChain> &&chain_ptr) {
@@ -235,4 +235,4 @@ void ChainClustering::doOrder(std::vector<CFGNode *> &hotOrder,
 }
 
 } // namespace propeller
-} // namespace lld
+} // namespace llvm

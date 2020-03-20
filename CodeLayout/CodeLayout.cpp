@@ -26,7 +26,7 @@
 using llvm::DenseMap;
 using llvm::Twine;
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 PropellerConfig propConfig;
@@ -200,4 +200,4 @@ void CodeLayout::printStats() {
 }
 
 } // namespace propeller
-} // namespace lld
+} // namespace llvm

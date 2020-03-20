@@ -16,7 +16,7 @@
 
 using llvm::DenseMap;
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 // This is the base class for clustering chains. It provides the basic data
@@ -127,13 +127,13 @@ private:
 };
 
 } // namespace propeller
-} // namespace lld
+} // namespace llvm
 
 namespace std {
-template <> struct less<lld::propeller::ChainClustering::Cluster *> {
-  bool operator()(const lld::propeller::ChainClustering::Cluster *c1,
-                  const lld::propeller::ChainClustering::Cluster *c2) const {
-    return less<lld::propeller::NodeChain *>()(c1->delegateChain,
+template <> struct less<llvm::propeller::ChainClustering::Cluster *> {
+  bool operator()(const llvm::propeller::ChainClustering::Cluster *c1,
+                  const llvm::propeller::ChainClustering::Cluster *c2) const {
+    return less<llvm::propeller::NodeChain *>()(c1->delegateChain,
                                                c2->delegateChain);
   }
 };

@@ -59,7 +59,7 @@
 // of their execution density, i.e., the total profiled frequency of the chain
 // divided by its binary size.
 //
-// The values used by this algorithm are reconfiguriable using lld's propeller
+// The values used by this algorithm are reconfiguriable using llvm's propeller
 // flags. Specifically, these parameters are:
 //
 //   * propeller-forward-jump-distance: maximum distance of a forward jump
@@ -94,7 +94,7 @@ using llvm::detail::DenseMapPair;
 using llvm::SmallVector;
 using llvm::Twine;
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 // Initializes the node chains for each cfg and finds all the mutually-forced
@@ -829,4 +829,4 @@ void NodeChainBuilder::doOrder(std::unique_ptr<ChainClustering> &clustering) {
 }
 
 } // namespace propeller
-} // namespace lld
+} // namespace llvm

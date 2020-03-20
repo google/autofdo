@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 #include "NodeChain.h"
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 // This merges the bundles between (and including) two bundles in the chain's
@@ -88,4 +88,4 @@ std::string toString(const NodeChain &c) {
 }
 
 } // namespace propeller
-} // namespace lld
+} // namespace llvm

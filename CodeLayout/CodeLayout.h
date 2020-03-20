@@ -15,7 +15,7 @@
 #include <list>
 #include <vector>
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 
@@ -39,5 +39,5 @@ public:
 };
 
 } // namespace propeller
-} // namespace lld
+} // namespace llvm
 #endif

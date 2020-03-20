@@ -27,7 +27,7 @@
 using llvm::SmallVector;
 using llvm::Twine;
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 bool CFGNode::isEntryNode() const {
@@ -280,4 +280,4 @@ std::ostream &operator<<(std::ostream &out, const ControlFlowGraph &cfg) {
 bool CFGEdge::isFTEdge() const { return src->ftEdge == this; }
 
 } // namespace propeller
-} // namespace lld
+} // namespace llvm

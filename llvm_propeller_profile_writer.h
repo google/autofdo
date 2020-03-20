@@ -42,8 +42,8 @@ using llvm::propeller::SymbolEntry;
 using llvm::SmallVector;
 using llvm::StringRef;
 
-using lld::propeller::ControlFlowGraph;
-using lld::propeller::CFGNode;
+using llvm::propeller::ControlFlowGraph;
+using llvm::propeller::CFGNode;
 
 namespace quipper {
 class PerfParser;

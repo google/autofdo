@@ -82,6 +82,7 @@ create_llvm_prof_SOURCES = $(COMMON_PROFILE_CREATOR_FILES) \
                            llvm_propeller_flags.cc \
                            llvm_propeller_path_profile.cc \
                            llvm_propeller_profile_writer.cc \
+			   CodeLayout/PropellerConfig.cpp \
 			   CodeLayout/PropellerCFG.cpp \
 			   CodeLayout/CodeLayout.cpp \
 			   CodeLayout/NodeChainClustering.cpp \

@@ -8,7 +8,7 @@
 #include "NodeChainAssembly.h"
 #include "NodeChain.h"
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 // Return the Extended TSP score for one edge, given its source to sink
@@ -199,4 +199,4 @@ std::string toString(NodeChainAssembly &assembly) {
 }
 
 } // namespace propeller
-} // namespace lld
+} // namespace llvm

@@ -22,7 +22,7 @@
 
 using llvm::DenseMap;
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 // bb chain builder based on the ExtTSP metric
@@ -127,6 +127,6 @@ public:
 };
 
 } // namespace propeller
-} // namespace lld
+} // namespace llvm
 
 #endif

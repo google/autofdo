@@ -17,7 +17,7 @@
 
 using llvm::DenseSet;
 
-namespace lld {
+namespace llvm {
 namespace propeller {
 
 class NodeChain;
@@ -179,14 +179,14 @@ NodeChain *getNodeChain(const CFGNode *n);
 int64_t getNodeOffset(const CFGNode *n);
 
 } // namespace propeller
-} // namespace lld
+} // namespace llvm
 
 namespace std {
 // Specialization of std::less for NodeChain, which allows for consistent
 // tie-breaking in our Map data structures.
-template <> struct less<lld::propeller::NodeChain *> {
-  bool operator()(const lld::propeller::NodeChain *c1,
-                  const lld::propeller::NodeChain *c2) const {
+template <> struct less<llvm::propeller::NodeChain *> {
+  bool operator()(const llvm::propeller::NodeChain *c1,
+                  const llvm::propeller::NodeChain *c2) const {
     return c1->delegateNode->symbol->ordinal < c2->delegateNode->symbol->ordinal;
   }
 };
@@ -194,16 +194,16 @@ template <> struct less<lld::propeller::NodeChain *> {
 // Specialization of std::less for pair<NodeChain,NodeChain>, which allows for
 // consistent tie-breaking in our Map data structures.
 template <>
-struct less<pair<lld::propeller::NodeChain *, lld::propeller::NodeChain *>> {
+struct less<pair<llvm::propeller::NodeChain *, llvm::propeller::NodeChain *>> {
   bool operator()(
-      const pair<lld::propeller::NodeChain *, lld::propeller::NodeChain *> p1,
-      const pair<lld::propeller::NodeChain *, lld::propeller::NodeChain *> p2)
+      const pair<llvm::propeller::NodeChain *, llvm::propeller::NodeChain *> p1,
+      const pair<llvm::propeller::NodeChain *, llvm::propeller::NodeChain *> p2)
       const {
-    if (less<lld::propeller::NodeChain *>()(p1.first, p2.first))
+    if (less<llvm::propeller::NodeChain *>()(p1.first, p2.first))
       return true;
-    if (less<lld::propeller::NodeChain *>()(p2.first, p1.first))
+    if (less<llvm::propeller::NodeChain *>()(p2.first, p1.first))
       return false;
-    return less<lld::propeller::NodeChain *>()(p1.second, p2.second);
+    return less<llvm::propeller::NodeChain *>()(p1.second, p2.second);
   }
 };
 } // namespace std

@@ -151,7 +151,7 @@ bool PropellerProfWriter::write() {
 
     std::list<std::string> symbolList;
     std::unordered_map<SymbolEntry *, std::vector<std::vector<unsigned>>> bbClusterMap;
-    lld::propeller::CodeLayout().doSplitOrder(cfgs, symbolList, bbClusterMap);
+    llvm::propeller::CodeLayout().doSplitOrder(cfgs, symbolList, bbClusterMap);
 
     partBegin = fout.tellp();
     for(auto &elem: bbClusterMap){
@@ -593,7 +593,7 @@ void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
         CFGNode *fromN = symbolNodeMap[fromSym];
         CFGNode *toN = symbolNodeMap[sym];
         if (fromN && toN && fromN != toN)
-          fromN->controlFlowGraph->createEdge(fromN, toN, lld::propeller::CFGEdge::INTRA_FUNC)->weight += fc.second;
+          fromN->controlFlowGraph->createEdge(fromN, toN, llvm::propeller::CFGEdge::INTRA_FUNC)->weight += fc.second;
         fromSym = sym;
       }
     }
