@@ -85,10 +85,8 @@ void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGra
     NodeChainBuilder(hotCFGs).doOrder(clustering);
   } else if (propConfig.optReorderBlocks) {
     // Otherwise we apply reordering on every controlFlowGraph separately
-    for (ControlFlowGraph *cfg : hotCFGs) {
-      fprintf(stderr, "Ordering for cfg: %s\n", cfg->name.str().c_str());
+    for (ControlFlowGraph *cfg : hotCFGs)
       NodeChainBuilder(cfg).doOrder(clustering);
-    }
   } else {
     // If reordering is not desired, we create changes according to the initial
     // order in the controlFlowGraph.
@@ -122,7 +120,7 @@ void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGra
   }
 
   for (CFGNode *n : ColdOrder)
-    symbolList.push_back(std::string(n->controlFlowGraph->name.str()) + ".cold");
+    symbolList.push_back(n->getFullName());
 
   std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
   fprintf(stderr, "[Propeller]: bb reordering took: %d",
