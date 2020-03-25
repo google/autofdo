@@ -1,8 +1,8 @@
 #include "PropellerConfig.h"
 #include "gflags/gflags.h"
 
-DEFINE_int32(propeller_backward_jump_distance, 1024, "Propeller backward jump distance");
-DEFINE_int32(propeller_forward_jump_distance, 1024, "Propeller forward jump distance");
+DEFINE_int64(propeller_backward_jump_distance, 1024, "Propeller backward jump distance");
+DEFINE_int64(propeller_forward_jump_distance, 1024, "Propeller forward jump distance");
 DEFINE_bool(propeller_reorder_blocks, true, "Propeller reorder blocks");
 DEFINE_bool(propeller_reorder_funcs, true, "Propeller reorder functions");
 DEFINE_bool(propeller_split_funcs, true, "Propeller split functions");
@@ -13,8 +13,8 @@ namespace llvm {
 namespace propeller {
 
 PropellerConfig::PropellerConfig() {
-  this->optBackwardJumpWeight = FLAGS_propeller_backward_jump_distance;
-  this->optForwardJumpWeight = FLAGS_propeller_forward_jump_distance;
+  this->optBackwardJumpDistance = FLAGS_propeller_backward_jump_distance;
+  this->optForwardJumpDistance = FLAGS_propeller_forward_jump_distance;
   // Scale weights for use in the computation of ExtTSP score.
   this->optFallthroughWeight *=
       this->optForwardJumpDistance * this->optBackwardJumpDistance;
