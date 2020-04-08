@@ -9,13 +9,13 @@ Each compiler is supported by a different tool. For GCC, use
 line flags. However, the outputs are incompatible. You cannot
 use the profile generated for GCC in LLVM and vice-versa.
 
-#Prerequisites to Build:
+# Prerequisites to Build:
 Install dependencies:
 ```
 sudo apt-get -y install autoconf automake git libelf-dev libssl-dev pkg-config
 ```
 
-# Compile
+# Clone & Compile
 Clone the repository using the following command:
 ```
 git clone --recursive https://github.com/google/autofdo.git
