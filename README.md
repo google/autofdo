@@ -35,7 +35,7 @@ make
 **Note:** do not use the `-j` (parallel build) option of make. The configure scripts
  for the sub-projects fail if run in parallel
 
-#Usage
+# Usage
 Depending on your compiler, a perf dump can be collected by running one of:
 ```
 ./create_gcov --binary=BINARY --profile=PERF_PROFILE --gcov=OUTPUT
