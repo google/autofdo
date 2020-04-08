@@ -163,7 +163,7 @@ class PropellerProfWriter {
   // All symbol handlers.
   map<StringRef, map<StringRef, unique_ptr<SymbolEntry>>> symbolNameMap;
   map<SymbolEntry *, std::vector<SymbolEntry*>> symbolEntryMap;
-  map<StringRef, std::unique_ptr<ControlFlowGraph>> cfgs;
+  map<SymbolEntry *, std::unique_ptr<ControlFlowGraph>> cfgs;
   map<SymbolEntry *, CFGNode *> symbolNodeMap;
   // Symbol start address -> Symbol list.
   map<uint64_t, list<SymbolEntry *>> addrMap;

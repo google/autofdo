@@ -149,32 +149,32 @@ bool PropellerProfWriter::write() {
       cfgElem.second->coalesceColdNodes();
     }
 
-    std::list<std::string> symbolList;
-    std::unordered_map<SymbolEntry *, std::vector<std::vector<unsigned>>> bbClusterMap;
-    llvm::propeller::CodeLayout().doSplitOrder(cfgs, symbolList, bbClusterMap);
+    std::list<CFGNode*> section_order;
+    llvm::propeller::CodeLayout().doOrder(cfgs, section_order);
 
     partBegin = fout.tellp();
-    for(auto &elem: bbClusterMap){
-      fout << "!";
-      auto *se = elem.first;
-      fout << se->name.str();
-      for (size_t i=1 ; i<se->aliases.size(); ++i)
+    for(auto &elem: cfgs){
+      if (!elem.second->isHot())
+        continue;
+      auto * se = elem.first;
+      fout << "!" << se->name.str();
+      for (size_t i=1 ; i< se->aliases.size(); ++i)
         fout << "/" << se->aliases[i].str();
       fout << "\n";
-      for(auto& cluster: elem.second) {
+      for(auto& cluster: elem.second->clusters) {
         fout << "!!";
         for(size_t i=0; i<cluster.size(); ++i) {
           if (i)
             fout << " ";
-          fout << cluster[i];
+          fout << cluster[i]->getBBIndex();
         }
         fout << "\n";
       }
     }
     partEnd = fout.tellp();
 
-    for(auto &sym: symbolList)
-      sout << sym << "\n";
+    for(auto *n: section_order)
+      sout << n->getFullName() << "\n";
   }
   // This must be done after "fout" is closed.
   if (!reorderSections(partBegin, partEnd, partNew)) {
@@ -1134,7 +1134,7 @@ bool PropellerProfWriter::populateSymbolMap() {
     cfg->forEachNodeRef([this](CFGNode &n) {
       symbolNodeMap.emplace(n.symbol, &n);
     });
-    cfgs.emplace(elem.first->name, cfg);
+    cfgs.emplace(elem.first, cfg);
   }
 
 

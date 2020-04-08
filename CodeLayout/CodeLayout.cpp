@@ -39,37 +39,36 @@ extern uint64_t getEdgeExtTSPScore(const CFGEdge &edge,
 // -propeller-opt=reorder-ip) or individually on every controlFlowGraph. After
 // creating all the node chains, it hands the basic block chains to a
 // ChainClustering instance for further rerodering.
-void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGraph>> &cfgs,
-                              std::list<std::string> &symbolList,
-                              std::unordered_map<SymbolEntry *, std::vector<std::vector<unsigned>>> &bbClusterMap) {
+void CodeLayout::doOrder(std::map<SymbolEntry*, std::unique_ptr<ControlFlowGraph>> &cfgs,
+                         std::list<CFGNode*> &section_order) {
   std::chrono::steady_clock::time_point start =
       std::chrono::steady_clock::now();
 
   // Populate the hot and cold cfg lists by iterating over the cfgs in the
   // propeller profile.
   //prop->forEachCfgRef([this](ControlFlowGraph &cfg) {
-  for(auto &cfgElem: cfgs) {
-    auto& cfg = *cfgElem.second.get();
+  for(auto &cfg_elem: cfgs) {
+    auto& cfg = *cfg_elem.second.get();
     if (cfg.isHot()) {
-      hotCFGs.push_back(&cfg);
+      hot_cfgs.push_back(&cfg);
       if (propConfig.optPrintStats) {
         // Dump the number of basic blocks and hot basic blocks for every
         // function
-        unsigned hotBBs = 0;
-        unsigned allBBs = 0;
-        cfg.forEachNodeRef([&hotBBs, &allBBs](CFGNode &node) {
+        unsigned hot_bbs = 0;
+        unsigned all_bbs = 0;
+        cfg.forEachNodeRef([&hot_bbs, &all_bbs](CFGNode &node) {
           if (node.freq)
-            hotBBs++;
-          allBBs++;
+            hot_bbs++;
+          all_bbs++;
         });
-        fprintf(stderr, "HISTOGRAM: %s,%u,%u\n", cfg.name.str().c_str(), allBBs,
-                hotBBs);
+        fprintf(stderr, "HISTOGRAM: %s,%u,%u\n", cfg.name.str().c_str(), all_bbs,
+                hot_bbs);
       }
     } else
-      coldCFGs.push_back(&cfg);
+      cold_cfgs.push_back(&cfg);
   }
 
-  fprintf(stderr, "Hot cfgs: %d\n", hotCFGs.size());
+  fprintf(stderr, "Hot cfgs: %d\n", hot_cfgs.size());
 
   if (propConfig.optReorderIP || propConfig.optReorderFuncs)
     clustering.reset(new CallChainClustering());
@@ -82,45 +81,63 @@ void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGra
   if (propConfig.optReorderIP) {
     // If -propeller-opt=reorder-ip we want to run basic block reordering on all
     // the basic blocks of the hot cfgs.
-    NodeChainBuilder(hotCFGs).doOrder(clustering);
+    NodeChainBuilder(hot_cfgs).doOrder(clustering);
   } else if (propConfig.optReorderBlocks) {
     // Otherwise we apply reordering on every controlFlowGraph separately
-    for (ControlFlowGraph *cfg : hotCFGs)
+    for (ControlFlowGraph *cfg : hot_cfgs)
       NodeChainBuilder(cfg).doOrder(clustering);
-  } else {
-    // If reordering is not desired, we create changes according to the initial
-    // order in the controlFlowGraph.
-    for (ControlFlowGraph *cfg : hotCFGs)
-      clustering->addChain(std::unique_ptr<NodeChain>(new NodeChain(cfg)));
+  } else { // Reordering of basic blocks is not desired.
+    for (ControlFlowGraph *cfg : hot_cfgs) {
+      // With function splitting, we just split the hot and cold parts of each
+      // function and keep the basic blocks in the original order.
+      if (propConfig.optSplitFuncs) {
+        std::vector<CFGNode *> cold_nodes, hot_nodes;
+        cfg->forEachNodeRef([&cold_nodes, &hot_nodes](CFGNode &n) {
+          if (n.freq)
+            hot_nodes.emplace_back(&n);
+          else
+            cold_nodes.emplace_back(&n);
+        });
+        auto compareNodeAddress = [](CFGNode *n1, CFGNode *n2) {
+          return n1->symbol->ordinal < n2->symbol->ordinal;
+        };
+        std::sort(hot_nodes.begin(), hot_nodes.end(), compareNodeAddress);
+        std::sort(cold_nodes.begin(), cold_nodes.end(), compareNodeAddress);
+        if (!hot_nodes.empty())
+          clustering->addChain(
+              std::unique_ptr<NodeChain>(new NodeChain(hot_nodes)));
+        if (!cold_nodes.empty())
+          clustering->addChain(
+              std::unique_ptr<NodeChain>(new NodeChain(cold_nodes)));
+      } else {
+        // If no-reordering is not desired, we layout out basic blocks according
+        // to the original order.
+        clustering->addChain(std::unique_ptr<NodeChain>(new NodeChain(cfg)));
+      }
+    }
   }
 
   // The order for cold cfgs remains unchanged.
-  for (ControlFlowGraph *cfg : coldCFGs)
+  for (ControlFlowGraph *cfg : cold_cfgs)
     clustering->addChain(std::unique_ptr<NodeChain>(new NodeChain(cfg)));
 
   // After building all the chains, let the chain clustering algorithm perform
   // the final reordering and populate the hot and cold cfg node orders.
-  clustering->doOrder(HotOrder, ColdOrder);
+  clustering->doOrder(hot_order, cold_order);
 
-  std::unordered_map<SymbolEntry *, std::vector<std::vector<unsigned>>>::iterator bbClusterMapIt;
   // Transfter the order to the symbol list.
   ControlFlowGraph * cfg = nullptr;
   std::vector<unsigned> cluster;
-  for (CFGNode *n : HotOrder) {
-    if (cfg != n->controlFlowGraph || n->isEntryNode()) {
-      cfg = n->controlFlowGraph;
-      bbClusterMapIt = bbClusterMap.emplace(std::piecewise_construct,
-                                       std::forward_as_tuple(cfg->getEntryNode()->symbol),
-                                       std::forward_as_tuple()).first;
-      bbClusterMapIt->second.emplace_back();
-    }
-    if (bbClusterMapIt->second.back().empty())
-      symbolList.push_back(n->getFullName());
-    bbClusterMapIt->second.back().push_back(n->getBBIndex());
+  for (CFGNode *n : hot_order) {
+    if (cfg != n->controlFlowGraph || n->isEntryNode())
+      (cfg = n->controlFlowGraph)->clusters.emplace_back();
+    if (cfg->clusters.back().empty())
+      section_order.push_back(n);
+    cfg->clusters.back().push_back(n);
   }
 
-  for (CFGNode *n : ColdOrder)
-    symbolList.push_back(n->getFullName());
+  for (CFGNode *n : cold_order)
+    section_order.push_back(n);
 
   std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
   fprintf(stderr, "[Propeller]: bb reordering took: %d",
@@ -135,16 +152,13 @@ void CodeLayout::doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGra
 // for each function across the code layout, the edge count for each distance
 // level, and the ExtTSP score achieved for each function.
 void CodeLayout::printStats() {
-
   DenseMap<CFGNode *, int64_t> nodeAddressMap;
   llvm::StringMap<unsigned> functionPartitions;
   int64_t currentAddress = 0;
   ControlFlowGraph *currentCFG = nullptr;
-  for (CFGNode *n : HotOrder) {
-    if (currentCFG != n->controlFlowGraph) {
-      currentCFG = n->controlFlowGraph;
-      functionPartitions[currentCFG->name]++;
-    }
+  for (CFGNode *n : hot_order) {
+    if (currentCFG != n->controlFlowGraph)
+      functionPartitions[(currentCFG = n->controlFlowGraph)->name]++;
     nodeAddressMap[n] = currentAddress;
     currentAddress += n->symSize;
   }
@@ -157,7 +171,7 @@ void CodeLayout::printStats() {
                                    std::numeric_limits<uint64_t>::max()});
   std::map<uint64_t, uint64_t> histogram;
   llvm::StringMap<uint64_t> extTSPScoreMap;
-  for (CFGNode *n : HotOrder) {
+  for (CFGNode *n : hot_order) {
     auto scoreEntry =
         extTSPScoreMap.try_emplace(n->controlFlowGraph->name, 0).first;
     n->forEachOutEdgeRef(

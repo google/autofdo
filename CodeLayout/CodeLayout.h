@@ -23,17 +23,16 @@ class CodeLayout {
 private:
   // cfgs that are processed by the reordering algorithm. These are separated
   // into hot and cold cfgs.
-  std::vector<ControlFlowGraph *> hotCFGs, coldCFGs;
+  std::vector<ControlFlowGraph *> hot_cfgs, cold_cfgs;
   // The final hot and cold order containing all cfg nodes.
-  std::vector<CFGNode *> HotOrder, ColdOrder;
+  std::vector<CFGNode *> hot_order, cold_order;
   // Handle of the clustering algorithm used to further reorder the computed
   // chains.
   std::unique_ptr<ChainClustering> clustering;
 
 public:
-  void doSplitOrder(std::map<StringRef, std::unique_ptr<ControlFlowGraph>> &cfgs,
-                    std::list<std::string> &symbolList,
-                    std::unordered_map<SymbolEntry*, std::vector<std::vector<unsigned>>> &bbClusterMap);
+  void doOrder(std::map<SymbolEntry*, std::unique_ptr<ControlFlowGraph>> &cfgs,
+               std::list<CFGNode*> &section_order);
 
   void printStats();
 };

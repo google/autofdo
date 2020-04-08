@@ -575,7 +575,6 @@ bool NodeChainBuilder::updateNodeChainAssembly(NodeChain *splitChain,
 
 void NodeChainBuilder::initNodeChains(
     ControlFlowGraph &cfg, std::vector<std::vector<CFGNode *>> &paths) {
-  fprintf(stderr, "initing node chains for %s\n", cfg.name.str().c_str());
   for (auto &path : paths)
     chains.try_emplace(path.front()->symbol->ordinal, new NodeChain(path));
 
