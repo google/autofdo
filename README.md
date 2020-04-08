@@ -1,4 +1,4 @@
-#Introduction
+# Introduction
 
 The repository contains a tool to convert perf.data profile to AutoFDO
 profile that can be used by GCC and LLVM.
@@ -15,7 +15,7 @@ Install dependencies:
 sudo apt-get -y install autoconf automake git libelf-dev libssl-dev pkg-config
 ```
 
-#Compile
+# Compile
 Clone the repository using the following command:
 ```
 git clone --recursive https://github.com/google/autofdo.git
@@ -42,7 +42,7 @@ Depending on your compiler, a perf dump can be collected by running one of:
 ./create_llvm_prof --binary=BINARY --profile=PERF_PROFILE --out=OUTPUT
 ```
 
-####Inputs
+### Inputs
 
 **--profile**: PERF_PROFILE collected using linux perf (with last branch record).
 In order to collect this profile, you will need to have an Intel CPU that
@@ -62,7 +62,7 @@ to have debug info (i.e. line table) availabe in the binary. This means that
 you need to compile the binary with "-gmlt" or "-g1". For LLVM, you alse need
 to have -fdebug-info-for-profiling.
 
-####Outputs
+### Outputs
 
 **For create_gcov:**
     An AutoFDO profile in gcov format. To use the profile with
