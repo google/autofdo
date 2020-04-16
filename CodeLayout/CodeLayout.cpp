@@ -41,6 +41,7 @@ extern uint64_t getEdgeExtTSPScore(const CFGEdge &edge,
 // ChainClustering instance for further rerodering.
 void CodeLayout::doOrder(std::map<SymbolEntry*, std::unique_ptr<ControlFlowGraph>> &cfgs,
                          std::list<CFGNode*> &section_order) {
+  propConfig = PropellerConfig();
   std::chrono::steady_clock::time_point start =
       std::chrono::steady_clock::now();
 
@@ -69,6 +70,7 @@ void CodeLayout::doOrder(std::map<SymbolEntry*, std::unique_ptr<ControlFlowGraph
   }
 
   fprintf(stderr, "Hot cfgs: %d\n", hot_cfgs.size());
+  fprintf(stderr, "Backward jump distance: %u\n", propConfig.optBackwardJumpDistance);
 
   if (propConfig.optReorderIP || propConfig.optReorderFuncs)
     clustering.reset(new CallChainClustering());
@@ -127,13 +129,16 @@ void CodeLayout::doOrder(std::map<SymbolEntry*, std::unique_ptr<ControlFlowGraph
 
   // Transfter the order to the symbol list.
   ControlFlowGraph * cfg = nullptr;
+  unsigned layout_index = 0;
   std::vector<unsigned> cluster;
   for (CFGNode *n : hot_order) {
     if (cfg != n->controlFlowGraph || n->isEntryNode())
       (cfg = n->controlFlowGraph)->clusters.emplace_back();
-    if (cfg->clusters.back().empty())
+    if (cfg->clusters.back().second.empty()) {
       section_order.push_back(n);
-    cfg->clusters.back().push_back(n);
+      cfg->clusters.back().first = layout_index++;
+    }
+    cfg->clusters.back().second.push_back(n);
   }
 
   for (CFGNode *n : cold_order)

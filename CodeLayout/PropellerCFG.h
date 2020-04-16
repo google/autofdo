@@ -168,7 +168,7 @@ public:
   std::vector<std::unique_ptr<CFGEdge>> intraEdges;
   std::vector<std::unique_ptr<CFGEdge>> interEdges;
 
-  std::vector<std::vector<CFGNode*>> clusters;
+  std::vector<std::pair<unsigned, std::vector<CFGNode*>>> clusters;
 
   void calculateNodeFreqs();
 

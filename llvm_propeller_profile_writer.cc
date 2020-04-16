@@ -163,10 +163,10 @@ bool PropellerProfWriter::write() {
       fout << "\n";
       for(auto& cluster: elem.second->clusters) {
         fout << "!!";
-        for(size_t i=0; i<cluster.size(); ++i) {
+        for(size_t i=0; i<cluster.second.size(); ++i) {
           if (i)
             fout << " ";
-          fout << cluster[i]->getBBIndex();
+          fout << cluster.second[i]->getBBIndex();
         }
         fout << "\n";
       }
