@@ -70,7 +70,6 @@ void CodeLayout::doOrder(std::map<SymbolEntry*, std::unique_ptr<ControlFlowGraph
   }
 
   fprintf(stderr, "Hot cfgs: %d\n", hot_cfgs.size());
-  fprintf(stderr, "Backward jump distance: %u\n", propConfig.optBackwardJumpDistance);
 
   if (propConfig.optReorderIP || propConfig.optReorderFuncs)
     clustering.reset(new CallChainClustering());

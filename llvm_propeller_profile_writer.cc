@@ -340,7 +340,7 @@ void PropellerProfWriter::writeSymbols(ofstream &fout) {
         StringRef bbIndex = se.name;
         if (FLAGS_dot_number_encoding) {
           bbIndex = se.name.substr(se.name.find_first_of('.') + 1);
-          if (se.bbTagType != SymbolEntry::BB_NORMAL)
+          if (se.bbInfo.type != SymbolEntry::BBInfo::BB_NORMAL)
             fout << bbIndex.str();
           else
             fout << bbIndex.drop_back(1).str();
@@ -494,7 +494,7 @@ bool PropellerProfWriter::calculateFallthroughBBs(
     return false;
   }
 
-  if (!from->isFallthroughBlock()) {
+  if (!from->canFallthrough()) {
     LOG(WARNING) << "*** Skipping non-fallthrough ***" << from->name.str() ;
     return false;
   }
@@ -527,7 +527,7 @@ bool PropellerProfWriter::calculateFallthroughBBs(
         }
         // Add the symbol entry to path, unless it is the the "to" symbol.
         if (se != to) {
-          if (!se->isFallthroughBlock()) {
+          if (!se->canFallthrough()) {
             LOG(WARNING) << "*** skipping non-fallthrough ***" << se->name.str();
             return false;
           }
@@ -748,9 +748,9 @@ bool PropellerProfWriter::populateSymbolMap2() {
     SymbolEntry *incompleteSymbol = *(addrL.insert(
         addrL.begin(), new SymbolEntry(0, name, SymbolEntry::AliasesTy(), addr,
                                        size, isBB, nullptr)));
-    incompleteSymbol->bbTagType =
-        (isBB ? SymbolEntry::toBBTagType(bbIndex.back())
-              : SymbolEntry::BB_NONE);
+    incompleteSymbol->bbInfo =
+        (isBB ? SymbolEntry::toBBInfo(bbIndex.back())
+              : SymbolEntry::BBInfo({SymbolEntry::BBInfo::BB_NONE, false}));
   }
 
   auto emplaceSymbol = [this, &getBBIndexPart](SymbolEntry *se) -> bool {
@@ -981,9 +981,9 @@ bool PropellerProfWriter::populateSymbolMap() {
                                        size, isBBSym)));
     // Set the BB Tag type according to the first character of the symbol name.
     if (newSymbolEntry->bbTag)
-      newSymbolEntry->bbTagType = SymbolEntry::toBBTagType(name.front());
+      newSymbolEntry->bbInfo = SymbolEntry::toBBInfo(name.front());
     else {
-      newSymbolEntry->bbTagType = SymbolEntry::BB_NONE;
+      newSymbolEntry->bbInfo = {SymbolEntry::BBInfo::BB_NONE, false};
       newSymbolEntry->containingFunc = newSymbolEntry;
     }
     symbolNameMap[funcName].emplace(std::piecewise_construct,
