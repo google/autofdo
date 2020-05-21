@@ -174,7 +174,7 @@ bool PropellerProfWriter::write() {
     partEnd = fout.tellp();
 
     for(auto *n: section_order)
-      sout << n->getFullName() << "\n";
+      sout << n->getFullName2() << "\n";
   }
   // This must be done after "fout" is closed.
   if (!reorderSections(partBegin, partEnd, partNew)) {

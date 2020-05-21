@@ -116,6 +116,13 @@ public:
     return 0;
   }
 
+  std::string getFullName2() const {
+    if (!symbol->isFunction())
+      return symbol->containingFunc->name.str() + "." +
+	std::to_string(static_cast<int>(symbol->name.size()));
+    return symbol->name.str();
+  }
+
   std::string getFullName() const {
     std::string fullName(symbol->name.str());
     if (!symbol->isFunction()){
