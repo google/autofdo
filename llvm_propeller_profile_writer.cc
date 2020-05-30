@@ -173,8 +173,32 @@ bool PropellerProfWriter::write() {
     }
     partEnd = fout.tellp();
 
-    for(auto *n: section_order)
-      sout << n->getFullName2() << "\n";
+    for(auto *n: section_order) {
+      if (n->symbol->isFunction()) {
+	sout << n->symbol->name.str() << "\n";
+      } else {
+	ControlFlowGraph *cfg = n->controlFlowGraph;
+	int found = -1;
+	int i = 0;
+	for (auto &p : cfg->clusters) {
+	  std::vector<CFGNode *> &cnodes = p.second;
+	  for (auto *cn : cnodes) {
+	    if (cn == n) {
+	      found = i;
+	      break;
+	    }
+	  }
+	  ++i;
+	  if (found != -1)
+	    break;
+	}
+	if (found == -1)
+	  sout << n->symbol->containingFunc->name.str() + ".cold\n";
+	else
+	  sout << n->symbol->containingFunc->name.str() + "." +
+	    std::to_string(found) << "\n";
+      }
+    }
   }
   // This must be done after "fout" is closed.
   if (!reorderSections(partBegin, partEnd, partNew)) {
