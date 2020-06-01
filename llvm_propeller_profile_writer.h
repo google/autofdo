@@ -259,7 +259,7 @@ class PropellerProfWriter {
   void writeBranches(ofstream &fout);
   void writeFallthroughs(ofstream &fout);
   void writeHotFuncAndBBList(ofstream &fout);
-  bool reorderSections(int64_t partBegin, int64_t partEnd, int64_t partNew);
+  bool reorderSections(int64_t partBegin, int64_t partEnd, int64_t partNew, int64_t partNewEnd);
   void summarize();
 
   SymbolEntry *findSymbolAtAddress(uint64_t pid, uint64_t addr);

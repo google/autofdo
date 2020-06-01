@@ -121,7 +121,7 @@ bool PropellerProfWriter::write() {
           populateSymbolMap())))
     return false;
 
-  std::fstream::pos_type partBegin, partEnd, partNew;
+  std::fstream::pos_type partBegin, partEnd, partNew, partNewEnd;
   {
     ofstream fout(propOutFileName);
     if (fout.bad()) {
@@ -139,6 +139,7 @@ bool PropellerProfWriter::write() {
     partNew = fout.tellp();
     writeSymbols(fout);
     if (!parsePerfData()) return false;
+    partNewEnd = fout.tellp();
     writeBranches(fout);
     writeFallthroughs(fout);
 
@@ -192,16 +193,20 @@ bool PropellerProfWriter::write() {
 	  if (found != -1)
 	    break;
 	}
-	if (found == -1)
-	  sout << n->symbol->containingFunc->name.str() + ".cold\n";
-	else
+	if (found == -1) {
+	  if (n->symbol->isLandingPadBlock())
+	    sout << n->symbol->containingFunc->name.str() + ".eh\n";
+	  else
+	    sout << n->symbol->containingFunc->name.str() + ".cold\n";
+	} else {
 	  sout << n->symbol->containingFunc->name.str() + "." +
 	    std::to_string(found) << "\n";
+	}
       }
     }
   }
   // This must be done after "fout" is closed.
-  if (!reorderSections(partBegin, partEnd, partNew)) {
+  if (!reorderSections(partBegin, partEnd, partNew, partNewEnd)) {
     LOG(ERROR)
         << "Warn: failed to reorder propeller section, performance may suffer.";
   }
@@ -209,9 +214,9 @@ bool PropellerProfWriter::write() {
   return true;
 }
 
-// Move everything [partBegin, partEnd) -> partBegin.
+// Move everything [partBegin, partEnd) -> partNew.
 bool PropellerProfWriter::reorderSections(int64_t partBegin, int64_t partEnd,
-                                          int64_t partNew) {
+                                          int64_t partNew, int64_t partNewEnd) {
   struct FdWrapper {
     FdWrapper(int fd) : v(fd) {}
     ~FdWrapper() { if (v != -1) close(v); }
@@ -225,11 +230,17 @@ bool PropellerProfWriter::reorderSections(int64_t partBegin, int64_t partEnd,
   char *fileMem =
       static_cast<char *>(mmap(NULL, partEnd, PROT_WRITE, MAP_SHARED, fd.v, 0));
   if (MAP_FAILED == fileMem) return false;
-  memcpy(tmp.get(), fileMem + partBegin, partLength);
-  memmove(fileMem + partLength + partNew, fileMem + partNew,
-          partBegin - partNew);
-  memcpy(fileMem + partNew, tmp.get(), partLength);
+  memcpy(fileMem + partNew, fileMem + partBegin, partLength);
+  // memcpy(tmp.get(), fileMem + partBegin, partLength);
+  // memmove(fileMem + partLength + partNew, fileMem + partNew,
+  //         partNewEnd - partNew);
+  // memcpy(fileMem + partNew, tmp.get(), partLength);
   munmap(fileMem, partEnd);
+  // if (ftruncate(fd.v, partEnd - (partBegin - partNewEnd)) != 0) {
+  if (ftruncate(fd.v, partNew + partLength) != 0) {
+    LOG(ERROR) << "Failed to truncate propeller data file.";
+    return false;
+  }
   return true;
 }
 
