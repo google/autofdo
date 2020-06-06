@@ -745,15 +745,16 @@ bool PropellerProfWriter::populateSymbolMap2() {
   for (const auto &sym : symbols) {
     auto addrR = sym.getAddress();
     auto secR = sym.getSection();
-    auto NameR = sym.getName();
+    auto nameR = sym.getName();
     auto typeR = sym.getType();
     auto sectionR = sym.getSection();
 
-    if (!(addrR && *addrR && secR && (*secR)->isText() && NameR && typeR &&
-          sectionR))
+    if (!(addrR && secR && nameR && typeR)) continue;
+
+    if (!(*addrR && (*secR)->isText()))
       continue;
 
-    StringRef name = *NameR;
+    StringRef name = *nameR;
     if (name.empty()) continue;
     uint64_t addr = *addrR;
     uint8_t type(*typeR);
@@ -941,13 +942,15 @@ bool PropellerProfWriter::populateSymbolMap() {
   for (const auto &sym : symbols) {
     auto addrR = sym.getAddress();
     auto secR = sym.getSection();
-    auto NameR = sym.getName();
+    auto nameR = sym.getName();
     auto typeR = sym.getType();
 
-    if (!(addrR && *addrR && secR && (*secR)->isText() && NameR && typeR))
+    if (!(addrR && secR && nameR && typeR)) continue;
+
+    if (!(*addrR && (*secR)->isText()))
       continue;
 
-    StringRef name = *NameR;
+    StringRef name = *nameR;
     if (name.empty()) continue;
     uint64_t addr = *addrR;
     uint8_t type(*typeR);
@@ -1481,8 +1484,8 @@ bool PropellerProfWriter::findBinaryBuildId() {
       continue;
     }
     auto expectedSContents = sr.getContents();
-    if (esr.getType() == llvm::ELF::SHT_NOTE && sName == ".note.gnu.build-id" &&
-        expectedSContents && !expectedSContents->empty()) {
+    if (expectedSContents && esr.getType() == llvm::ELF::SHT_NOTE && sName == ".note.gnu.build-id"
+        && !expectedSContents->empty()) {
       StringRef sContents = *expectedSContents;
       const unsigned char *p = sContents.bytes_begin() + 0x10;
       if (p >= sContents.bytes_end()) {
