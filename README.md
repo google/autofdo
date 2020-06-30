@@ -12,7 +12,7 @@ use the profile generated for GCC in LLVM and vice-versa.
 # Prerequisites to Build:
 Install dependencies:
 ```
-sudo apt-get -y install autoconf automake git libelf-dev libssl-dev pkg-config
+sudo apt-get -y install libtool autoconf automake git libelf-dev libssl-dev pkg-config
 ```
 
 # Clone & Compile
