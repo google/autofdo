@@ -115,6 +115,32 @@ SymbolEntry *PropellerProfWriter::findSymbolAtAddress(uint64_t pid,
   return *candidates.begin();
 }
 
+uint64_t PropellerProfWriter::adjustAddressForPIE(uint64_t pid,
+                                                  uint64_t addr) const {
+  auto i = binaryMMapByPid.find(pid);
+  if (i == binaryMMapByPid.end()) return INVALID_ADDRESS;
+
+  const MMapEntry *mmap = nullptr;
+  for (const MMapEntry &p : i->second)
+    if (p.loadAddr <= addr && addr < p.loadAddr + p.loadSize) mmap = &p;
+  if (!mmap) return INVALID_ADDRESS;
+  if (binaryIsPIE) {
+    uint64_t file_offset = addr - mmap->loadAddr + mmap->pageOffset;
+    const ProgSegLoad *segload = nullptr;
+    for (const auto &loadable : phdrLoadMap) {
+      if (loadable.second.offset <= file_offset &&
+          file_offset <= loadable.second.offset + loadable.second.filesz)
+        segload = &(loadable.second);
+    }
+    if (segload) return file_offset - segload->offset + segload->vaddr;
+    LOG(WARNING) << std::showbase << std::hex << "Virtual address: " << addr
+                 << "'s file offset is: " << file_offset
+                 << ", this offset does not sit in any loadable segment.";
+    return INVALID_ADDRESS;
+  }
+  return addr;
+}
+
 bool PropellerProfWriter::write() {
   if (!(initBinaryFile() && findBinaryBuildId() &&
         ((FLAGS_dot_number_encoding && populateSymbolMap2()) ||
@@ -453,6 +479,14 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
         continue;
       }
 
+      uint64_t adjusted_to = adjustAddressForPIE(pid, to);
+      if (adjusted_to != toSym->addr) {
+        LOG(WARNING) << "BR to an address " << hex0x << to << "(mapped to "
+                     << adjusted_to
+                     << "), that is not the beginnign of a bb that starts at "
+                     << toSym->addr;
+      }
+
       // If this is a return to the beginning of a basic block, change the toSym
       // to the basic block just before and add fallthrough between the two
       // symbols.
@@ -509,10 +543,11 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
     if (!fromN || !toN)
       continue;
     if (fromN->controlFlowGraph == toN->controlFlowGraph)
-      fromN->controlFlowGraph->mapBranch(fromN, toN, cnt, type == 'C', type == 'R');
+      fromN->controlFlowGraph->mapBranch(fromN, toN, cnt, type == 'C',
+                                         type == 'R');
     else
       fromN->controlFlowGraph->mapCallOut(fromN, toN, 0, cnt, type == 'C',
-                                            type == 'R');
+                                          type == 'R');
   }
 }
 
@@ -642,7 +677,7 @@ void PropellerProfWriter::writeFallthroughs(std::ofstream &fout) {
 
 template <class ELFT>
 bool fillELFPhdr(llvm::object::ELFObjectFileBase *ebFile,
-                 map<uint64_t, uint64_t> &phdrLoadMap) {
+                 map<uint64_t, ProgSegLoad> &phdrLoadMap) {
   ELFObjectFile<ELFT> *eobj = dyn_cast<ELFObjectFile<ELFT>>(ebFile);
   if (!eobj) return false;
   const ELFFile<ELFT> *efile = eobj->getELFFile();
@@ -650,17 +685,23 @@ bool fillELFPhdr(llvm::object::ELFObjectFileBase *ebFile,
   auto program_headers = efile->program_headers();
   if (!program_headers) return false;
   for (const typename ELFT::Phdr &phdr : *program_headers) {
-    if (phdr.p_type == llvm::ELF::PT_LOAD &&
-        (phdr.p_flags & llvm::ELF::PF_X) != 0) {
-      auto e = phdrLoadMap.find(phdr.p_vaddr);
-      if (e == phdrLoadMap.end()) {
-        phdrLoadMap.emplace(phdr.p_vaddr, phdr.p_memsz);
-      } else {
-        if (e->second != phdr.p_memsz) {
-          LOG(ERROR) << "Invalid phdr found in elf binary file.";
-          return false;
-        }
-      }
+    if (phdr.p_type != llvm::ELF::PT_LOAD ||
+        ((phdr.p_flags & llvm::ELF::PF_X) == 0))
+      continue;
+    if (phdr.p_paddr != phdr.p_vaddr) {
+      LOG(ERROR) << "ELF type not supported: segment load vaddr != paddr";
+      return false;
+    }
+
+    auto e = phdrLoadMap.find(phdr.p_offset);
+    if (e == phdrLoadMap.end()) {
+      phdrLoadMap[phdr.p_offset] = ProgSegLoad{.offset = phdr.p_offset,
+                                               .vaddr = phdr.p_vaddr,
+                                               .filesz = phdr.p_filesz,
+                                               .memsz = phdr.p_memsz};
+    } else {
+      LOG(ERROR) << "Duplicate phdr load segment found in elf binary file.";
+      return false;
     }
   }
   if (phdrLoadMap.empty()) {
@@ -670,7 +711,8 @@ bool fillELFPhdr(llvm::object::ELFObjectFileBase *ebFile,
   stringstream ss;
   ss << "Loadable and executable segments:\n";
   for (auto &seg : phdrLoadMap) {
-    ss << "\tvaddr=" << hex0x << seg.first << ", memsz=" << hex0x << seg.second
+    ss << "\tvoffset=" << hex0x << seg.first << ", vaddr=" << hex0x
+       << seg.second.vaddr << "filesz=" << hex0x << seg.second.filesz
        << std::endl;
   }
   LOG(INFO) << ss.str();

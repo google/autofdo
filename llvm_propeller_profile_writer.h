@@ -143,6 +143,13 @@ class MMapEntry {
   
 };
 
+struct ProgSegLoad {
+  uint64_t offset;
+  uint64_t vaddr;
+  uint64_t filesz;
+  uint64_t memsz;
+};
+
 class PropellerProfWriter {
  public:
   PropellerProfWriter(const string &bfn, const string &pfn, const string &ofn, const string &sofn);
@@ -170,7 +177,7 @@ class PropellerProfWriter {
   using CounterTy = map<pair<uint64_t, uint64_t>, uint64_t>;
   map<uint64_t, CounterTy> branchCountersByPid;
   map<uint64_t, CounterTy> fallthroughCountersByPid;
-  map<uint64_t, uint64_t> phdrLoadMap;  // Only used when binary is PIE.
+  map<uint64_t, ProgSegLoad> phdrLoadMap;  // Only used when binary is PIE.
 
   // Instead of sorting "SymbolEntry *" by pointer address, we sort it by it's
   // symbol address and symbol ordinal, so we get a stable sort.
@@ -229,22 +236,8 @@ class PropellerProfWriter {
                                             uint64_t pageOffset,
                                             set<MMapEntry> &mmapEntry);
 
-  uint64_t adjustAddressForPIE(uint64_t pid, uint64_t addr) const {
-    auto i = binaryMMapByPid.find(pid);
-    if (i == binaryMMapByPid.end()) return INVALID_ADDRESS;
-    const MMapEntry *mmap = nullptr;
-    for (const MMapEntry &p : i->second)
-      if (p.loadAddr <= addr && addr < p.loadAddr + p.loadSize) mmap = &p;
-    if (!mmap) {
-      // fprintf(stderr, "!!! %ld 0x%lx\n", pid, addr);
-      return INVALID_ADDRESS;
-    }
-    if (binaryIsPIE) {
-      return addr - mmap->loadAddr + mmap->pageOffset;
-    }
-    return addr;
-  }
-
+  uint64_t adjustAddressForPIE(uint64_t pid, uint64_t addr) const;
+    
   bool aggregateLBR(quipper::PerfParser &parser);
   bool calculateFallthroughBBs(SymbolEntry *from, SymbolEntry *to,
                                vector<SymbolEntry *> &result);
