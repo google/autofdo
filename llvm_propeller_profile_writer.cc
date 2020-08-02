@@ -184,6 +184,7 @@ bool PropellerProfWriter::write() {
       if (!elem.second->isHot())
         continue;
       auto * se = elem.first;
+      // if (se->name.find("..") != std::string::npos) continue;
       fout << "!" << se->name.str();
       for (size_t i=1 ; i< se->aliases.size(); ++i)
         fout << "/" << se->aliases[i].str();
@@ -479,12 +480,26 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
         continue;
       }
 
+      uint64_t adjusted_from = adjustAddressForPIE(pid, from);
       uint64_t adjusted_to = adjustAddressForPIE(pid, to);
+      if (adjusted_from < fromSym->addr + fromSym->size - 5) {
+        LOG(WARNING) << std::showbase << std::hex << "BR from " << from
+                     << " -> " << to << " (" << adjusted_from << " -> "
+                     << adjusted_to << ", pid=" << pid
+                     << "), source address not within last 5 bytes of bb ["
+                     << fromSym->addr << ", " << fromSym->addr + fromSym->size
+                     << ").";
+      }
       if (adjusted_to != toSym->addr) {
-        LOG(WARNING) << "BR to an address " << hex0x << to << "(mapped to "
-                     << adjusted_to
-                     << "), that is not the beginnign of a bb that starts at "
-                     << toSym->addr;
+        if (static_cast<unsigned char>(
+                binaryFileContent->getBufferStart()[adjusted_from]) != 0xc3) {
+          LOG(WARNING)
+              << std::showbase << std::hex << "BR from " << from << " -> " << to
+              << " (" << adjusted_from << " -> " << adjusted_to
+              << ", pid=" << pid
+              << "), target address not the beginnning of a bb that starts at "
+              << toSym->addr << ", and from is not a ret instruction.";
+        }
       }
 
       // If this is a return to the beginning of a basic block, change the toSym
@@ -711,8 +726,8 @@ bool fillELFPhdr(llvm::object::ELFObjectFileBase *ebFile,
   stringstream ss;
   ss << "Loadable and executable segments:\n";
   for (auto &seg : phdrLoadMap) {
-    ss << "\tvoffset=" << hex0x << seg.first << ", vaddr=" << hex0x
-       << seg.second.vaddr << "filesz=" << hex0x << seg.second.filesz
+    ss << "\toffset=" << hex0x << seg.first << ", vaddr=" << hex0x
+       << seg.second.vaddr << ", filesz=" << hex0x << seg.second.filesz
        << std::endl;
   }
   LOG(INFO) << ss.str();
