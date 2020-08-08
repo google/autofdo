@@ -482,7 +482,7 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
 
       uint64_t adjusted_from = adjustAddressForPIE(pid, from);
       uint64_t adjusted_to = adjustAddressForPIE(pid, to);
-      if (adjusted_from < fromSym->addr + fromSym->size - 5) {
+      if (fromSym->bbTag && (adjusted_from < fromSym->addr + fromSym->size - 6)) {
         LOG(WARNING) << std::showbase << std::hex << "BR from " << from
                      << " -> " << to << " (" << adjusted_from << " -> "
                      << adjusted_to << ", pid=" << pid
@@ -490,17 +490,18 @@ void PropellerProfWriter::writeBranches(std::ofstream &fout) {
                      << fromSym->addr << ", " << fromSym->addr + fromSym->size
                      << ").";
       }
-      if (adjusted_to != toSym->addr) {
-        if (static_cast<unsigned char>(
-                binaryFileContent->getBufferStart()[adjusted_from]) != 0xc3) {
-          LOG(WARNING)
-              << std::showbase << std::hex << "BR from " << from << " -> " << to
-              << " (" << adjusted_from << " -> " << adjusted_to
-              << ", pid=" << pid
-              << "), target address not the beginnning of a bb that starts at "
-              << toSym->addr << ", and from is not a ret instruction.";
-        }
-      }
+      // if (adjusted_to != toSym->addr) {
+      // need file offset to do this.
+      //   if (static_cast<unsigned char>(
+      //           binaryFileContent->getBufferStart()[adjusted_from]) != 0xc3) {
+      //     LOG(WARNING)
+      //         << std::showbase << std::hex << "BR from " << from << " -> " << to
+      //         << " (" << adjusted_from << " -> " << adjusted_to
+      //         << ", pid=" << pid
+      //         << "), target address not the beginnning of a bb that starts at "
+      //         << toSym->addr << ", and from is not a ret instruction.";
+      //   }
+      // }
 
       // If this is a return to the beginning of a basic block, change the toSym
       // to the basic block just before and add fallthrough between the two
