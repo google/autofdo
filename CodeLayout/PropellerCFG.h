@@ -30,11 +30,10 @@
 #ifndef LLD_ELF_PROPELLER_CFG_H
 #define LLD_ELF_PROPELLER_CFG_H
 
-//#include "Propeller.h"
+#include "llvm_propeller_bbsections.h"
 #include "CodeLayout/PropellerConfig.h"
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ProfileData/BBSectionsProf.h"
 
 #include <map>
 #include <memory>

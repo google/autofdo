@@ -16,11 +16,16 @@ Clone the repository using the following command:
 	Note: `--recursive` fetches https://github.com/google/perf_data_converter.git,
 	which contains quipper, and https://github.com/google/protobuf.git.
 
+Make sure the active brnach is "bb-clusters" by:
+        git checkout bb-clusters
+
 Full build instructions are in the INSTALL file, most can just install the above
 dependencies, and:
 
 aclocal -I .; autoheader; autoconf; automake --add-missing -c
-./configure # or --with-llvm=$(which llvm-config-5.0)
+./configure --with-llvm=/path/to/upstream/master/branch/install_dir/bin/llvm-config \
+	    CC=/path/to/upstream/master/branch/install_dir/bin/clang \
+	    CXX=/path/to/upstream/master/branch/install_dir/bin/clang++
 make
 
 (Note: do not use the '-j' (parallel build) option of make. The configure scripts

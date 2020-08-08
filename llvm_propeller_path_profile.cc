@@ -2,9 +2,9 @@
 #if defined(HAVE_LLVM)
 #include <vector>
 
-#include "llvm_propeller_profile_writer.h"
-#include "llvm/ProfileData/BBSectionsProf.h"
 #include "llvm_propeller_path_profile.h"
+#include "llvm_propeller_bbsections.h"
+#include "llvm_propeller_profile_writer.h"
 #include "llvm_propeller_profile_format.h"
 
 #include <iostream>

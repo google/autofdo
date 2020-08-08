@@ -4,7 +4,7 @@
 
 #include "llvm_propeller_profile_writer.h"
 #include "llvm_propeller_path_profile.h"
-#include "llvm/ProfileData/BBSectionsProf.h"
+#include "llvm_propeller_bbsections.h"
 #include "third_party/perf_data_converter/src/quipper/perf_data.pb.h"
 #include "third_party/perf_data_converter/src/quipper/perf_data_utils.h"
 

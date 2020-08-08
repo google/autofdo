@@ -2,8 +2,8 @@
 #ifndef _LLVM_PROPELLER_PATH_PROFILE_H_
 #define _LLVM_PROPELLER_PATH_PROFILE_H_
 
+#include "llvm_propeller_bbsections.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ProfileData/BBSectionsProf.h"
 
 #include <list>
 #include <map>

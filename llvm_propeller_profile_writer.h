@@ -3,6 +3,7 @@
 #ifndef _LLVM_PLO_PROFILE_WRITER_H_
 #define _LLVM_PLO_PROFILE_WRITER_H_
 
+#include "llvm_propeller_bbsections.h"
 #include "llvm_propeller_path_profile.h"
 
 #include <fstream>
@@ -20,7 +21,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Object/ObjectFile.h"
-#include "llvm/ProfileData/BBSectionsProf.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "CodeLayout/PropellerCFG.h"
 #include "CodeLayout/CodeLayout.h"
