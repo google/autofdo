@@ -94,10 +94,10 @@ void LLVMProfileBuilder::VisitCallsite(const Callsite &callsite) {
     inline_stack_.pop_back();
   }
   auto &caller_profile = *(inline_stack_.back());
-  auto CalleeName = GetNameRef(Symbol::Name(callsite.second)).str();
+  auto CalleeName = GetNameRef(Symbol::Name(callsite.second));
   auto &callee_profile =
       caller_profile.functionSamplesAt(llvm::sampleprof::LineLocation(
-          line, discriminator))[CalleeName];
+          line, discriminator))[CalleeName.str()];
   callee_profile.setName(CalleeName);
   inline_stack_.push_back(&callee_profile);
 }
