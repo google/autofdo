@@ -202,8 +202,8 @@ bool PropellerProfWriter::write() {
     partEnd = fout.tellp();
 
     for(auto *n: section_order) {
-      if (n->symbol->isFunction()) {
-	sout << n->symbol->name.str() << "\n";
+      if (n->isEntryNode()) {
+	sout << n->controlFlowGraph->name.str() << "\n";
       } else {
 	ControlFlowGraph *cfg = n->controlFlowGraph;
 	int found = -1;
