@@ -15,13 +15,16 @@ $(PROTOC) $(PROTOBUF)/src/.libs/libprotobuf.a: $(PROTOBUF)/configure
 
 protoc_inputs = \
 	third_party/perf_data_converter/src/quipper/perf_data.proto \
-	third_party/perf_data_converter/src/quipper/perf_stat.proto
+	third_party/perf_data_converter/src/quipper/perf_stat.proto \
+	third_party/perf_data_converter/src/quipper/perf_parser_options.proto
 
 protoc_outputs = \
 	third_party/perf_data_converter/src/quipper/perf_data.pb.cc \
 	third_party/perf_data_converter/src/quipper/perf_data.pb.h \
 	third_party/perf_data_converter/src/quipper/perf_stat.pb.cc \
-	third_party/perf_data_converter/src/quipper/perf_stat.pb.h
+	third_party/perf_data_converter/src/quipper/perf_stat.pb.h  \
+	third_party/perf_data_converter/src/quipper/perf_parser_options.pb.cc \
+	third_party/perf_data_converter/src/quipper/perf_parser_options.pb.h
 
 $(protoc_outputs): $(protoc_inputs) $(PROTOC)
 	$(PROTOC) --cpp_out=`dirname $<` -I`dirname $<` $(protoc_inputs)

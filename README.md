@@ -1,65 +1,78 @@
+# Introduction
+
 The repository contains a tool to convert perf.data profile to AutoFDO
 profile that can be used by GCC and LLVM.
 
 Each compiler is supported by a different tool. For GCC, use
-'create_gcov'. For LLVM, use 'create_llvm_prof'. LLVM version
+`create_gcov`. For LLVM, use `create_llvm_prof`. LLVM version
 5 or higher is required.  The two tools have compatible command
 line flags. However, the outputs are incompatible. You cannot
 use the profile generated for GCC in LLVM and vice-versa.
 
+# Prerequisites to Build:
 Install dependencies:
-	sudo apt-get -y install autoconf automake git libelf-dev libssl-dev pkg-config
+```
+sudo apt-get -y install libtool autoconf automake git libelf-dev libssl-dev pkg-config
+```
 
+# Clone & Compile
 Clone the repository using the following command:
-	git clone --recursive https://github.com/google/autofdo.git
+```
+git clone --recursive https://github.com/google/autofdo.git
+```
+**Note:** `--recursive` fetches [perf_data_converter](https://github.com/google/perf_data_converter.git),
+which contains quipper, and [protobuf](https://github.com/google/protobuf.git).
 
-	Note: `--recursive` fetches https://github.com/google/perf_data_converter.git,
-	which contains quipper, and https://github.com/google/protobuf.git.
-
-Make sure the active brnach is "bb-clusters" by:
-        git checkout bb-clusters
-
-Full build instructions are in the INSTALL file, most can just install the above
+Full build instructions are in the [INSTALL](./INSTALL]) file, most can just install the above
 dependencies, and:
 
+```
 aclocal -I .; autoheader; autoconf; automake --add-missing -c
 ./configure --with-llvm=/path/to/upstream/master/branch/install_dir/bin/llvm-config \
 	    CC=/path/to/upstream/master/branch/install_dir/bin/clang \
 	    CXX=/path/to/upstream/master/branch/install_dir/bin/clang++
 make
+```
 
-(Note: do not use the '-j' (parallel build) option of make. The configure scripts
- for the sub-projects fail if run in parallel)
+**Note:** do not use the `-j` (parallel build) option of make. The configure scripts
+ for the sub-projects fail if run in parallel
 
-Usage:
+# Usage
+Depending on your compiler, a perf dump can be collected by running one of:
+```
 ./create_gcov --binary=BINARY --profile=PERF_PROFILE --gcov=OUTPUT
 ./create_llvm_prof --binary=BINARY --profile=PERF_PROFILE --out=OUTPUT
+```
 
-Inputs:
+### Inputs
 
---profile: PERF_PROFILE collected using linux perf (with last branch record).
+**--profile**: PERF_PROFILE collected using linux perf (with last branch record).
 In order to collect this profile, you will need to have an Intel CPU that
 have last branch record (LBR) support. You also need to have your linux
 kernel configured with LBR support. To profile:
+
+```
 # perf record -c PERIOD -e EVENT -b -o perf.data -- ./command
-EVENT is refering to BR_INST_RETIRED:TAKEN if available. For some
+```
+
+**Note:** EVENT is refering to BR_INST_RETIRED:TAKEN if available. For some
 architectures, BR_INST_EXEC:TAKEN also works.
 
---binary: BINARY with debug info. You need to make sure the binary name is
+**--binary**: BINARY with debug info. You need to make sure the binary name is
 the same as the binary you run during profiling. Additionally, you will need
 to have debug info (i.e. line table) availabe in the binary. This means that
 you need to compile the binary with "-gmlt" or "-g1". For LLVM, you alse need
 to have -fdebug-info-for-profiling.
 
-Output:
+### Outputs
 
-For create_gcov:
+**For create_gcov:**
     An AutoFDO profile in gcov format. To use the profile with
     AutoFDO, you need to use the google gcc branch
     (gcc.gnu.org/svn/gcc/branches/google/gcc-4_8), and pass the
     following flag to GCC: -fauto-profile=PROFILE_FILE
 
-For create_llvm_prof:
+**For create_llvm_prof:**
     An AutoFDO profile in LLVM format. To use the profile with
     LLVM, you need to use the flag -fprofile-sample-use=PROFILE_FILE.
     This feature is available in LLVM 3.5 and later.
