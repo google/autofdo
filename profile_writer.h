@@ -183,7 +183,7 @@ class StringTableUpdater: public SymbolTraverser {
     }
   }
 
-  void VisitCallsite(const Callsite &callsite) {
+  void VisitCallsite(const Callsite &callsite) override {
     (*map_)[Symbol::Name(callsite.second)] = 0;
   }
 

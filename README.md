@@ -28,7 +28,9 @@ dependencies, and:
 
 ```
 aclocal -I .; autoheader; autoconf; automake --add-missing -c
-./configure # or --with-llvm=$(which llvm-config-5.0)
+./configure --with-llvm=/path/to/upstream/master/branch/install_dir/bin/llvm-config \
+	    CC=/path/to/upstream/master/branch/install_dir/bin/clang \
+	    CXX=/path/to/upstream/master/branch/install_dir/bin/clang++
 make
 ```
 
