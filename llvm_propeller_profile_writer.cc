@@ -271,6 +271,19 @@ bool PropellerProfWriter::ReadBbAddrMapSection() {
       }
     }
   }  // end of iterating bb info section.
+
+  // // using BbAddrMapTy = std::map<llvm::StringRef, std::vector<SymbolEntry *>>;
+  // // BbAddrMapTy bb_addr_map_;
+  // for (auto &[unused_funcname, bbs] : bb_addr_map_) {
+  //   assert(!bbs.empty());
+  //   SymbolEntry *func = bbs[0]->containingFunc;
+  //   fprintf(stderr, "func: %s: 0x%lx: %lu\n", func->fname.str().c_str(), func->addr, func->size);
+  //   for (auto *bb: bbs) {
+  //     assert(bb->isBasicBlock() && bb->containingFunc == func);
+  //     fprintf(stderr, "  bb: %u: 0x%lx: %lu\n", bb->bbindex, bb->addr, bb->size);
+  //   }
+  // }
+
   return true;
 }
 
@@ -558,14 +571,14 @@ void PropellerProfWriter::recordBranches() {
 
       uint64_t adjusted_from = adjustAddressForPIE(pid, from);
       uint64_t adjusted_to = adjustAddressForPIE(pid, to);
-      if (!fromSym->isFunction() && (adjusted_from < fromSym->addr + fromSym->size - 6)) {
-        LOG(WARNING) << std::showbase << std::hex << "BR from " << from
-                     << " -> " << to << " (" << adjusted_from << " -> "
-                     << adjusted_to << ", pid=" << pid
-                     << "), source address not within last 5 bytes of bb ["
-                     << fromSym->addr << ", " << fromSym->addr + fromSym->size
-                     << ").";
-      }
+      // if (!fromSym->isFunction() && (adjusted_from < fromSym->addr + fromSym->size - 6)) {
+      //   LOG(WARNING) << std::showbase << std::hex << "BR from " << from
+      //                << " -> " << to << " (" << adjusted_from << " -> "
+      //                << adjusted_to << ", pid=" << pid
+      //                << "), source address not within last 5 bytes of bb ["
+      //                << fromSym->addr << ", " << fromSym->addr + fromSym->size
+      //                << ").";
+      // }
 
       // If this is a return to the beginning of a basic block, change the toSym
       // to the basic block just before and add fallthrough between the two
@@ -662,10 +675,17 @@ bool PropellerProfWriter::calculateFallthroughBBs(
   for (++i; i != q && i != e; ++i) {
     bool found = false;
     for (auto *se : i->second) {
-      if (se->isFunction())
+      assert(se->containingFunc);
+      if (se->isFunction()) {
         continue;
-      if (se->containingFunc != func || se == to)
+      }
+      if (se->containingFunc != func)
         break;
+      
+      if (se == to) {
+        found = true;
+        break;
+      }
 
       if (!se->canFallthrough()) {
         LOG(WARNING) << "*** skipping non-fallthrough ***" << se->fname.str();

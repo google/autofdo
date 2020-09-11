@@ -122,8 +122,9 @@ void ControlFlowGraph::coalesceColdNodes() {
   //   return false;
   // }), nodes.end());
 
-  for (auto i = nodes.begin(), j = nodes.end(); i != j;) {
+  for (auto i = nodes.begin(); i != nodes.end(); ) {
     auto &n = *i;
+    assert(n.get());
     if (n->freq) {
       ++i;
       continue;
