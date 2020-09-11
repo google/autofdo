@@ -18,12 +18,14 @@
 #include "PropellerConfig.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
 
 #include <chrono>
 #include <vector>
 
 using llvm::DenseMap;
+using llvm::StringMap;
 using llvm::Twine;
 
 namespace llvm {
@@ -62,14 +64,14 @@ void CodeLayout::doOrder(std::map<SymbolEntry*, std::unique_ptr<ControlFlowGraph
             hot_bbs++;
           all_bbs++;
         });
-        fprintf(stderr, "HISTOGRAM: %s,%u,%u\n", cfg.name.str().c_str(), all_bbs,
-                hot_bbs);
+        // fprintf(stderr, "HISTOGRAM: %s,%u,%u\n", cfg.name.str().c_str(), all_bbs,
+        //         hot_bbs);
       }
     } else
       cold_cfgs.push_back(&cfg);
   }
 
-  fprintf(stderr, "Hot cfgs: %d\n", hot_cfgs.size());
+  // fprintf(stderr, "Hot cfgs: %d\n", hot_cfgs.size());
 
   if (propConfig.optReorderIP || propConfig.optReorderFuncs)
     clustering.reset(new CallChainClustering());
@@ -143,10 +145,10 @@ void CodeLayout::doOrder(std::map<SymbolEntry*, std::unique_ptr<ControlFlowGraph
   for (CFGNode *n : cold_order)
     section_order.push_back(n);
 
-  std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-  fprintf(stderr, "[Propeller]: bb reordering took: %d",
-       Twine(std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
-                 .count()));
+  // std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+  // fprintf(stderr, "[Propeller]: bb reordering took: %d",
+  //      Twine(std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+  //                .count()));
 
   if (propConfig.optPrintStats)
     printStats();

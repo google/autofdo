@@ -310,7 +310,6 @@ bool PropellerProfWriter::write() {
     cfgs.emplace(funcsym, cfg);
   }
 
-  // std::fstream::pos_type partBegin, partEnd, partNew, partNewEnd;
   {
     ofstream fout(propOutFileName);
     if (fout.bad()) {
@@ -324,10 +323,8 @@ bool PropellerProfWriter::write() {
       return false;
     }
 
-    // partNew = fout.tellp();
     if (!parsePerfData())
       return false;
-    // partNewEnd = fout.tellp();
     recordBranches();
     recordFallthroughs();
 
@@ -339,7 +336,6 @@ bool PropellerProfWriter::write() {
     std::list<CFGNode *> section_order;
     llvm::propeller::CodeLayout().doOrder(cfgs, section_order);
 
-    // partBegin = fout.tellp();
     for (auto &[funcsym, cfgptr] : cfgs) {
       assert(funcsym);
       assert(cfgptr.get());
@@ -360,7 +356,6 @@ bool PropellerProfWriter::write() {
         fout << "\n";
       }
     }
-    // partEnd = fout.tellp();
 
     for (CFGNode *n : section_order) {
       if (n->isEntryNode()) {
@@ -399,36 +394,6 @@ bool PropellerProfWriter::write() {
   //       << "Warn: failed to reorder propeller section, performance may suffer.";
   // }
   summarize();
-  return true;
-}
-
-// Move everything [partBegin, partEnd) -> partNew.
-bool PropellerProfWriter::reorderSections(int64_t partBegin, int64_t partEnd,
-                                          int64_t partNew, int64_t partNewEnd) {
-  struct FdWrapper {
-    FdWrapper(int fd) : v(fd) {}
-    ~FdWrapper() { if (v != -1) close(v); }
-    int v;
-  };
-  auto partLength = partEnd - partBegin;
-  FdWrapper fd(open(propOutFileName.c_str(), O_RDWR));
-  if (fd.v == -1) return false;
-  unique_ptr<char> tmp(new char[partLength]);
-  if (!tmp) return false;
-  char *fileMem =
-      static_cast<char *>(mmap(NULL, partEnd, PROT_WRITE, MAP_SHARED, fd.v, 0));
-  if (MAP_FAILED == fileMem) return false;
-  memcpy(fileMem + partNew, fileMem + partBegin, partLength);
-  // memcpy(tmp.get(), fileMem + partBegin, partLength);
-  // memmove(fileMem + partLength + partNew, fileMem + partNew,
-  //         partNewEnd - partNew);
-  // memcpy(fileMem + partNew, tmp.get(), partLength);
-  munmap(fileMem, partEnd);
-  // if (ftruncate(fd.v, partEnd - (partBegin - partNewEnd)) != 0) {
-  if (ftruncate(fd.v, partNew + partLength) != 0) {
-    LOG(ERROR) << "Failed to truncate propeller data file.";
-    return false;
-  }
   return true;
 }
 
@@ -483,29 +448,6 @@ void PropellerProfWriter::summarize() {
   //           << " BBs that are on the path of "
   //              "fallthroughs, total accounted for "
   //           << PercentageF(numBBsWithProf, totalBBsAll) << " of all BBs).";
-}
-
-void PropellerProfWriter::writeHotFuncAndBBList(ofstream &fout) {
-  const SymbolEntry *lastFuncSymbol = nullptr;
-  uint32_t bbCount = 0;
-  auto startNewFunctionParagraph = [&fout, &bbCount,
-                                    &lastFuncSymbol](const SymbolEntry *fSymbol) {
-    // If we haven't output any BB symbols for lastFuncSymbol, we then
-    // output "!!0" which means the entry block is hot, before we switch
-    // to processing another hot function.
-    if (lastFuncSymbol && !bbCount) fout << "!!0" << std::endl;
-    // fout << '!' << SymNameF(fSymbol) << std::endl;
-    lastFuncSymbol = fSymbol;
-    bbCount = 0;
-  };
-  for (auto *se : hotSymbols)
-    if (!se->isFunction()) {
-      if (lastFuncSymbol != se->containingFunc)
-        startNewFunctionParagraph(se->containingFunc);
-      // fout << "!!" << se->bbindex << std::endl;
-      ++bbCount;
-    } else
-      startNewFunctionParagraph(se);
 }
 
 void PropellerProfWriter::recordBranches() {
