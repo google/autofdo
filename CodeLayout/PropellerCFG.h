@@ -109,26 +109,14 @@ public:
   const static uint64_t InvalidAddress = -1;
 
   unsigned getBBIndex() const {
-    StringRef fName, bName;
-    if (!symbol->isFunction())
-      return symbol->name.size();
-    return 0;
-  }
-
-  std::string getFullName2() const {
-    if (!symbol->isFunction())
-      return symbol->containingFunc->name.str() + "." +
-	std::to_string(static_cast<int>(symbol->name.size()));
-    return symbol->name.str();
+    assert(symbol->isBasicBlock());
+    return symbol->bbindex;
   }
 
   std::string getFullName() const {
-    std::string fullName(symbol->name.str());
-    if (!symbol->isFunction()){
-      fullName += llvm::propeller::BASIC_BLOCK_SEPARATOR;
-      fullName += symbol->containingFunc->name;
-    }
-    return fullName;
+    assert(!symbol->isFunction());
+    return symbol->containingFunc->fname.str() + "." +
+           std::to_string(static_cast<int>(symbol->bbindex));
   }
 
   bool isEntryNode() const;
@@ -176,6 +164,8 @@ public:
 
   std::vector<std::pair<unsigned, std::vector<CFGNode*>>> clusters;
 
+    CFGNode *coalesced_cold_node = nullptr;
+
   void calculateNodeFreqs();
 
   void coalesceColdNodes();
@@ -186,15 +176,10 @@ public:
                          propConfig.optDebugSymbols.end(),
                          name.str()) != propConfig.optDebugSymbols.end();
     for (auto* se: symbols) {
+      assert(se->isBasicBlock());
       auto *n = new CFGNode(se, this);
       nodes.emplace_back(n);
     }
-
-    auto * entryNode = getEntryNode();
-    forEachNodeRef([entryNode](CFGNode &n) {
-      if (!n.isEntryNode())
-        entryNode->symSize -= n.symSize;
-    });
   }
 
   bool markPath(CFGNode *from, CFGNode *to, uint64_t cnt = 1);

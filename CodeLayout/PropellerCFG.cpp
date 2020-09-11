@@ -110,17 +110,44 @@ void ControlFlowGraph::calculateNodeFreqs() {
 }
 
 void ControlFlowGraph::coalesceColdNodes() {
-  CFGNode * firstColdNode = nullptr;
-  nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&firstColdNode] (std::unique_ptr<CFGNode>& n) {
-    if (!n->freq){
-      if (firstColdNode) {
-        firstColdNode->symSize += n->symSize;
-        return true;
-      } else
-        firstColdNode = n.get();
+  // CFGNode * firstColdNode = nullptr;
+  // nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&firstColdNode] (std::unique_ptr<CFGNode>& n) {
+  //   if (!n->freq){
+  //     if (firstColdNode) {
+  //       firstColdNode->symSize += n->symSize;
+  //       return true;
+  //     } else
+  //       firstColdNode = n.get();
+  //   }
+  //   return false;
+  // }), nodes.end());
+
+  for (auto i = nodes.begin(), j = nodes.end(); i != j;) {
+    auto &n = *i;
+    if (n->freq) {
+      ++i;
+      continue;
     }
-    return false;
-  }), nodes.end());
+    // Since all edges are created from profiles, that means, all edges must
+    // have weight > 0, which also means, if a node is cold (feq_ == 0), then
+    // the node must not have any edges. (except incoming return edges, that is:
+    // n->inter_ins_ could be non-empty)
+    assert(n->ins.empty() && n->outs.empty() && n->callOuts.empty());
+    if (coalesced_cold_node != nullptr) {
+      coalesced_cold_node->symSize += n->symSize;
+      // As noted above, n->inter_ins_ could be non-empty, change edge sink to
+      // the representative node.
+      // TODO(shenhna, rahmanl): revisit "CalculateNodeFreqs" and possibly do
+      // not create return edges at all, so we don't need change the edge's sink
+      // here.
+      for (auto &e : n->callIns)
+        e->sink = coalesced_cold_node;
+      i = nodes.erase(i);
+    } else {
+      coalesced_cold_node = n.get();
+      ++i;
+    }
+  }
 }
 
 // Create an edge for "from->to".

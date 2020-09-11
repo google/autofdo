@@ -63,7 +63,7 @@ class Path {
   bool expandToIncludeFallthroughs(PropellerProfWriter &ppWriter);
 
   StringRef getFuncName() const {
-    return syms.empty() ? "" : syms[0]->containingFunc->name;
+    return syms.empty() ? "" : syms[0]->containingFunc->fname;
   }
 
   uint64_t length() const { return syms.size(); }

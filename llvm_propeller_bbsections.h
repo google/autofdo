@@ -14,7 +14,6 @@ using llvm::StringRef;
 namespace llvm {
 namespace propeller {
 
-static const char BASIC_BLOCK_SEPARATOR[] = ".BB.";
 static const char BASIC_BLOCK_UNIFIED_CHARACTERS[] = "arf";
 
 // This data structure is shared between lld propeller components and
@@ -38,68 +37,50 @@ struct SymbolEntry {
 
   using AliasesTy = SmallVector<StringRef, 3>;
 
-  SymbolEntry(uint64_t o, const StringRef &n, AliasesTy &&as, uint64_t address,
-              uint64_t s, bool bb = false, SymbolEntry *funcptr = nullptr)
-      : ordinal(o), name(n), aliases(as), addr(address), size(s), bbTag(bb),
-        bbInfo({BBInfo::BB_NONE, false}), hotTag(false),
-        containingFunc(funcptr) {}
+  SymbolEntry(uint64_t o, const StringRef &n, AliasesTy &&as, uint32_t bdx,
+              uint64_t address, uint64_t s, SymbolEntry *funcptr, uint32_t md)
+      : ordinal(o), fname(n), aliases(std::move(as)), bbindex(bdx),
+        addr(address), size(s), bbInfo({BBInfo::BB_NONE, false}), hotTag(false),
+        containingFunc(funcptr ? funcptr : this), metadata(md) {
+    assert(ordinal);
+  }
 
   // Unique index number across all symbols that participate linking.
-  uint64_t ordinal;
+  const uint64_t ordinal;
   // For a function symbol, it's the full name. For a bb symbol this is only the
   // bbIndex part, which is the number of "a"s before the ".bb." part. For
   // example "8", "10", etc. Refer to Propfile::createFunctionSymbol and
   // Propfile::createBasicBlockSymbol.
-  StringRef name;
-  // Only valid for function (bbTag == false) symbols. And aliases[0] always
-  // equals to name. For example, SymbolEntry.name = "foo", SymbolEntry.aliases
-  // = {"foo", "foo2", "foo3"}.
-  AliasesTy aliases;
-  uint64_t addr;
-  uint64_t size;
-  bool bbTag; // Whether this is a basic block section symbol.
-  BBInfo bbInfo;
+  const StringRef fname;
+  const AliasesTy aliases;
+  const uint32_t bbindex;
+  const uint64_t addr;
+  const uint64_t size;
+  const BBInfo bbInfo;
 
   bool hotTag; // Whether this symbol is listed in the propeller section.
   // For bbTag symbols, this is the containing fuction pointer, for a normal
   // function symbol, this points to itself. This is neverl nullptr.
   SymbolEntry *containingFunc;
 
+  const uint32_t metadata;
+
   bool canFallthrough() const {
-    return bbInfo.type == BBInfo::BB_FALLTHROUGH ||
-           bbInfo.type == BBInfo::BB_NORMAL || bbInfo.type == BBInfo::BB_NONE;
+    return true;
+    // return bbInfo.type == BBInfo::BB_FALLTHROUGH ||
+    //        bbInfo.type == BBInfo::BB_NORMAL || bbInfo.type == BBInfo::BB_NONE;
   }
 
-  bool isReturnBlock() const { return bbInfo.type == BBInfo::BB_RETURN; }
+  bool isReturnBlock() const { return kMetaReturnBlockMask & metadata; }
 
-  bool isLandingPadBlock() const { return bbInfo.isLandingPad; }
+  bool isLandingPadBlock() const { return kMetaEhPadMask & metadata; }
 
   bool operator<(const SymbolEntry &Other) const {
     return ordinal < Other.ordinal;
   }
 
-  bool isFunction() const { return containingFunc == this; }
-
-  // Return true if "symName" is a BB symbol, e.g., in the form of
-  // "a.BB.funcname", and set funcName to the part after ".BB.", bbIndex to
-  // before ".BB.", if the pointers are nonnull.
-  static bool isBBSymbol(const StringRef &symName,
-                         StringRef *funcName = nullptr,
-                         StringRef *bbIndex = nullptr) {
-    if (symName.empty())
-      return false;
-    auto r = symName.split(BASIC_BLOCK_SEPARATOR);
-    if (r.second.empty())
-      return false;
-    for (auto *i = r.first.bytes_begin(), *j = r.first.bytes_end(); i != j; ++i)
-      if (strchr(BASIC_BLOCK_UNIFIED_CHARACTERS, toLower(*i)) == NULL)
-        return false;
-    if (funcName)
-      *funcName = r.second;
-    if (bbIndex)
-      *bbIndex = r.first;
-    return true;
-  }
+  bool isFunction() const { return containingFunc == this || !containingFunc; }
+  bool isBasicBlock() const { return containingFunc && containingFunc != this; }
 
   static BBInfo toBBInfo(const char c) {
     bool isLandingPad = toLower(c) != c;
@@ -124,7 +105,10 @@ struct SymbolEntry {
     }
   };
 
-  static const uint64_t INVALID_ADDRESS = uint64_t(-1);
+  static constexpr uint64_t INVALID_ADDRESS = uint64_t(-1);
+  static constexpr uint64_t kMetaReturnBlockMask = 1;
+  static constexpr uint64_t kMetaTailCallMask = (1 << 1);
+  static constexpr uint64_t kMetaEhPadMask = (1 << 2);
 };
 
 } // namespace propeller

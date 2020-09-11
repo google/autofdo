@@ -201,8 +201,8 @@ class PropellerProfWriter {
   // groups by names.
   struct SymGroupComparator {
     bool operator()(SymbolEntry *s1, SymbolEntry *s2) const {
-      if (s1->containingFunc->name != s2->containingFunc->name)
-        return s1->containingFunc->name < s2->containingFunc->name;
+      if (s1->containingFunc->fname != s2->containingFunc->fname)
+        return s1->containingFunc->fname < s2->containingFunc->fname;
       return s1->ordinal < s2->ordinal;
     }
   };
@@ -243,14 +243,11 @@ class PropellerProfWriter {
                                vector<SymbolEntry *> &result);
 
   bool initBinaryFile();
-  bool populateSymbolMap();
-  bool populateSymbolMap2();
   bool parsePerfData();
   bool parsePerfData(const string &pName);
   void writeOuts(ofstream &fout);
-  void writeSymbols(ofstream &fout);
-  void writeBranches(ofstream &fout);
-  void writeFallthroughs(ofstream &fout);
+  void recordBranches();
+  void recordFallthroughs();
   void writeHotFuncAndBBList(ofstream &fout);
   bool reorderSections(int64_t partBegin, int64_t partEnd, int64_t partNew, int64_t partNewEnd);
   void summarize();
@@ -258,6 +255,27 @@ class PropellerProfWriter {
   SymbolEntry *findSymbolAtAddress(uint64_t pid, uint64_t addr);
 
   PathProfile pathProfile;
+
+  // Handle to bbinfo section.
+  llvm::object::SectionRef bbaddrmap_section_;
+
+  // Read function symbols from elf's symbol table.
+  using SymTabTy =
+      std::map<uint64_t, llvm::SmallVector<llvm::object::SymbolRef, 2>>;
+  SymTabTy symtab_;
+  
+  using BbAddrMapTy = std::map<llvm::StringRef, std::vector<SymbolEntry *>>;
+  BbAddrMapTy bb_addr_map_;
+
+  void ReadSymbolTable();
+  bool ReadBbAddrMapSection();
+  SymbolEntry *CreateFuncSymbolEntry(uint64_t ordinal, StringRef func_name,
+                                     SymbolEntry::AliasesTy aliases,
+                                     int func_bb_num, uint64_t address,
+                                     uint64_t size);
+  SymbolEntry *CreateBbSymbolEntry(uint64_t ordinal, SymbolEntry *parent_func,
+                                   int bb_index, uint64_t address,
+                                   uint64_t size, uint32_t metadata);
 
   friend PathProfile;
   friend Path;
