@@ -28,22 +28,9 @@ struct SymBaseF {
   const SymbolEntry &Symbol;
 };
 
-static SymbolEntry dummySymbolEntry(static_cast<uint64_t>(-1), "",
-                                    SymbolEntry::AliasesTy(), 0, 0, 0, nullptr,
-                                    0);
-
-struct BBNameF : public SymBaseF {
-  BBNameF(const SymbolEntry &sym) : SymBaseF(sym) {}
-  BBNameF(const SymbolEntry *sym) : SymBaseF(*sym) {}
-};
-
 struct SymNameF : public SymBaseF {
-  SymNameF(const SymbolEntry &sym) : SymBaseF(sym), name("") {}
-  SymNameF(const SymbolEntry *sym) : SymBaseF(*sym), name("") {}
-  // Use explicit to prevent StringRef being casted to SymNameF.
-  explicit SymNameF(const StringRef N) : SymBaseF(dummySymbolEntry), name(N) {}
-
-  StringRef name;
+  SymNameF(const SymbolEntry &sym) : SymBaseF(sym) {}
+  SymNameF(const SymbolEntry *sym) : SymBaseF(*sym) {}
 };
 
 struct SymOrdinalF : public SymBaseF {
@@ -102,35 +89,15 @@ static std::ostream &operator<<(std::ostream &out, const struct Hex0xOut &) {
 }
 
 static std::ostream &operator<<(std::ostream &out, const SymNameF &nameF) {
-  // if (!nameF.name.empty()) {
-  //   // In this case, we only care about name field.
-  //   // name is the form of "aaaa.BB.funcname" or "funcname".
-  //   auto r = nameF.name.split(llvm::propeller::BASIC_BLOCK_SEPARATOR);
-  //   if (r.second.empty())
-  //     out << r.first.str();
-  //   else
-  //     out << ::dec << r.first.size() << llvm::propeller::BASIC_BLOCK_SEPARATOR
-  //         << r.second.str();
-  //   return out;
-  // }
-  // auto &sym = nameF.Symbol;
-  // if (!sym.isFunction()) {
-  //   out << ::dec << sym.fname.size() << llvm::propeller::BASIC_BLOCK_SEPARATOR
-  //       << (sym.containingFunc ? sym.containingFunc->fname.str() : "null_func");
-  // } else {
-  //   out << sym.fname.str().c_str();
-  //   for (auto a : sym.aliases) out << "/" << a.str();
-  // }
+  auto &sym = nameF.Symbol;
+  if (sym.isBasicBlock()) {
+    out << (sym.containingFunc ? sym.containingFunc->fname.str() : "null_func")
+        << ::dec << sym.bbindex;
+  } else {
+    out << sym.fname.str().c_str();
+    for (StringRef a : sym.aliases) out << "/" << a.str();
+  }
   return out;
-}
-
-static std::ostream &operator<<(std::ostream &out, const BBNameF &nameF) {
-  if (nameF.Symbol.containingFunc == &nameF.Symbol) return out << "entry";
-  StringRef n = nameF.Symbol.fname;
-  auto t = n.find_first_of(".BB.");
-  if (t != llvm::StringLiteral::npos)
-    return out << t;
-  return out << n.size();
 }
 
 static std::ostream &operator<<(std::ostream &out,
@@ -188,22 +155,6 @@ static std::ostream &operator<<(std::ostream &out, const CommaF &cf) {
 static std::ostream &operator<<(std::ostream &out, const PercentageF &pf) {
   out << std::setprecision(3);
   out << (pf.value * 100) << '%';
-  return out;
-}
-
-static std::ostream &operator << (std::ostream &out, const Path &p) {
-  out << "[nodes=" << ::dec << p.syms.size() << ", weight=" << ::dec << p.weight
-      << "]: ";
-  auto e = p.cnts.begin();
-  auto symi = p.syms.begin();
-  auto syme = p.syms.end();
-  auto lasti = std::prev(syme);
-  while (symi != syme) {
-    const auto *s = *symi;
-    out << BBNameF(s) << "(" << *(e++) << ")";
-    if (symi != lasti) out << " -> ";
-    ++symi;
-  }
   return out;
 }
 
