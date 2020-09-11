@@ -9,11 +9,13 @@ using llvm::StringRef;
 namespace llvm {
 namespace propeller {
 
+// Immutable value object.
 struct SymbolEntry {
   using AliasesTy = SmallVector<StringRef, 3>;
 
   SymbolEntry(uint64_t o, const StringRef &n, AliasesTy &&as, uint32_t bdx,
-              uint64_t address, uint64_t s, SymbolEntry *funcptr, uint32_t md)
+              uint64_t address, uint64_t s, const SymbolEntry *funcptr,
+              uint32_t md)
       : ordinal(o), fname(n), aliases(std::move(as)), bbindex(bdx),
         addr(address), size(s), containingFunc(funcptr ? funcptr : this),
         metadata(md) {}
@@ -26,13 +28,14 @@ struct SymbolEntry {
   const AliasesTy aliases;
   // Basic block index, starts from 0. For functin symbols, this is kInvalidBasicBlockIndex.
   const uint32_t bbindex;
+  // Symbol address.
   const uint64_t addr;
+  // Symbol size.
   const uint64_t size;
-
   // For bbTag symbols, this is the containing fuction pointer, for a normal
   // function symbol, this points to itself. This is neverl nullptr.
-  SymbolEntry *containingFunc;
-
+  const SymbolEntry *containingFunc;
+  // See kMeta**** fields below.
   const uint32_t metadata;
 
   bool canFallthrough() const { return true; }
@@ -46,6 +49,7 @@ struct SymbolEntry {
   }
 
   bool isFunction() const { return containingFunc == this || !containingFunc; }
+  
   bool isBasicBlock() const { return containingFunc && containingFunc != this; }
 
   struct OrdinalLessComparator {

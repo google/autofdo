@@ -41,8 +41,9 @@ extern uint64_t getEdgeExtTSPScore(const CFGEdge &edge,
 // -propeller-opt=reorder-ip) or individually on every controlFlowGraph. After
 // creating all the node chains, it hands the basic block chains to a
 // ChainClustering instance for further rerodering.
-void CodeLayout::doOrder(std::map<SymbolEntry*, std::unique_ptr<ControlFlowGraph>> &cfgs,
-                         std::list<CFGNode*> &section_order) {
+void CodeLayout::doOrder(
+    std::map<const SymbolEntry *, std::unique_ptr<ControlFlowGraph>> &cfgs,
+    std::list<CFGNode *> &section_order) {
   propConfig = PropellerConfig();
   std::chrono::steady_clock::time_point start =
       std::chrono::steady_clock::now();
@@ -64,7 +65,8 @@ void CodeLayout::doOrder(std::map<SymbolEntry*, std::unique_ptr<ControlFlowGraph
             hot_bbs++;
           all_bbs++;
         });
-        // fprintf(stderr, "HISTOGRAM: %s,%u,%u\n", cfg.name.str().c_str(), all_bbs,
+        // fprintf(stderr, "HISTOGRAM: %s,%u,%u\n", cfg.name.str().c_str(),
+        // all_bbs,
         //         hot_bbs);
       }
     } else

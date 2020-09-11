@@ -139,9 +139,10 @@ public:
   }
 
 private:
-  CFGNode(SymbolEntry * _symbol, ControlFlowGraph *_cfg)
-      : symbol(_symbol), controlFlowGraph(_cfg), symSize(_symbol->size), freq(0), bundle(nullptr), bundleOffset(0),
-        outs(), ins(), callOuts(), callIns(), ftEdge(nullptr) {}
+  CFGNode(const SymbolEntry *_symbol, ControlFlowGraph *_cfg)
+      : symbol(_symbol), controlFlowGraph(_cfg), symSize(_symbol->size),
+        freq(0), bundle(nullptr), bundleOffset(0), outs(), ins(), callOuts(),
+        callIns(), ftEdge(nullptr) {}
 
   friend class ControlFlowGraph;
   friend class CFGBuilder;
@@ -162,7 +163,7 @@ public:
   std::vector<std::unique_ptr<CFGEdge>> intraEdges;
   std::vector<std::unique_ptr<CFGEdge>> interEdges;
 
-  std::vector<std::pair<unsigned, std::vector<CFGNode*>>> clusters;
+  std::vector<std::pair<unsigned, std::vector<CFGNode *>>> clusters;
 
   CFGNode *coalesced_cold_node = nullptr;
 
@@ -170,7 +171,8 @@ public:
 
   void coalesceColdNodes();
 
-  ControlFlowGraph(const StringRef &n, uint64_t s, std::vector<SymbolEntry *> &symbols)
+  ControlFlowGraph(const StringRef &n, uint64_t s,
+                   std::vector<const SymbolEntry *> &symbols)
       : name(n), size(s), hot(false) {
     debugCFG = std::find(propConfig.optDebugSymbols.begin(),
                          propConfig.optDebugSymbols.end(),

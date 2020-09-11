@@ -57,13 +57,12 @@ PropellerProfWriter::PropellerProfWriter(const string &bfn, const string &pfn,
 
 PropellerProfWriter::~PropellerProfWriter() {}
 
-static bool
-containsAddress(SymbolEntry *sym, uint64_t a) {
+static bool containsAddress(const SymbolEntry *sym, uint64_t a) {
   return sym->addr <= a && a < sym->addr + sym->size;
 }
 
 static bool
-containsAnotherSymbol(SymbolEntry *sym, SymbolEntry *O) {
+containsAnotherSymbol(const SymbolEntry *sym, const SymbolEntry *O) {
   if (O->size == 0) {
     // Note if O's size is 0, we allow O on the end boundary. For example, if
     // foo.BB.4 is at address 0x10. foo is [0x0, 0x10), we then assume foo
@@ -74,12 +73,14 @@ containsAnotherSymbol(SymbolEntry *sym, SymbolEntry *O) {
          containsAddress(sym, O->addr + O->size - 1);
 }
 
-SymbolEntry *PropellerProfWriter::findSymbolAtAddress(uint64_t pid,
-                                                      uint64_t originAddr) {
+const SymbolEntry *
+PropellerProfWriter::findSymbolAtAddress(uint64_t pid, uint64_t originAddr) {
   uint64_t addr = adjustAddressForPIE(pid, originAddr);
-  if (addr == INVALID_ADDRESS) return nullptr;
+  if (addr == INVALID_ADDRESS)
+    return nullptr;
   auto u = addrMap.upper_bound(addr);
-  if (u == addrMap.begin()) return nullptr;
+  if (u == addrMap.begin())
+    return nullptr;
   auto r = std::prev(u);
 
   for (auto &SymEnt : r->second)
@@ -115,7 +116,7 @@ uint64_t PropellerProfWriter::adjustAddressForPIE(uint64_t pid,
   return addr;
 }
 
-SymbolEntry *PropellerProfWriter::CreateFuncSymbolEntry(
+const SymbolEntry *PropellerProfWriter::CreateFuncSymbolEntry(
     uint64_t ordinal, StringRef func_name, SymbolEntry::AliasesTy aliases,
     int func_bb_num, uint64_t address, uint64_t size) {
   if (bb_addr_map_.find(func_name) != bb_addr_map_.end()) {
@@ -130,15 +131,15 @@ SymbolEntry *PropellerProfWriter::CreateFuncSymbolEntry(
                        std::forward_as_tuple(func_bb_num, nullptr));
   // Note, funcsym is not put into bbinfo_map_. It's accessible via
   // bbinfo_map_[func_name].front()->func_ptr.
-  SymbolEntry *funcsym = new SymbolEntry(ordinal, func_name, std::move(aliases),
-                                         0, address, size, nullptr, 0);
+  const SymbolEntry *funcsym = new SymbolEntry(
+      ordinal, func_name, std::move(aliases), 0, address, size, nullptr, 0);
   // Put into address_map_.
   addrMap[address].emplace_back(funcsym);
   return funcsym;
 }
 
-SymbolEntry *PropellerProfWriter::CreateBbSymbolEntry(
-    uint64_t ordinal, SymbolEntry *parent_func, int bb_index, uint64_t address,
+const SymbolEntry *PropellerProfWriter::CreateBbSymbolEntry(
+    uint64_t ordinal, const SymbolEntry *parent_func, int bb_index, uint64_t address,
     uint64_t size, uint32_t metadata) {
   CHECK(parent_func);
   BbAddrMapTy::iterator iter = bb_addr_map_.find(parent_func->fname);
@@ -152,7 +153,7 @@ SymbolEntry *PropellerProfWriter::CreateBbSymbolEntry(
   // SymbolEntry is StringRef and in bbinfo workflow, the bbsym's name field is
   // always "". But bbsym's id number can be calculated from: (bbsym->ordinal -
   // bbsym->func_ptr->ordinal - 1).
-  SymbolEntry *bb_symbol =
+  const SymbolEntry *bb_symbol =
       new SymbolEntry(ordinal, "", SymbolEntry::AliasesTy(), bb_index, address,
                       size, parent_func, metadata);
   CHECK(bb_index < iter->second.size());
@@ -247,7 +248,7 @@ bool PropellerProfWriter::ReadBbAddrMapSection() {
              previous_offset = 0;
     if (!ReadUlebField("bb count", &p, section_end, &num_blocks)) return false;
     CHECK(num_blocks);
-    SymbolEntry *func_symbol =
+    const SymbolEntry *func_symbol =
         CreateFuncSymbolEntry(++ordinal, func_aliases.front(), func_aliases,
                               num_blocks, func_address, func_size);
     // Note - func_symbol can be null, we don't bail out until we can't proceed.
@@ -302,7 +303,7 @@ bool PropellerProfWriter::write() {
 
   for (auto &[unused, bbvec] : bb_addr_map_) {
     assert(!bbvec.empty());
-    SymbolEntry *funcsym = bbvec[0]->containingFunc;
+    const SymbolEntry *funcsym = bbvec[0]->containingFunc;
     auto *cfg = new ControlFlowGraph(funcsym->fname, funcsym->size, bbvec);
     cfg->forEachNodeRef([this](CFGNode &n) {
       symbolNodeMap.emplace(n.symbol, &n);
@@ -452,7 +453,7 @@ void PropellerProfWriter::summarize() {
 
 void PropellerProfWriter::recordBranches() {
   this->branchesWritten = 0;
-  auto recordHotSymbol = [this](SymbolEntry *sym) {
+  auto recordHotSymbol = [this](const SymbolEntry *sym) {
     if (!sym || !(sym->containingFunc) || sym->containingFunc->fname.empty())
       return;
     assert(sym->isBasicBlock());
@@ -466,11 +467,11 @@ void PropellerProfWriter::recordBranches() {
     }
   };
 
-  using BrCntSummationKey = tuple<SymbolEntry *, SymbolEntry *, char>;
+  using BrCntSummationKey = tuple<const SymbolEntry *, const SymbolEntry *, char>;
   struct BrCntSummationKeyComp {
     bool operator()(const BrCntSummationKey &k1,
                     const BrCntSummationKey &k2) const {
-      SymbolEntry *From1, *From2, *To1, *To2;
+      const SymbolEntry *From1, *From2, *To1, *To2;
       char T1, T2;
       std::tie(From1, To1, T1) = k1;
       std::tie(From2, To2, T2) = k2;
@@ -495,8 +496,8 @@ void PropellerProfWriter::recordBranches() {
       const uint64_t from = EC.first.first;
       const uint64_t to = EC.first.second;
       const uint64_t cnt = EC.second;
-      auto *fromSym = findSymbolAtAddress(pid, from);
-      auto *toSym = findSymbolAtAddress(pid, to);
+      const SymbolEntry *fromSym = findSymbolAtAddress(pid, from);
+      const SymbolEntry *toSym = findSymbolAtAddress(pid, to);
       const uint64_t adjustedFrom = adjustAddressForPIE(pid, from);
       const uint64_t adjustedTo = adjustAddressForPIE(pid, to);
 
@@ -560,7 +561,7 @@ void PropellerProfWriter::recordBranches() {
   }
 
   for (auto &brEnt : brCntSummation) {
-    SymbolEntry *fromSym, *toSym;
+    const SymbolEntry *fromSym, *toSym;
     char type;
     std::tie(fromSym, toSym, type) = brEnt.first;
     uint64_t cnt = brEnt.second;
@@ -582,7 +583,8 @@ void PropellerProfWriter::recordBranches() {
 // Compute fallthrough BBs from "from" -> "to", and place them in "path".
 // ("from" and "to" are excluded)
 bool PropellerProfWriter::calculateFallthroughBBs(
-    SymbolEntry *from, SymbolEntry *to, std::vector<SymbolEntry *> &path) {
+    const SymbolEntry *from, const SymbolEntry *to,
+    std::vector<const SymbolEntry *> &path) {
   path.clear();
   ++fallthroughCalculationNumber;
   if (from == to) return true;
@@ -667,9 +669,9 @@ void PropellerProfWriter::recordFallthroughs() {
   fallthroughStartEndInDifferentFuncs = 0;
   fallthroughCalculationNumber = 0;
   for (auto &fc : fallthroughCountersBySymbol) {
-    std::vector<SymbolEntry *> path;
-    SymbolEntry *fallthroughFrom = fc.first.first,
-                *fallthroughTo = fc.first.second;
+    std::vector<const SymbolEntry *> path;
+    const SymbolEntry *fallthroughFrom = fc.first.first,
+                      *fallthroughTo = fc.first.second;
     if (fallthroughFrom != fallthroughTo &&
         calculateFallthroughBBs(fallthroughFrom, fallthroughTo, path)) {
       totalCounters += (path.size() + 1) * fc.second;
