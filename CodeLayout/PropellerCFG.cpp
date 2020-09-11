@@ -80,11 +80,9 @@ void ControlFlowGraph::calculateNodeFreqs() {
                                    return e1->weight < e2->weight;
                                  }))
                   ->weight;
-    if (node.symbol->hotTag)
-      node.freq = std::max({sumEdgeWeights(node.outs), sumEdgeWeights(node.ins),
-                            sumEdgeWeights(node.callIns), maxCallOut});
-    else {
-      node.freq = 0;
+    node.freq = std::max({sumEdgeWeights(node.outs), sumEdgeWeights(node.ins),
+                          sumEdgeWeights(node.callIns), maxCallOut});
+    if (node.freq == 0) {
       ZeroOutEdgeWeights(node.ins);
       ZeroOutEdgeWeights(node.outs);
       ZeroOutEdgeWeights(node.callIns);
