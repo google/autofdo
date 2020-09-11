@@ -169,9 +169,8 @@ class PropellerProfWriter {
   unique_ptr<llvm::object::ObjectFile> objFile;
   // All symbol handlers.
   map<StringRef, map<StringRef, unique_ptr<SymbolEntry>>> symbolNameMap;
-  map<SymbolEntry *, std::vector<SymbolEntry*>> symbolEntryMap;
   map<SymbolEntry *, std::unique_ptr<ControlFlowGraph>> cfgs;
-  map<SymbolEntry *, CFGNode *> symbolNodeMap;
+  map<const SymbolEntry *, CFGNode *> symbolNodeMap;
   // Symbol start address -> Symbol list.
   map<uint64_t, list<SymbolEntry *>> addrMap;
   using CounterTy = map<pair<uint64_t, uint64_t>, uint64_t>;

@@ -87,7 +87,7 @@ protected:
 // All instances of CFGNode are owned by their controlFlowGraph.
 class CFGNode {
 public:
-  SymbolEntry * symbol;
+  const SymbolEntry *symbol;
   uint64_t freq, symSize;
   ControlFlowGraph *controlFlowGraph;
 
@@ -114,7 +114,7 @@ public:
   }
 
   std::string getFullName() const {
-    assert(!symbol->isFunction());
+    assert(symbol->isBasicBlock());
     return symbol->containingFunc->fname.str() + "." +
            std::to_string(static_cast<int>(symbol->bbindex));
   }
@@ -164,13 +164,13 @@ public:
 
   std::vector<std::pair<unsigned, std::vector<CFGNode*>>> clusters;
 
-    CFGNode *coalesced_cold_node = nullptr;
+  CFGNode *coalesced_cold_node = nullptr;
 
   void calculateNodeFreqs();
 
   void coalesceColdNodes();
 
-  ControlFlowGraph(const StringRef &n, uint64_t s, std::vector<SymbolEntry*> &symbols)
+  ControlFlowGraph(const StringRef &n, uint64_t s, std::vector<SymbolEntry *> &symbols)
       : name(n), size(s), hot(false) {
     debugCFG = std::find(propConfig.optDebugSymbols.begin(),
                          propConfig.optDebugSymbols.end(),
