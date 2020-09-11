@@ -463,7 +463,6 @@ void PropellerProfWriter::recordBranches() {
     else {
       // Dups are properly handled by set.
       hotSymbols.insert(sym);
-      sym->hotTag = true;
     }
   };
 
@@ -677,14 +676,12 @@ void PropellerProfWriter::recordFallthroughs() {
       // Note, fallthroughFrom/to are not included in "path".
       hotSymbols.insert(fallthroughFrom);
       hotSymbols.insert(fallthroughTo);
-      fallthroughFrom->hotTag = fallthroughTo->hotTag = true;
       for (auto *sym : path) {
         if (sym->isLandingPadBlock()) {
           LOG(WARNING) << "*** HOT LANDING PAD: " << sym->fname.str() << "\t"
                        << sym->containingFunc->fname.str() << "\n";
         }
         extraBBsIncludedInFallthroughs += hotSymbols.insert(sym).second ? 1 : 0;
-        sym->hotTag = true;
       }
 
       path.push_back(fallthroughTo);

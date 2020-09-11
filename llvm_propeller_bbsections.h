@@ -15,8 +15,8 @@ struct SymbolEntry {
   SymbolEntry(uint64_t o, const StringRef &n, AliasesTy &&as, uint32_t bdx,
               uint64_t address, uint64_t s, SymbolEntry *funcptr, uint32_t md)
       : ordinal(o), fname(n), aliases(std::move(as)), bbindex(bdx),
-        addr(address), size(s), hotTag(false),
-        containingFunc(funcptr ? funcptr : this), metadata(md) {}
+        addr(address), size(s), containingFunc(funcptr ? funcptr : this),
+        metadata(md) {}
 
   // Unique index number across all symbols that participate linking.
   const uint64_t ordinal;
@@ -29,7 +29,6 @@ struct SymbolEntry {
   const uint64_t addr;
   const uint64_t size;
 
-  bool hotTag; // Whether this symbol is listed in the propeller section.
   // For bbTag symbols, this is the containing fuction pointer, for a normal
   // function symbol, this points to itself. This is neverl nullptr.
   SymbolEntry *containingFunc;
