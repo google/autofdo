@@ -139,13 +139,13 @@ const SymbolEntry *PropellerProfWriter::CreateFuncSymbolEntry(
 }
 
 const SymbolEntry *PropellerProfWriter::CreateBbSymbolEntry(
-    uint64_t ordinal, const SymbolEntry *parent_func, int bb_index, uint64_t address,
-    uint64_t size, uint32_t metadata) {
+    uint64_t ordinal, const SymbolEntry *parent_func, int bb_index,
+    uint64_t address, uint64_t size, uint32_t metadata) {
   CHECK(parent_func);
   BbAddrMapTy::iterator iter = bb_addr_map_.find(parent_func->fname);
   if (iter == bb_addr_map_.end()) {
     LOG(ERROR) << "BB symbol '" << parent_func->fname.str() << "." << bb_index
-               << "'@0x" << std::hex << address
+               << "'@" << hex0x << address
                << " appears before its function record, drop the symbol.";
     return nullptr;
   }
@@ -191,7 +191,7 @@ void PropellerProfWriter::ReadSymbolTable() {
       if (func_size != sym_size) {
         LOG(WARNING) << "Multiple function symbols on the same address with "
                         "different size: "
-                     << *address << ": '" << func_name->str() << "("
+                     << hex0x << *address << ": '" << func_name->str() << "("
                      << func_size << ")' and '"
                      << llvm::cantFail(sym_ref.getName()).str() << "("
                      << sym_size << ")', the latter will be dropped.";
@@ -221,7 +221,7 @@ static bool ReadUlebField(const char *field_name, const uint8_t **p,
 bool PropellerProfWriter::ReadBbAddrMapSection() {
   llvm::Expected<StringRef> exp_contents = bbaddrmap_section_.getContents();
   if (!exp_contents) {
-    LOG(ERROR) << "Error accessing .bb_info section content.";
+    LOG(ERROR) << "Error accessing .bb_addr_map section content.";
     return false;
   }
   StringRef sec_contents = *exp_contents;
@@ -237,9 +237,6 @@ bool PropellerProfWriter::ReadBbAddrMapSection() {
     for (llvm::object::SymbolRef &sr : iter->second)
       func_aliases.push_back(llvm::cantFail(sr.getName()));
     CHECK(!func_aliases.empty());
-
-    // fprintf(stderr, "offset: %lu, func_address: 0x%p\n",
-    //         p - sec_contents.bytes_begin(), reinterpret_cast<void *>(func_address));
 
     const uint64_t func_size =
         llvm::object::ELFSymbolRef(iter->second.front()).getSize();
@@ -273,17 +270,21 @@ bool PropellerProfWriter::ReadBbAddrMapSection() {
     }
   }  // end of iterating bb info section.
 
-  // // using BbAddrMapTy = std::map<llvm::StringRef, std::vector<SymbolEntry *>>;
-  // // BbAddrMapTy bb_addr_map_;
-  // for (auto &[unused_funcname, bbs] : bb_addr_map_) {
-  //   assert(!bbs.empty());
-  //   SymbolEntry *func = bbs[0]->containingFunc;
-  //   fprintf(stderr, "func: %s: 0x%lx: %lu\n", func->fname.str().c_str(), func->addr, func->size);
-  //   for (auto *bb: bbs) {
-  //     assert(bb->isBasicBlock() && bb->containingFunc == func);
-  //     fprintf(stderr, "  bb: %u: 0x%lx: %lu\n", bb->bbindex, bb->addr, bb->size);
-  //   }
-  // }
+  if (FLAGS_print_bb_addr_map) {
+    fprintf(stderr, "===== .bb_addr_map =====\n");
+    for (auto &[unused_funcname, bbs] : bb_addr_map_) {
+      assert(!bbs.empty());
+      const SymbolEntry *func = bbs[0]->containingFunc;
+      fprintf(stderr, "func: %s: 0x%lx: %lu\n", func->fname.str().c_str(),
+              func->addr, func->size);
+      for (auto *bb : bbs) {
+        assert(bb->isBasicBlock() && bb->containingFunc == func);
+        fprintf(stderr, "  bb: %u: 0x%lx: %lu, return=%d, ehpad=%d\n", bb->bbindex, bb->addr,
+                bb->size, bb->isReturnBlock(), bb->isLandingPadBlock());
+      }
+    }
+    fprintf(stderr, "===== end of .bb_addr_map =====\n");
+  }
 
   return true;
 }
