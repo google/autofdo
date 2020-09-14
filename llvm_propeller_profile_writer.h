@@ -217,7 +217,6 @@ class PropellerProfWriter {
   // Nullptr if build id does not exist for binaryMMapName.
   string binaryBuildId;
   int32_t perfDataFileParsed;
-  uint64_t symbolsWritten;
   uint64_t branchesWritten;
   uint64_t fallthroughsWritten;
   uint64_t extraBBsIncludedInFallthroughs;

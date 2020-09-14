@@ -400,11 +400,6 @@ bool PropellerProfWriter::write() {
 }
 
 void PropellerProfWriter::summarize() {
-  LOG(INFO) << "Wrote propeller profile (" << perfDataFileParsed << " file(s), "
-            << CommaF(symbolsWritten) << " syms, " << CommaF(branchesWritten)
-            << " branches, " << CommaF(fallthroughsWritten)
-            << " fallthroughs) to " << propOutFileName;
-
   LOG(INFO) << CommaF(countersNotAddressed) << " of " << CommaF(totalCounters)
             << " branch entries are not mapped ("
             << PercentageF(countersNotAddressed, totalCounters) << ").";
@@ -490,13 +485,11 @@ void PropellerProfWriter::recordBranches() {
   countersNotAddressed = 0;
   crossFunctionCounters = 0;
   // {pid: {<from, to>: count}}
-  for (auto &bcPid : branchCountersByPid) {
-    const uint64_t pid = bcPid.first;
-    auto &BC = bcPid.second;
-    for (auto &EC : BC) {
-      const uint64_t from = EC.first.first;
-      const uint64_t to = EC.first.second;
-      const uint64_t cnt = EC.second;
+  for (auto &[pid, branch_counters] : branchCountersByPid) {
+    // {<from, to>: count}
+    for (auto &[br, cnt] : branch_counters) {
+      const uint64_t from = br.first;
+      const uint64_t to = br.second;
       const SymbolEntry *fromSym = findSymbolAtAddress(pid, from);
       const SymbolEntry *toSym = findSymbolAtAddress(pid, to);
       const uint64_t adjustedFrom = adjustAddressForPIE(pid, from);
@@ -511,9 +504,6 @@ void PropellerProfWriter::recordBranches() {
         countersNotAddressed += cnt;
         continue;
       }
-
-      uint64_t adjusted_from = adjustAddressForPIE(pid, from);
-      uint64_t adjusted_to = adjustAddressForPIE(pid, to);
       // if (!fromSym->isFunction() && (adjusted_from < fromSym->addr + fromSym->size - 6)) {
       //   LOG(WARNING) << std::showbase << std::hex << "BR from " << from
       //                << " -> " << to << " (" << adjusted_from << " -> "
@@ -655,12 +645,11 @@ bool PropellerProfWriter::calculateFallthroughBBs(
 
 void PropellerProfWriter::recordFallthroughs() {
   // caPid: {pid, <<from_addr, to_addr>, counter>}
-  for (auto &caPid : fallthroughCountersByPid) {
-    uint64_t pid = caPid.first;
-    for (auto &ca : caPid.second) {
-      const uint64_t cnt = ca.second;
-      auto *fromSym = findSymbolAtAddress(pid, ca.first.first);
-      auto *toSym = findSymbolAtAddress(pid, ca.first.second);
+  for (auto &[pid, fallthrough_counters] : fallthroughCountersByPid) {
+    // <<from_addr, to_addr>, counter>
+    for (auto &[fall_through, cnt] : fallthrough_counters) {
+      auto *fromSym = findSymbolAtAddress(pid, fall_through.first);
+      auto *toSym = findSymbolAtAddress(pid, fall_through.second);
       if (fromSym && toSym)
         fallthroughCountersBySymbol[std::make_pair(fromSym, toSym)] += cnt;
     }
@@ -669,13 +658,14 @@ void PropellerProfWriter::recordFallthroughs() {
   extraBBsIncludedInFallthroughs = 0;
   fallthroughStartEndInDifferentFuncs = 0;
   fallthroughCalculationNumber = 0;
-  for (auto &fc : fallthroughCountersBySymbol) {
+  // <<from_sym, to_sym>, cnt>
+  for (auto &[ft_sym_pair, ft_cnt] : fallthroughCountersBySymbol) {
+    const SymbolEntry *fallthroughFrom = ft_sym_pair.first,
+                      *fallthroughTo = ft_sym_pair.second;
     std::vector<const SymbolEntry *> path;
-    const SymbolEntry *fallthroughFrom = fc.first.first,
-                      *fallthroughTo = fc.first.second;
     if (fallthroughFrom != fallthroughTo &&
         calculateFallthroughBBs(fallthroughFrom, fallthroughTo, path)) {
-      totalCounters += (path.size() + 1) * fc.second;
+      totalCounters += (path.size() + 1) * ft_cnt;
       // Note, fallthroughFrom/to are not included in "path".
       hotSymbols.insert(fallthroughFrom);
       hotSymbols.insert(fallthroughTo);
@@ -689,11 +679,13 @@ void PropellerProfWriter::recordFallthroughs() {
 
       path.push_back(fallthroughTo);
       auto * fromSym = fallthroughFrom;
-      for(auto * sym: path) {
+      for (auto *sym : path) {
         CFGNode *fromN = symbolNodeMap[fromSym];
         CFGNode *toN = symbolNodeMap[sym];
         if (fromN && toN && fromN != toN)
-          fromN->controlFlowGraph->createEdge(fromN, toN, llvm::propeller::CFGEdge::INTRA_FUNC)->weight += fc.second;
+          fromN->controlFlowGraph
+              ->createEdge(fromN, toN, llvm::propeller::CFGEdge::INTRA_FUNC)
+              ->weight += ft_cnt;
         fromSym = sym;
       }
     }
