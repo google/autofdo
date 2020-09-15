@@ -87,7 +87,7 @@ protected:
 // All instances of CFGNode are owned by their controlFlowGraph.
 class CFGNode {
 public:
-  SymbolEntry * symbol;
+  const SymbolEntry *symbol;
   uint64_t freq, symSize;
   ControlFlowGraph *controlFlowGraph;
 
@@ -109,26 +109,14 @@ public:
   const static uint64_t InvalidAddress = -1;
 
   unsigned getBBIndex() const {
-    StringRef fName, bName;
-    if (!symbol->isFunction())
-      return symbol->name.size();
-    return 0;
-  }
-
-  std::string getFullName2() const {
-    if (!symbol->isFunction())
-      return symbol->containingFunc->name.str() + "." +
-	std::to_string(static_cast<int>(symbol->name.size()));
-    return symbol->name.str();
+    assert(symbol->isBasicBlock());
+    return symbol->bbindex;
   }
 
   std::string getFullName() const {
-    std::string fullName(symbol->name.str());
-    if (!symbol->isFunction()){
-      fullName += llvm::propeller::BASIC_BLOCK_SEPARATOR;
-      fullName += symbol->containingFunc->name;
-    }
-    return fullName;
+    assert(symbol->isBasicBlock());
+    return symbol->containingFunc->fname.str() + "." +
+           std::to_string(static_cast<int>(symbol->bbindex));
   }
 
   bool isEntryNode() const;
@@ -151,9 +139,10 @@ public:
   }
 
 private:
-  CFGNode(SymbolEntry * _symbol, ControlFlowGraph *_cfg)
-      : symbol(_symbol), controlFlowGraph(_cfg), symSize(_symbol->size), freq(0), bundle(nullptr), bundleOffset(0),
-        outs(), ins(), callOuts(), callIns(), ftEdge(nullptr) {}
+  CFGNode(const SymbolEntry *_symbol, ControlFlowGraph *_cfg)
+      : symbol(_symbol), controlFlowGraph(_cfg), symSize(_symbol->size),
+        freq(0), bundle(nullptr), bundleOffset(0), outs(), ins(), callOuts(),
+        callIns(), ftEdge(nullptr) {}
 
   friend class ControlFlowGraph;
   friend class CFGBuilder;
@@ -174,27 +163,25 @@ public:
   std::vector<std::unique_ptr<CFGEdge>> intraEdges;
   std::vector<std::unique_ptr<CFGEdge>> interEdges;
 
-  std::vector<std::pair<unsigned, std::vector<CFGNode*>>> clusters;
+  std::vector<std::pair<unsigned, std::vector<CFGNode *>>> clusters;
+
+  CFGNode *coalesced_cold_node = nullptr;
 
   void calculateNodeFreqs();
 
   void coalesceColdNodes();
 
-  ControlFlowGraph(const StringRef &n, uint64_t s, std::vector<SymbolEntry*> &symbols)
+  ControlFlowGraph(const StringRef &n, uint64_t s,
+                   std::vector<const SymbolEntry *> &symbols)
       : name(n), size(s), hot(false) {
     debugCFG = std::find(propConfig.optDebugSymbols.begin(),
                          propConfig.optDebugSymbols.end(),
                          name.str()) != propConfig.optDebugSymbols.end();
     for (auto* se: symbols) {
+      assert(se->isBasicBlock());
       auto *n = new CFGNode(se, this);
       nodes.emplace_back(n);
     }
-
-    auto * entryNode = getEntryNode();
-    forEachNodeRef([entryNode](CFGNode &n) {
-      if (!n.isEntryNode())
-        entryNode->symSize -= n.symSize;
-    });
   }
 
   bool markPath(CFGNode *from, CFGNode *to, uint64_t cnt = 1);

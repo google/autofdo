@@ -37,3 +37,5 @@ glog/src/stamp-h2
 /profile_merger
 /profile_update
 /sample_merger
+
+/.vscode

@@ -71,56 +71,68 @@ void ControlFlowGraph::calculateNodeFreqs() {
 
   if (nodes.empty())
     return;
-  forEachNodeRef([this, &sumEdgeWeights,
-                         &ZeroOutEdgeWeights](CFGNode &node) {
-      uint64_t maxCallOut =
-          node.callOuts.empty()
-              ? 0
-              : (*std::max_element(node.callOuts.begin(), node.callOuts.end(),
-                                   [](const CFGEdge *e1, const CFGEdge *e2) {
-                                     return e1->weight < e2->weight;
-                                   }))
-                    ->weight;
-      if (node.symbol->hotTag)
-        node.freq =
-            std::max({sumEdgeWeights(node.outs), sumEdgeWeights(node.ins),
-                      sumEdgeWeights(node.callIns), maxCallOut});
-      else {
-        node.freq = 0;
-        ZeroOutEdgeWeights(node.ins);
-        ZeroOutEdgeWeights(node.outs);
-        ZeroOutEdgeWeights(node.callIns);
-        ZeroOutEdgeWeights(node.callOuts);
-      }
+  forEachNodeRef([this, &sumEdgeWeights, &ZeroOutEdgeWeights](CFGNode &node) {
+    uint64_t maxCallOut =
+        node.callOuts.empty()
+            ? 0
+            : (*std::max_element(node.callOuts.begin(), node.callOuts.end(),
+                                 [](const CFGEdge *e1, const CFGEdge *e2) {
+                                   return e1->weight < e2->weight;
+                                 }))
+                  ->weight;
+    node.freq = std::max({sumEdgeWeights(node.outs), sumEdgeWeights(node.ins),
+                          sumEdgeWeights(node.callIns), maxCallOut});
+    if (node.freq == 0) {
+      ZeroOutEdgeWeights(node.ins);
+      ZeroOutEdgeWeights(node.outs);
+      ZeroOutEdgeWeights(node.callIns);
+      ZeroOutEdgeWeights(node.callOuts);
+    }
 
-      this->hot |= (node.freq != 0);
+    this->hot |= (node.freq != 0);
 
-      // Find non-zero frequency nodes with fallthroughs and propagate the
-      // weight via the fallthrough edge if no other normal edge carries weight.
-      //if (node.freq && node.ftEdge && node.ftEdge->sink->hotTag) {
-      //  uint64_t sumIntraOut = 0;
-      //  for (auto *e : node.outs) {
-      //    if (e->type == CFGEdge::EdgeType::INTRA_FUNC)
-      //      sumIntraOut += e->weight;
-      //  }
-      //  if (!sumIntraOut)
-      //    node.ftEdge->weight = node.freq;
-      //}
-    });
+    // Find non-zero frequency nodes with fallthroughs and propagate the
+    // weight via the fallthrough edge if no other normal edge carries weight.
+    // if (node.freq && node.ftEdge && node.ftEdge->sink->hotTag) {
+    //  uint64_t sumIntraOut = 0;
+    //  for (auto *e : node.outs) {
+    //    if (e->type == CFGEdge::EdgeType::INTRA_FUNC)
+    //      sumIntraOut += e->weight;
+    //  }
+    //  if (!sumIntraOut)
+    //    node.ftEdge->weight = node.freq;
+    //}
+  });
 }
 
 void ControlFlowGraph::coalesceColdNodes() {
-  CFGNode * firstColdNode = nullptr;
-  nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&firstColdNode] (std::unique_ptr<CFGNode>& n) {
-    if (!n->freq){
-      if (firstColdNode) {
-        firstColdNode->symSize += n->symSize;
-        return true;
-      } else
-        firstColdNode = n.get();
+  for (auto i = nodes.begin(); i != nodes.end(); ) {
+    auto &n = *i;
+    assert(n.get());
+    if (n->freq) {
+      ++i;
+      continue;
     }
-    return false;
-  }), nodes.end());
+    // Since all edges are created from profiles, that means, all edges must
+    // have weight > 0, which also means, if a node is cold (feq_ == 0), then
+    // the node must not have any edges. (except incoming return edges, that is:
+    // n->inter_ins_ could be non-empty)
+    assert(n->ins.empty() && n->outs.empty() && n->callOuts.empty());
+    if (coalesced_cold_node != nullptr) {
+      coalesced_cold_node->symSize += n->symSize;
+      // As noted above, n->inter_ins_ could be non-empty, change edge sink to
+      // the representative node.
+      // TODO(shenhna, rahmanl): revisit "CalculateNodeFreqs" and possibly do
+      // not create return edges at all, so we don't need change the edge's sink
+      // here.
+      for (auto &e : n->callIns)
+        e->sink = coalesced_cold_node;
+      i = nodes.erase(i);
+    } else {
+      coalesced_cold_node = n.get();
+      ++i;
+    }
+  }
 }
 
 // Create an edge for "from->to".
@@ -236,18 +248,13 @@ void ControlFlowGraph::mapCallOut(CFGNode *from, CFGNode *to, uint64_t toAddr,
 }
 
 std::ostream &operator<<(std::ostream &out, const CFGNode &node) {
-  out << "["
-      << (node.getFullName() == node.controlFlowGraph->name
-              ? "Entry"
-              : std::to_string(node.getFullName().size() -
-                               node.controlFlowGraph->name.size() - 4))
+  return out << "["
+      << node.getFullName()
       << "]"
       << " [size=" << std::noshowbase << std::dec << node.symbol->size << ", "
-      << " addr=" << std::showbase << std::hex << node.symbol->ordinal << ", "
-      << " frequency=" << std::showbase << std::dec << node.freq << ", "
-      //<< " shndx=" << std::noshowbase << std::dec << node.shndx 
+      << " addr=" << std::showbase << std::hex << node.symbol->addr << ", "
+      << " frequency=" << std::showbase << std::dec << node.freq 
       << "]";
-  return out;
 }
 
 std::ostream &operator<<(std::ostream &out, const CFGEdge &edge) {

@@ -31,8 +31,9 @@ private:
   std::unique_ptr<ChainClustering> clustering;
 
 public:
-  void doOrder(std::map<SymbolEntry*, std::unique_ptr<ControlFlowGraph>> &cfgs,
-               std::list<CFGNode*> &section_order);
+  void doOrder(
+      std::map<const SymbolEntry *, std::unique_ptr<ControlFlowGraph>> &cfgs,
+      std::list<CFGNode *> &section_order);
 
   void printStats();
 };

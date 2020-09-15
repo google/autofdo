@@ -168,12 +168,11 @@ class PropellerProfWriter {
   unique_ptr<llvm::MemoryBuffer> binaryFileContent;
   unique_ptr<llvm::object::ObjectFile> objFile;
   // All symbol handlers.
-  map<StringRef, map<StringRef, unique_ptr<SymbolEntry>>> symbolNameMap;
-  map<SymbolEntry *, std::vector<SymbolEntry*>> symbolEntryMap;
-  map<SymbolEntry *, std::unique_ptr<ControlFlowGraph>> cfgs;
-  map<SymbolEntry *, CFGNode *> symbolNodeMap;
+  map<StringRef, map<StringRef, unique_ptr<const SymbolEntry>>> symbolNameMap;
+  map<const SymbolEntry *, std::unique_ptr<ControlFlowGraph>> cfgs;
+  map<const SymbolEntry *, CFGNode *> symbolNodeMap;
   // Symbol start address -> Symbol list.
-  map<uint64_t, list<SymbolEntry *>> addrMap;
+  map<uint64_t, list<const SymbolEntry *>> addrMap;
   using CounterTy = map<pair<uint64_t, uint64_t>, uint64_t>;
   map<uint64_t, CounterTy> branchCountersByPid;
   map<uint64_t, CounterTy> fallthroughCountersByPid;
@@ -182,7 +181,7 @@ class PropellerProfWriter {
   // Instead of sorting "SymbolEntry *" by pointer address, we sort it by it's
   // symbol address and symbol ordinal, so we get a stable sort.
   struct SymbolEntryPairComp {
-    using KeyT = pair<SymbolEntry *, SymbolEntry *>;
+    using KeyT = pair<const SymbolEntry *, const SymbolEntry *>;
     bool operator()(const KeyT &k1, const KeyT &k2) const {
       if (k1.first->addr != k2.first->addr)
         return k1.first->addr < k2.first->addr;
@@ -194,19 +193,19 @@ class PropellerProfWriter {
     }
   };
 
-  map<pair<SymbolEntry *, SymbolEntry *>, uint64_t, SymbolEntryPairComp>
+  map<pair<const SymbolEntry *, const SymbolEntry *>, uint64_t, SymbolEntryPairComp>
       fallthroughCountersBySymbol;
 
   // Group all bb symbols under their wrapping functions, and order function
   // groups by names.
   struct SymGroupComparator {
-    bool operator()(SymbolEntry *s1, SymbolEntry *s2) const {
-      if (s1->containingFunc->name != s2->containingFunc->name)
-        return s1->containingFunc->name < s2->containingFunc->name;
+    bool operator()(const SymbolEntry *s1, const SymbolEntry *s2) const {
+      if (s1->containingFunc->fname != s2->containingFunc->fname)
+        return s1->containingFunc->fname < s2->containingFunc->fname;
       return s1->ordinal < s2->ordinal;
     }
   };
-  set<SymbolEntry *, SymGroupComparator> hotSymbols;
+  set<const SymbolEntry *, SymGroupComparator> hotSymbols;
 
   // Whether it is Position Independent Executable. If so, addresses from perf
   // file must be adjusted to map to symbols.
@@ -218,7 +217,6 @@ class PropellerProfWriter {
   // Nullptr if build id does not exist for binaryMMapName.
   string binaryBuildId;
   int32_t perfDataFileParsed;
-  uint64_t symbolsWritten;
   uint64_t branchesWritten;
   uint64_t fallthroughsWritten;
   uint64_t extraBBsIncludedInFallthroughs;
@@ -239,25 +237,43 @@ class PropellerProfWriter {
   uint64_t adjustAddressForPIE(uint64_t pid, uint64_t addr) const;
     
   bool aggregateLBR(quipper::PerfParser &parser);
-  bool calculateFallthroughBBs(SymbolEntry *from, SymbolEntry *to,
-                               vector<SymbolEntry *> &result);
+  bool calculateFallthroughBBs(const SymbolEntry *from, const SymbolEntry *to,
+                               vector<const SymbolEntry *> &result);
 
   bool initBinaryFile();
-  bool populateSymbolMap();
-  bool populateSymbolMap2();
   bool parsePerfData();
   bool parsePerfData(const string &pName);
   void writeOuts(ofstream &fout);
-  void writeSymbols(ofstream &fout);
-  void writeBranches(ofstream &fout);
-  void writeFallthroughs(ofstream &fout);
-  void writeHotFuncAndBBList(ofstream &fout);
-  bool reorderSections(int64_t partBegin, int64_t partEnd, int64_t partNew, int64_t partNewEnd);
+  void recordBranches();
+  void recordFallthroughs();
   void summarize();
 
-  SymbolEntry *findSymbolAtAddress(uint64_t pid, uint64_t addr);
+  const SymbolEntry *findSymbolAtAddress(uint64_t pid, uint64_t addr);
 
   PathProfile pathProfile;
+
+  // Handle to bbinfo section.
+  llvm::object::SectionRef bbaddrmap_section_;
+
+  // Read function symbols from elf's symbol table.
+  using SymTabTy =
+      std::map<uint64_t, llvm::SmallVector<llvm::object::SymbolRef, 2>>;
+  SymTabTy symtab_;
+  
+  using BbAddrMapTy = std::map<llvm::StringRef, std::vector<const SymbolEntry *>>;
+  BbAddrMapTy bb_addr_map_;
+
+  void ReadSymbolTable();
+  bool ReadBbAddrMapSection();
+  const SymbolEntry *CreateFuncSymbolEntry(uint64_t ordinal,
+                                           StringRef func_name,
+                                           SymbolEntry::AliasesTy aliases,
+                                           int func_bb_num, uint64_t address,
+                                           uint64_t size);
+  const SymbolEntry *CreateBbSymbolEntry(uint64_t ordinal,
+                                         const SymbolEntry *parent_func,
+                                         int bb_index, uint64_t address,
+                                         uint64_t size, uint32_t metadata);
 
   friend PathProfile;
   friend Path;

@@ -8,7 +8,7 @@
 DECLARE_bool(dot_number_encoding);
 DECLARE_string(match_mmap_file);
 DECLARE_bool(ignore_build_id);
-DECLARE_bool(gen_path_profile);
+DECLARE_bool(print_bb_addr_map);
 
 #endif
 #endif
