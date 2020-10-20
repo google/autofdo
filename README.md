@@ -23,16 +23,16 @@ git clone --recursive https://github.com/google/autofdo.git
 **Note:** `--recursive` fetches [perf_data_converter](https://github.com/google/perf_data_converter.git),
 which contains quipper, and [protobuf](https://github.com/google/protobuf.git).
 
-Full build instructions are in the [INSTALL](./INSTALL]) file, most can just install the above
+Full build instructions are in the [INSTALL](INSTALL) file, most can just install the above
 dependencies, and:
 
 ```
 aclocal -I .; autoheader; autoconf; automake --add-missing -c
-./configure # or --with-llvm=$(which llvm-config-5.0)
-make
+./configure # or --with-llvm=$(which llvm-config-5.0), for example
+make -j 1
 ```
 
-**Note:** do not use the `-j` (parallel build) option of make. The configure scripts
+**Note:** do not use the `-j` to enable parallel build. The configure scripts
  for the sub-projects fail if run in parallel
 
 # Usage
