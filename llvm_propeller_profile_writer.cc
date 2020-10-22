@@ -166,7 +166,7 @@ static llvm::Optional<llvm::object::SectionRef> FindBbAddrMapSection(
     const llvm::object::ObjectFile &obj) {
   for (auto sec : obj.sections()) {
     Expected<llvm::StringRef> sn = sec.getName();
-    if (sn && (*sn) == ".bb_addr_map") return sec;
+    if (sn && (*sn) == ".llvm_bb_addr_map") return sec;
   }
   return llvm::None;
 }
