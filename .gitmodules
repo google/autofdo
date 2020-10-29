@@ -1,0 +1,12 @@
+[submodule "third_party/abseil"]
+	path = third_party/abseil
+	url = https://github.com/abseil/abseil-cpp.git
+[submodule "third_party/perf_data_converter"]
+	path = third_party/perf_data_converter
+	url = https://github.com/google/perf_data_converter.git
+[submodule "third_party/glog"]
+	path = third_party/glog
+	url = https://github.com/google/glog.git
+[submodule "util/regexp"]
+	path = util/regexp
+	url = https://github.com/google/re2.git
