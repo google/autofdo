@@ -232,22 +232,27 @@ bool PropellerProfWriter::ReadBbAddrMapSection() {
   while (p != section_end) {
     const uint64_t func_address = *(reinterpret_cast<const uint64_t *>(p));
     auto iter = symtab_.find(func_address);
-    CHECK(iter != symtab_.end());
     SymbolEntry::AliasesTy func_aliases;
-    for (llvm::object::SymbolRef &sr : iter->second)
-      func_aliases.push_back(llvm::cantFail(sr.getName()));
-    CHECK(!func_aliases.empty());
-
-    const uint64_t func_size =
+    bool skip_record = false;
+    uint64_t func_size = 0;
+    if (iter == symtab_.end()) {
+      skip_record = true;
+    } else {
+      for (llvm::object::SymbolRef &sr : iter->second)
+	func_aliases.push_back(llvm::cantFail(sr.getName()));
+      CHECK(!func_aliases.empty());
+      func_size =
         llvm::object::ELFSymbolRef(iter->second.front()).getSize();
+
+    }
     p += sizeof(uint64_t);
     uint64_t num_blocks = 0, meta = 0, size = 0, offset = 0,
              previous_offset = 0;
     if (!ReadUlebField("bb count", &p, section_end, &num_blocks)) return false;
     CHECK(num_blocks);
-    const SymbolEntry *func_symbol =
-        CreateFuncSymbolEntry(++ordinal, func_aliases.front(), func_aliases,
-                              num_blocks, func_address, func_size);
+    const SymbolEntry *func_symbol = skip_record ? nullptr : 
+      (CreateFuncSymbolEntry(++ordinal, func_aliases.front(), func_aliases,
+			     num_blocks, func_address, func_size));
     // Note - func_symbol can be null, we don't bail out until we can't proceed.
     for (int ib = 0; ib < num_blocks; ++ib) {
       previous_offset = offset;
@@ -257,7 +262,7 @@ bool PropellerProfWriter::ReadBbAddrMapSection() {
         // Check assumption here: bb records appear in the order of "symbol
         // offset".
         CHECK(previous_offset <= offset);
-        if (func_symbol &&
+        if (!skip_record && func_symbol &&
             !CreateBbSymbolEntry(++ordinal, func_symbol, ib,
                                  func_symbol->addr + offset, size, meta))
           return false;
