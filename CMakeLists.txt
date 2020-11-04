@@ -12,9 +12,6 @@ set (llvm_search_paths
 find_package(LLVM REQUIRED CONFIG
              PATHS ${llvm_search_paths}
              NO_DEFAULT_PATH)
-find_package(Clang REQUIRED CONFIG
-             PATHS ${llvm_search_paths}
-             NO_DEFAULT_PATH)
 
 add_subdirectory(third_party/abseil)
 add_subdirectory(third_party/glog)
