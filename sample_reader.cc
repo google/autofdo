@@ -9,10 +9,12 @@
 
 #include <list>
 #include <memory>
+#include <regex>  // NOLINT(build/c++11)
 #include <set>
 #include <string>
 #include <utility>
 
+#include "absl/flags/flag.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
 #include "base/commandlineflags.h"
@@ -24,31 +26,26 @@
 #include "llvm/Support/Path.h"
 #include "quipper/perf_parser.h"
 #include "quipper/perf_reader.h"
-#include "util/regexp/re2/re2.h"
 #include "util/symbolize/elf_reader.h"
 
-DEFINE_uint64(strip_dup_backedge_stride_limit, 0x1000,
-              "Controls the limit of backedge stride hold by the heuristic "
-              "to strip duplicated entries in LBR stack. ");
+ABSL_FLAG(uint64_t, strip_dup_backedge_stride_limit, 0x1000,
+          "Controls the limit of backedge stride hold by the heuristic "
+          "to strip duplicated entries in LBR stack. ");
 
 namespace devtools_crosstool_autofdo {
 
 PerfDataSampleReader::PerfDataSampleReader(const string &profile_file,
                                            const string &re,
-                                           const string &build_id) :
-  FileSampleReader(profile_file), build_id_(build_id) {
-  re_ = new RE2(re);
-}
+                                           const string &build_id)
+    : FileSampleReader(profile_file), build_id_(build_id), re_(re.c_str()) {}
 
-PerfDataSampleReader::~PerfDataSampleReader() {
-  delete re_;
-}
+PerfDataSampleReader::~PerfDataSampleReader() {}
 
 // Returns true if name equals any binary path in focus_bins_, or
 // focus_bins_ is empty and name matches re_.
 bool PerfDataSampleReader::MatchBinary(const string &name) {
   if (focus_bins_.empty()) {
-    return RE2::PartialMatch(name, *re_);
+    return std::regex_search(name.c_str(), re_);
   } else {
     for (const auto &binary_path : focus_bins_) {
       if (name == binary_path) {
@@ -662,7 +659,7 @@ bool PerfDataSampleReader::Append(const string &profile_file) {
            event.branch_stack[1].to.offset()) &&
           (event.branch_stack[0].from.offset() -
                event.branch_stack[0].to.offset() >
-           FLAGS_strip_dup_backedge_stride_limit))
+           absl::GetFlag(FLAGS_strip_dup_backedge_stride_limit)))
         continue;
       uint64 begin = event.branch_stack[i].to.offset();
       uint64 end = event.branch_stack[i - 1].from.offset();

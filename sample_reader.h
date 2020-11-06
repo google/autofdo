@@ -9,6 +9,7 @@
 #include <ios>
 #include <map>
 #include <memory>
+#include <regex>  // NOLINT(build/c++11)
 #include <set>
 #include <string>
 #include <utility>
@@ -18,7 +19,6 @@
 #include "base/macros.h"
 #include "llvm/Object/ObjectFile.h"
 #include "quipper/perf_parser.h"
-#include "util/regexp/re2/re2.h"
 
 namespace quipper {
 class PerfReader;
@@ -326,7 +326,7 @@ class PerfDataSampleReader : public FileSampleReader {
 
  private:
   std::set<std::string> focus_bins_;
-  const RE2* re_;
+  const std::regex re_;
 
   DISALLOW_COPY_AND_ASSIGN(PerfDataSampleReader);
 };

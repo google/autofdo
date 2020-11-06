@@ -15,25 +15,26 @@ find_package(LLVM REQUIRED CONFIG
 
 add_subdirectory(third_party/abseil)
 add_subdirectory(third_party/glog)
-add_subdirectory(util/regexp)
 
 add_definitions(-DHAVE_LLVM=1)
 include_directories(${LLVM_INCLUDE_DIRS}
     ${CMAKE_HOME_DIRECTORY}
     third_party/glog/src
     third_party/abseil
+    third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper
     ${PROJECT_BINARY_DIR}
     ${PROJECT_BINARY_DIR}/third_party/glog)
 
 add_library(sample_reader OBJECT sample_reader.cc)
-target_include_directories(sample_reader PUBLIC util util/regexp)
-target_link_libraries(sample_reader absl::base re2::re2 quipper_perf)
+target_include_directories(sample_reader PUBLIC util)
+target_link_libraries(sample_reader absl::base quipper_perf)
 
 add_library(symbol_map OBJECT symbol_map.cc)
 
 add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
 add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
+add_library(llvm_propeller_whole_program_info OBJECT llvm_propeller_whole_program_info.cc)
 
 find_package(Protobuf REQUIRED)
 protobuf_generate_cpp(PERF_DATA_PROTO_CC PERF_DATA_PROTO_HDR third_party/perf_data_converter/src/quipper/perf_data.proto)
@@ -59,12 +60,7 @@ add_library(quipper_perf OBJECT
   ${PERF_DATA_PROTO_HDR}
   ${PERF_PARSER_OPTIONS_HDR}
   ${PERF_STAT_HDR})
-target_include_directories(quipper_perf PRIVATE
-  third_party/abseil)
-target_include_directories(quipper_perf PUBLIC
-  third_party/perf_data_converter/src
-  third_party/perf_data_converter/src/quipper)
-
+  
 # when linking against absl, add the following targets:
 # target_link_libraries(create_llvm_prof 
 # absl::base 

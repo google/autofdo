@@ -7,9 +7,6 @@
 [submodule "third_party/glog"]
 	path = third_party/glog
 	url = https://github.com/google/glog.git
-[submodule "util/regexp"]
-	path = util/regexp
-	url = https://github.com/google/re2.git
 [submodule "third_party/googletest"]
 	path = third_party/googletest
 	url = https://github.com/google/googletest.git
