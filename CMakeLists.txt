@@ -21,6 +21,7 @@ add_definitions(-DHAVE_LLVM=1)
 include_directories(${LLVM_INCLUDE_DIRS}
     ${CMAKE_HOME_DIRECTORY}
     third_party/glog/src
+    third_party/abseil
     third_party/perf_data_converter/src/quipper
     ${PROJECT_BINARY_DIR}
     ${PROJECT_BINARY_DIR}/third_party/glog)
@@ -28,6 +29,8 @@ include_directories(${LLVM_INCLUDE_DIRS}
 add_library(sample_reader OBJECT sample_reader.cc)
 target_include_directories(sample_reader PUBLIC util util/regexp)
 target_link_libraries(sample_reader absl::base re2::re2 quipper_perf)
+
+add_library(symbol_map OBJECT symbol_map.cc)
 
 add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
 add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
