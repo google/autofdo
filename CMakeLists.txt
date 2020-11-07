@@ -15,22 +15,51 @@ find_package(LLVM REQUIRED CONFIG
 
 add_subdirectory(third_party/abseil)
 add_subdirectory(third_party/glog)
+add_subdirectory(third_party/googletest)
 add_subdirectory(util/regexp)
+
+add_custom_target(exclude_extlib_tests ALL 
+    COMMAND rm -f ${gtest_BINARY_DIR}/CTestTestfile.cmake
+    COMMAND rm -f ${gmock_BINARY_DIR}/CTestTestfile.cmake
+    COMMAND rm -f ${googletest-distribution_BINARY_DIR}/CTestTestfile.cmake
+    COMMAND rm -f ${glog_BINARY_DIR}/CTestTestfile.cmake
+    COMMAND rm -f ${absl_BINARY_DIR}/CTestTestfile.cmake
+    COMMAND rm -f ${RE2_BINARY_DIR}/CTestTestfile.cmake
+)
 
 add_definitions(-DHAVE_LLVM=1)
 include_directories(${LLVM_INCLUDE_DIRS}
     ${CMAKE_HOME_DIRECTORY}
     third_party/glog/src
     third_party/abseil
-    third_party/perf_data_converter/src/quipper
     ${PROJECT_BINARY_DIR}
-    ${PROJECT_BINARY_DIR}/third_party/glog)
+    ${PROJECT_BINARY_DIR}/third_party/glog
+    ${gtest_SOURCE_DIR}/include
+)
 
 add_library(sample_reader OBJECT sample_reader.cc)
 target_include_directories(sample_reader PUBLIC util util/regexp)
 target_link_libraries(sample_reader absl::base re2::re2 quipper_perf)
 
-add_library(symbol_map OBJECT symbol_map.cc)
+add_library(symbol_map OBJECT
+  symbol_map.cc
+  llvm_profile_reader.cc
+  util/symbolize/elf_reader.cc
+)
+target_include_directories(symbol_map PUBLIC util)
+target_link_libraries(symbol_map
+  absl::container
+  absl::strings
+  absl::memory
+  absl::flags
+  glog
+  LLVMProfileData
+)
+
+enable_testing()
+add_executable(symbol_map_test symbol_map_test.cc)
+target_link_libraries(symbol_map_test symbol_map gtest gtest_main)
+add_test(NAME example_test COMMAND symbol_map_test)
 
 add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
 add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
@@ -61,9 +90,18 @@ add_library(quipper_perf OBJECT
   ${PERF_STAT_HDR})
 target_include_directories(quipper_perf PRIVATE
   third_party/abseil)
-target_include_directories(quipper_perf PUBLIC
+target_include_directories(quipper_perf BEFORE
+  PUBLIC
   third_party/perf_data_converter/src
   third_party/perf_data_converter/src/quipper)
+
+add_custom_command(PRE_BUILD
+    OUTPUT prepare_cmds
+    COMMAND ln -s -f ${CMAKE_HOME_DIRECTORY}/testdata testdata
+)
+add_custom_target(prepare ALL
+    DEPENDS prepare_cmds
+)
 
 # when linking against absl, add the following targets:
 # target_link_libraries(create_llvm_prof 

@@ -5,7 +5,6 @@
 #ifndef DEVTOOLS_CROSSTOOL_AUTOFDO_SYMBOL_MAP_H_
 #define DEVTOOLS_CROSSTOOL_AUTOFDO_SYMBOL_MAP_H_
 
-#include <hash_set>
 #include <map>
 #include <set>
 #include <string>
@@ -14,7 +13,7 @@
 #include <vector>
 
 #include "base/integral_types.h"
-#include "base/logging.h"
+#include "glog/logging.h"
 #include "base/macros.h"
 #include "addr2line.h"
 #include "source_info.h"
