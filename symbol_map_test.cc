@@ -10,6 +10,8 @@
 #include "gtest/gtest.h"
 #include "third_party/abseil/absl/types/optional.h"
 
+#define FLAGS_test_srcdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
+
 namespace {
 
 class SymbolMapTest : public testing::Test {
@@ -19,7 +21,6 @@ class SymbolMapTest : public testing::Test {
   SymbolMapTest() {}
 };
 
-#define FLAGS_test_srcdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 const char SymbolMapTest::kTestDataDir[] =
     "/testdata/";
 

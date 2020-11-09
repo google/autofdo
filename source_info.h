@@ -1,7 +1,7 @@
 // Class to represent the source info.
 
-#ifndef DEVTOOLS_CROSSTOOL_AUTOFDO_SOURCE_INFO_H_
-#define DEVTOOLS_CROSSTOOL_AUTOFDO_SOURCE_INFO_H_
+#ifndef AUTOFDO_SOURCE_INFO_H_
+#define AUTOFDO_SOURCE_INFO_H_
 
 #include <string>
 #include <vector>
@@ -64,4 +64,4 @@ struct SourceInfo {
 typedef std::vector<SourceInfo> SourceStack;
 }  // namespace devtools_crosstool_autofdo
 
-#endif  // DEVTOOLS_CROSSTOOL_AUTOFDO_SOURCE_INFO_H_
+#endif  // AUTOFDO_SOURCE_INFO_H_

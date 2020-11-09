@@ -2,8 +2,8 @@
 // symbol names to the symbol class.
 // This class is thread-safe.
 
-#ifndef DEVTOOLS_CROSSTOOL_AUTOFDO_SYMBOL_MAP_H_
-#define DEVTOOLS_CROSSTOOL_AUTOFDO_SYMBOL_MAP_H_
+#ifndef AUTOFDO_SYMBOL_MAP_H_
+#define AUTOFDO_SYMBOL_MAP_H_
 
 #include <map>
 #include <set>
@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "base/integral_types.h"
-#include "glog/logging.h"
+#include "base/logging.h"
 #include "base/macros.h"
 #include "addr2line.h"
 #include "source_info.h"
@@ -514,4 +514,4 @@ class SymbolMap {
 };
 }  // namespace devtools_crosstool_autofdo
 
-#endif  // DEVTOOLS_CROSSTOOL_AUTOFDO_SYMBOL_MAP_H_
+#endif  // AUTOFDO_SYMBOL_MAP_H_

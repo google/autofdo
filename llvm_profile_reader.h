@@ -1,7 +1,7 @@
 // Read symbol_map from the llvm sample profile.
 
-#ifndef DEVTOOLS_CROSSTOOL_AUTOFDO_LLVM_PROFILE_READER_H_
-#define DEVTOOLS_CROSSTOOL_AUTOFDO_LLVM_PROFILE_READER_H_
+#ifndef AUTOFDO_LLVM_PROFILE_READER_H_
+#define AUTOFDO_LLVM_PROFILE_READER_H_
 
 #include "base_profile_reader.h"
 #include "source_info.h"
@@ -65,4 +65,4 @@ class LLVMProfileReader : public ProfileReader {
 };
 }  // namespace devtools_crosstool_autofdo
 
-#endif  // DEVTOOLS_CROSSTOOL_AUTOFDO_LLVM_PROFILE_READER_H_
+#endif  // AUTOFDO_LLVM_PROFILE_READER_H_

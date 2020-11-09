@@ -1,5 +1,5 @@
-#ifndef DEVTOOLS_CROSSTOOL_AUTOFDO_BASE_PROFILE_READER_H_
-#define DEVTOOLS_CROSSTOOL_AUTOFDO_BASE_PROFILE_READER_H_
+#ifndef AUTOFDO_BASE_PROFILE_READER_H_
+#define AUTOFDO_BASE_PROFILE_READER_H_
 
 #include <string>
 
@@ -12,4 +12,4 @@ class ProfileReader {
 };
 }  // namespace devtools_crosstool_autofdo
 
-#endif  // DEVTOOLS_CROSSTOOL_AUTOFDO_BASE_PROFILE_READER_H_
+#endif  // AUTOFDO_BASE_PROFILE_READER_H_

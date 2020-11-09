@@ -1,7 +1,7 @@
 
 1. Install prerequisite
 ***********************
-sudo apt install libunwind-dev libgflags-dev protobuf-compiler
+sudo apt install libunwind-dev libgflags-dev libssl-dev libelf-dev protobuf-compiler
 
 2. Commands
 ***********

@@ -329,6 +329,9 @@ class ElfReaderImpl {
       const char *name = it.GetSymbolName();
       if (!name) continue;
       const typename ElfArch::Sym *sym = it.GetSymbol();
+      if (sink->filter && !sink->filter(name, sym->st_value, sym->st_size,
+                        ElfArch::Bind(sym), ElfArch::Type(sym), sym->st_shndx))
+        continue;
       if ((symbol_binding < 0 || ElfArch::Bind(sym) == symbol_binding) &&
           (symbol_type < 0 || ElfArch::Type(sym) == symbol_type)) {
         typename ElfArch::Sym symbol = *sym;

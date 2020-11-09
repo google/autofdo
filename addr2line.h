@@ -3,8 +3,8 @@
 
 // Class to derive inline stack.
 
-#ifndef DEVTOOLS_CROSSTOOL_AUTOFDO_ADDR2LINE_H_
-#define DEVTOOLS_CROSSTOOL_AUTOFDO_ADDR2LINE_H_
+#ifndef AUTOFDO_ADDR2LINE_H_
+#define AUTOFDO_ADDR2LINE_H_
 
 #include <map>
 #include <string>
@@ -58,4 +58,4 @@ class LLVMAddr2line : public Addr2line {
 };
 }  // namespace devtools_crosstool_autofdo
 
-#endif  // DEVTOOLS_CROSSTOOL_AUTOFDO_ADDR2LINE_H_
+#endif  // AUTOFDO_ADDR2LINE_H_

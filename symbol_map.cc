@@ -9,7 +9,7 @@
 #include <set>
 
 #include "base/commandlineflags.h"
-#include "glog/logging.h"
+#include "base/logging.h"
 #include "addr2line.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/container/flat_hash_set.h"
