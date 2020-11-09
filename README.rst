@@ -3,7 +3,9 @@
 ***********************
 sudo apt install libunwind-dev libgflags-dev libssl-dev libelf-dev protobuf-compiler
 
-2. Commands
+If llvm is built from source, add -DLLVM_INCLUDE_TESTS=OFF to cmake command.
+
+3. Commands
 ***********
 
 - git clone --recursive --branch internal-sync git@github.com:shenhanc78/autofdo.git    
