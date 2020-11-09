@@ -3,13 +3,13 @@
 
 // Read the samples from the profile datafile.
 
-#ifndef AUTOFDO_SAMPLE_READER_H_  // NOLINT(build/header_guard)
+#ifndef AUTOFDO_SAMPLE_READER_H_
 #define AUTOFDO_SAMPLE_READER_H_
 
 #include <ios>
 #include <map>
 #include <memory>
-#include <regex>  // NOLINT(build/c++11)
+#include <regex>  // NOLINT
 #include <set>
 #include <string>
 #include <utility>

@@ -3,23 +3,22 @@
 
 // Read the samples from the profile datafile.
 
-#include "sample_reader.h"  // NOLINT(build/include)
+#include "sample_reader.h"
 
 #include <inttypes.h>
 
 #include <list>
 #include <memory>
-#include <regex>  // NOLINT(build/c++11)
 #include <set>
 #include <string>
 #include <utility>
 
-#include "absl/flags/flag.h"
-#include "absl/strings/str_format.h"
-#include "absl/strings/str_join.h"
 #include "base/commandlineflags.h"
 #include "base/logging.h"
 #include "base/port.h"
+#include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/strings/str_format.h"
+#include "third_party/abseil/absl/strings/str_join.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ObjectFile.h"
