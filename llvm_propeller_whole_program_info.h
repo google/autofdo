@@ -1,4 +1,4 @@
-#ifndef AUTOFDO_LLVM_PROPELLER_WHOLE_PROGRAM_INFO_H_  // NOLINT
+#ifndef AUTOFDO_LLVM_PROPELLER_WHOLE_PROGRAM_INFO_H_
 #define AUTOFDO_LLVM_PROPELLER_WHOLE_PROGRAM_INFO_H_
 
 #if defined(HAVE_LLVM)
@@ -9,15 +9,15 @@
 #include <memory>
 #include <vector>
 
+#include "llvm_propeller_abstract_whole_program_info.h"
+#include "llvm_propeller_bbsections.h"
+#include "llvm_propeller_cfg.h"
+#include "llvm_propeller_options.h"
+#include "llvm_propeller_statistics.h"
+#include "sample_reader.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm_propeller_abstract_whole_program_info.h"  // NOLINT
-#include "llvm_propeller_bbsections.h"  // NOLINT
-#include "llvm_propeller_cfg.h"  // NOLINT
-#include "llvm_propeller_options.h"  // NOLINT
-#include "llvm_propeller_statistics.h"  // NOLINT
-#include "sample_reader.h"  // NOLINT
 
 namespace devtools_crosstool_autofdo {
 
@@ -315,4 +315,4 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
 }  // namespace devtools_crosstool_autofdo
 
 #endif
-#endif  // NOLINT
+#endif  // AUTOFDO_LLVM_PROPELLER_WHOLE_PROGRAM_INFO_H_

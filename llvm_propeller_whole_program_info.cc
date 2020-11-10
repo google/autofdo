@@ -1,4 +1,4 @@
-#include "llvm_propeller_whole_program_info.h"  // NOLINT
+#include "llvm_propeller_whole_program_info.h"
 
 #include <fcntl.h>  // for "O_RDONLY"
 
@@ -9,9 +9,10 @@
 #include <type_traits>
 #include <utility>
 
-#include "absl/container/flat_hash_map.h"
-#include "absl/strings/str_format.h"
-#include "absl/strings/string_view.h"
+#include "llvm_propeller_formatting.h"
+#include "third_party/abseil/absl/container/flat_hash_map.h"
+#include "third_party/abseil/absl/strings/str_format.h"
+#include "third_party/abseil/absl/strings/string_view.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/ELF.h"
@@ -20,7 +21,6 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm_propeller_formatting.h"  // NOLINT
 
 namespace devtools_crosstool_autofdo {
 
