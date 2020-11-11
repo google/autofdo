@@ -16,6 +16,7 @@
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/ELF.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
@@ -115,8 +116,12 @@ static llvm::Optional<llvm::object::SectionRef> FindBbAddrMapSection(
   for (auto sec : obj.sections()) {
     Expected<llvm::StringRef> sn = sec.getName();
     llvm::object::ELFSectionRef esec(sec);
+#if LLVM_VERSION_MAJOR >= 12
     if (esec.getType() == llvm::ELF::SHT_LLVM_BB_ADDR_MAP &&
         sn && (*sn) == PropellerWholeProgramInfo::kBbAddrMapSectionName)
+#else
+    if (sn && (*sn) == PropellerWholeProgramInfo::kBbAddrMapSectionName)
+#endif
       return sec;
   }
   return llvm::None;
