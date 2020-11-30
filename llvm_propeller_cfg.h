@@ -1,4 +1,4 @@
-#ifndef AUTOFDO_LLVM_PROPELLER_CFG_H_  // NOLINT(build/header_guard)
+#ifndef AUTOFDO_LLVM_PROPELLER_CFG_H_
 #define AUTOFDO_LLVM_PROPELLER_CFG_H_
 
 #include <cstdio>
@@ -8,9 +8,9 @@
 #include <vector>
 
 #include "base/logging.h"  // For "CHECK".
+#include "llvm_propeller_bbsections.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm_propeller_bbsections.h"  // NOLINT(build/include)
 
 namespace devtools_crosstool_autofdo {
 
@@ -50,6 +50,7 @@ class CFGEdge {
 class CFGNode {
  public:
   uint64_t symbol_ordinal_ = 0;
+  uint64_t addr_ = 0;
   // Zero-based index of the basic block in the function. A zero value indicates
   // the entry basic block.
   uint32_t bb_index_ = 0;
@@ -90,6 +91,7 @@ class CFGNode {
  protected:
   CFGNode(SymbolEntry *symbol, ControlFlowGraph *cfg, int bb_index)
       : symbol_ordinal_(symbol->ordinal),
+        addr_(symbol->addr),
         bb_index_(bb_index),
         size_(symbol->size),
         cfg_(cfg) {}

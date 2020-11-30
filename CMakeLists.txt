@@ -43,6 +43,8 @@ include_directories(${LLVM_INCLUDE_DIRS}
 add_definitions(-DLLVM_VERSION_MAJOR=${LLVM_VERSION_MAJOR})
 add_definitions(-DLLVM_VERSION_MINOR=${LLVM_VERSION_MINOR})
 
+add_library(create_llvm_prof_object OBJECT create_llvm_prof.cc)
+
 add_library(sample_reader OBJECT sample_reader.cc)
 target_include_directories(sample_reader PUBLIC util)
 target_link_libraries(sample_reader absl::base quipper_perf LLVMObject)
@@ -131,9 +133,15 @@ target_link_libraries(llvm_profile_writer_test
   LLVMDebugInfoDWARF)
 add_test(NAME llvm_profile_writer_test COMMAND llvm_profile_writer_test)
 
-add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
-add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
-add_library(llvm_propeller_whole_program_info OBJECT llvm_propeller_whole_program_info.cc)
+add_library(llvm_propeller_objects OBJECT 
+  llvm_propeller_cfg.cc
+  llvm_propeller_chain_cluster_builder.cc 
+  llvm_propeller_code_layout.cc 
+  llvm_propeller_formatting.cc
+  llvm_propeller_node_chain.cc
+  llvm_propeller_node_chain_builder.cc
+  llvm_propeller_profile_writer.cc
+  llvm_propeller_whole_program_info.cc)
 
 find_package(Protobuf REQUIRED)
 protobuf_generate_cpp(PERF_DATA_PROTO_CC PERF_DATA_PROTO_HDR third_party/perf_data_converter/src/quipper/perf_data.proto)
@@ -180,12 +188,25 @@ add_custom_command(PRE_BUILD
 add_custom_target(prepare ALL
     DEPENDS prepare_cmds)
 
-# when linking against absl, add the following targets:
-# target_link_libraries(create_llvm_prof 
-# absl::base 
-# absl::str_format 
-# absl::strings
-# LLVMSupport)
+add_executable(create_llvm_prof)
+target_link_libraries(create_llvm_prof 
+                      absl::base
+                      absl::flags
+                      absl::flags_parse
+                      absl::status
+                      absl::str_format
+                      absl::strings
+                      create_llvm_prof_object
+                      glog
+                      llvm_profile_writer
+                      llvm_propeller_objects
+                      profile_creator
+                      quipper_perf
+                      sample_reader
+                      symbol_map
+                      LLVMDebugInfoDWARF
+                      LLVMSupport)
+
 
 
 

@@ -1,4 +1,4 @@
-#include "llvm_propeller_cfg.h"  // NOLINT(build/include)
+#include "llvm_propeller_cfg.h"
 
 #include <numeric>
 

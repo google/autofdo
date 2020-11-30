@@ -800,11 +800,10 @@ GetFunctionAndBasicBlockSymbols(typename C::value_type &item) {
 // A non-templated "DoCreateCfgs" is needed. Because there are unittests that
 // directly calls DoCreateCfgs with LBRAggregation.
 // TODO(b/162192070): cleanup after migrating to bbinfo.
-void PropellerWholeProgramInfo::DoCreateCfgs(LBRAggregation &&lbr_aggregation) {
+bool PropellerWholeProgramInfo::DoCreateCfgs(LBRAggregation &&lbr_aggregation) {
   if (binary_has_bb_addr_map_section())
-    DoCreateCfgs(bb_addr_map_, std::move(lbr_aggregation));
-  else
-    DoCreateCfgs(name_map_, std::move(lbr_aggregation));
+    return DoCreateCfgs(bb_addr_map_, std::move(lbr_aggregation));
+  return DoCreateCfgs(name_map_, std::move(lbr_aggregation));
 }
 
 // Create control flow graph from symbol information and perf data. CFGNodes are
@@ -812,7 +811,7 @@ void PropellerWholeProgramInfo::DoCreateCfgs(LBRAggregation &&lbr_aggregation) {
 // represent either name_map_ or bb_addr_map_.
 // TODO(b/162192070): remove template parameter after migrating to bbinfo.
 template <class C>
-void PropellerWholeProgramInfo::DoCreateCfgs(C &bb_groups,
+bool PropellerWholeProgramInfo::DoCreateCfgs(C &bb_groups,
                                              LBRAggregation &&lbr_aggregation) {
   std::map<const SymbolEntry *, std::vector<SymbolEntry *>, SymbolPtrComparator>
       largest_alias_syms;
@@ -856,7 +855,8 @@ void PropellerWholeProgramInfo::DoCreateCfgs(C &bb_groups,
     }
     ++stats_.cfgs_created;
   }
-  CreateEdges(lbr_aggregation, tmp_node_map);
+  if (!CreateEdges(lbr_aggregation, tmp_node_map))
+    return false;
 
   for (auto &cfgi : tmp_cfg_map) {
     ControlFlowGraph *cfg_ptr = cfgi.second;
@@ -879,6 +879,8 @@ void PropellerWholeProgramInfo::DoCreateCfgs(C &bb_groups,
     symtab_.clear();
     bb_addr_map_.clear();
   }
+
+  return true;
 }
 
 CFGEdge *PropellerWholeProgramInfo::InternalCreateEdge(
@@ -919,7 +921,7 @@ CFGEdge *PropellerWholeProgramInfo::InternalCreateEdge(
 // <from_addr, to_addr> in "branch_counters_", we translate it to <from_symbol,
 // to_symbol> and by using tmp_node_map, we further translate it to <from_node,
 // to_node>, and finally create a CFGEdge for such CFGNode pair.
-void PropellerWholeProgramInfo::CreateEdges(
+bool PropellerWholeProgramInfo::CreateEdges(
     const LBRAggregation &lbr_aggregation,
     const std::map<const SymbolEntry *, CFGNode *, SymbolPtrComparator>
         &tmp_node_map) {
@@ -932,14 +934,27 @@ void PropellerWholeProgramInfo::CreateEdges(
   std::map<SymbolPtrPair, uint64_t, SymbolPtrPairComparator>
       tmp_bb_fallthrough_counters;
 
+  uint64_t weight_on_dubious_edges = 0;
+  uint64_t total_weight_created = 0;
+  uint64_t edges_recorded = 0;
   for (const typename BranchCountersTy::value_type &bcnt :
        lbr_aggregation.branch_counters) {
+    ++edges_recorded;
     uint64_t from = bcnt.first.first;
     uint64_t to = bcnt.first.second;
     uint64_t weight = bcnt.second;
     const SymbolEntry *from_sym = FindSymbolUsingBinaryAddress(from);
     const SymbolEntry *to_sym = FindSymbolUsingBinaryAddress(to);
     if (!from_sym || !to_sym) continue;
+
+    if (!from_sym->IsReturnBlock() &&
+        ((to_sym->IsBasicBlock() && to_sym->addr != to) ||
+         (!to_sym->IsBasicBlock() && to_sym->func_ptr->addr != to))) {
+      // Jump is not a return and its target is not the beginning of a
+      // function or a basic block
+      weight_on_dubious_edges += weight;
+    }
+    total_weight_created += weight;
 
     // TODO(b/162192070): for bbaddrmap workflow, enable the following:
     // CHECK(from_sym->IsBasicBlock());
@@ -985,8 +1000,26 @@ void PropellerWholeProgramInfo::CreateEdges(
                        &tmp_edge_map);
   }
 
+  if (weight_on_dubious_edges / static_cast<double>(total_weight_created) >
+      0.3) {
+    LOG(ERROR) << "Too many jumps into middle of basic blocks detected, "
+                  "probably because of source drift ("
+               << CommaStyleNumberFormatter(weight_on_dubious_edges)
+               << " out of " << CommaStyleNumberFormatter(total_weight_created)
+               << ").";
+    return false;
+  }
+
+  if (stats_.edges_created / static_cast<double>(edges_recorded) < 0.0005) {
+    LOG(ERROR)
+        << "Fewer than 0.05% recorded jumps are converted into CFG edges, "
+           "probably because of source drift.";
+    return false;
+  }
+
   CreateFallthroughs(lbr_aggregation, tmp_node_map,
                      &tmp_bb_fallthrough_counters, &tmp_edge_map);
+  return true;
 }
 
 // Create edges for fallthroughs.
@@ -1146,8 +1179,6 @@ bool PropellerWholeProgramInfo::CreateCfgs() {
 
   // This must be done only after both PopulateSymbolMaps and ParsePerfData
   // finish. Note: opt_lbr_aggregation is released afterwards.
-  DoCreateCfgs(std::move(*opt_lbr_aggregation));
-
-  return true;
+  return DoCreateCfgs(std::move(*opt_lbr_aggregation));
 }
 }  // namespace devtools_crosstool_autofdo

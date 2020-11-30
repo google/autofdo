@@ -245,12 +245,12 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
 
   bool CreateCfgs() override;
 
-  void DoCreateCfgs(LBRAggregation &&lbr_aggregation);
+  bool DoCreateCfgs(LBRAggregation &&lbr_aggregation);
 
   // Create control flow graph from symbol information and perf data. Details in
   // .cc.
   template <class C>
-  void DoCreateCfgs(C &bb_groups, LBRAggregation &&lbr_aggregation);
+  bool DoCreateCfgs(C &bb_groups, LBRAggregation &&lbr_aggregation);
 
   // Helper method.
   CFGEdge *InternalCreateEdge(
@@ -263,7 +263,7 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
 
   // Helper method that creates edges and assign edge weights using
   // branch_counters_. Details in .cc.
-  void CreateEdges(const LBRAggregation &lbr_aggregation,
+  bool CreateEdges(const LBRAggregation &lbr_aggregation,
                    const std::map<const SymbolEntry *, CFGNode *,
                                   SymbolPtrComparator> &tmp_node_map);
 
