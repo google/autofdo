@@ -5,6 +5,8 @@
 #include "gmock/gmock.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
 
+#define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
+
 #define FLAGS_test_srcdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 
 namespace devtools_crosstool_autofdo {

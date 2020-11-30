@@ -1,4 +1,4 @@
-#ifndef AUTOFDO_LLVM_PROPELLER_OPTIONS_H_  // NOLINT(build/header_guard)
+#ifndef AUTOFDO_LLVM_PROPELLER_OPTIONS_H_
 #define AUTOFDO_LLVM_PROPELLER_OPTIONS_H_
 
 #include <string>

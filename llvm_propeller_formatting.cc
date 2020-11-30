@@ -1,12 +1,12 @@
-#include "llvm_propeller_formatting.h"  // NOLINT(build/include)
+#include "llvm_propeller_formatting.h"
 
 #include <iomanip>
 #include <ios>
 #include <iostream>
 #include <list>
 
-#include "llvm_propeller_bbsections.h"  // NOLINT(build/include)
-#include "llvm_propeller_cfg.h"  // NOLINT(build/include)
+#include "llvm_propeller_bbsections.h"
+#include "llvm_propeller_cfg.h"
 
 namespace devtools_crosstool_autofdo {
 

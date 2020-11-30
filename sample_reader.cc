@@ -674,6 +674,10 @@ bool PerfDataSampleReader::Append(const string &profile_file) {
       }
     }
   }
+    __builtin_printf("range_count_map_.size() = %lu\n", range_count_map_.size());
+    for (const auto &range_count : range_count_map_)
+      __builtin_printf("range_count.second = %lu\n", range_count.second);
+
   return true;
 }
 

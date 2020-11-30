@@ -1,4 +1,4 @@
-#ifndef AUTOFDO_LLVM_PROPELLER_STATISTICS_H_  // NOLINT
+#ifndef AUTOFDO_LLVM_PROPELLER_STATISTICS_H_
 #define AUTOFDO_LLVM_PROPELLER_STATISTICS_H_
 
 #include <cstdint>
@@ -15,6 +15,8 @@ struct PropellerStats {
   uint64_t edges_created = 0;
   uint64_t duplicate_symbols = 0;
   uint64_t bbaddrmap_function_does_not_have_symtab_entry = 0;
+  uint64_t original_intra_score = 0;
+  uint64_t optimized_intra_score = 0;
 
   // Merge two copies of stats.
   PropellerStats & operator += (const PropellerStats &s) {
@@ -30,8 +32,10 @@ struct PropellerStats {
     duplicate_symbols += s.duplicate_symbols;
     bbaddrmap_function_does_not_have_symtab_entry +=
         s.bbaddrmap_function_does_not_have_symtab_entry;
+    original_intra_score += s.original_intra_score;
+    optimized_intra_score += s.optimized_intra_score;
     return *this;
   }
 };
 }  // namespace devtools_crosstool_autofdo
-#endif  // AUTOFDO_LLVM_PROPELLER_STATISTICS_H_  // NOLINT
+#endif  // AUTOFDO_LLVM_PROPELLER_STATISTICS_H_

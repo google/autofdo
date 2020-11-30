@@ -10,6 +10,8 @@
 #include "gtest/gtest.h"
 #include "third_party/abseil/absl/types/optional.h"
 
+#define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
+
 #define FLAGS_test_srcdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 
 namespace {

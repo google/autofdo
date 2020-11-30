@@ -80,6 +80,7 @@ target_link_libraries(llvm_profile_reader
   absl::container
   source_info
   symbol_map)
+add_library(profile_reader OBJECT profile_reader.cc)
 
 add_library(profile_creator OBJECT
   addr2line.cc
@@ -93,6 +94,46 @@ target_include_directories(profile_creator PUBLIC
   util/regexp)
 target_link_libraries(profile_creator
   llvm_profile_writer)
+
+add_executable(profile_diff profile_diff.cc)
+target_link_libraries(profile_diff
+  absl::flags_parse
+  llvm_profile_reader
+  symbol_map)
+
+add_executable(profile_merger profile_merger.cc)
+target_link_libraries(profile_merger
+  absl::flags_parse
+  llvm_profile_reader
+  llvm_profile_writer
+  profile_creator
+  profile_reader
+  quipper_perf
+  sample_reader
+  symbol_map
+  LLVMDebugInfoDWARF)
+
+add_executable(sample_merger sample_merger.cc)
+target_link_libraries(sample_merger
+  absl::flags_parse
+  llvm_profile_reader
+  llvm_profile_writer
+  profile_creator
+  quipper_perf
+  sample_reader
+  symbol_map
+  LLVMDebugInfoDWARF)
+
+add_executable(create_llvm_prof create_llvm_prof.cc)
+target_link_libraries(create_llvm_prof
+  absl::flags_parse
+  llvm_profile_reader
+  llvm_profile_writer
+  profile_creator
+  quipper_perf
+  sample_reader
+  symbol_map
+  LLVMDebugInfoDWARF)
 
 enable_testing()
 add_executable(symbol_map_test symbol_map_test.cc)
@@ -130,6 +171,39 @@ target_link_libraries(llvm_profile_writer_test
   symbol_map
   LLVMDebugInfoDWARF)
 add_test(NAME llvm_profile_writer_test COMMAND llvm_profile_writer_test)
+
+add_executable(instruction_map_test addr2line.cc instruction_map.cc instruction_map_test.cc)
+target_link_libraries(instruction_map_test
+  gtest
+  gtest_main
+  quipper_perf
+  sample_reader
+  symbol_map
+  LLVMDebugInfoDWARF)
+add_test(NAME instruction_map_test COMMAND instruction_map_test)
+
+add_executable(profile_symbol_list_test profile_symbol_list.cc)
+target_link_libraries(profile_symbol_list_test
+  gtest
+  gtest_main
+  symbol_map)
+add_test(NAME profile_symbol_list_test COMMAND profile_symbol_list_test)
+
+add_executable(sample_reader_test sample_reader_test.cc)
+target_link_libraries(sample_reader_test
+  absl::base
+  absl::strings
+  glog
+  gtest
+  gtest_main
+  llvm_profile_writer
+  profile_creator
+  quipper_perf
+  sample_reader
+  symbol_map
+  LLVMObject
+  LLVMDebugInfoDWARF)
+add_test(NAME sample_reader_test COMMAND sample_reader_test)
 
 add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
 add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
