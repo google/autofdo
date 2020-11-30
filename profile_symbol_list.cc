@@ -10,11 +10,7 @@
 #include "third_party/abseil/absl/flags/flag.h"
 #include "llvm/ProfileData/SampleProf.h"
 
-#define FLAGS_test_srcdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
-
 namespace devtools_crosstool_autofdo {
-
-#define FLAGS_test_srcdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 
 namespace {
 bool IsValid(double ratio) { return ratio >= 0.0 && ratio <= 1.0; }

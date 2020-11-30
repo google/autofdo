@@ -18,6 +18,7 @@
 #define AUTOFDO_GCOV_H_
 
 #include "base/common.h"
+#include "third_party/abseil/absl/flags/declare.h"
 
 extern const uint32 GCOV_TAG_AFDO_FILE_NAMES;
 extern const uint32 GCOV_TAG_AFDO_FUNCTION;
@@ -26,7 +27,7 @@ extern const uint32 GCOV_TAG_AFDO_WORKING_SET;
 extern const uint32 GCOV_DATA_MAGIC;
 extern const char *GCOV_ELF_SECTION_NAME;
 
-DECLARE_uint64(gcov_version);
+ABSL_DECLARE_FLAG(uint64_t, gcov_version);
 
 enum hist_type {
   HIST_TYPE_INTERVAL,

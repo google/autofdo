@@ -82,6 +82,7 @@ target_link_libraries(llvm_profile_reader
   absl::container
   source_info
   symbol_map)
+add_library(profile_reader OBJECT profile_reader.cc)
 
 add_library(profile_creator OBJECT
   addr2line.cc
@@ -95,6 +96,55 @@ target_include_directories(profile_creator PUBLIC
   util/regexp)
 target_link_libraries(profile_creator
   llvm_profile_writer)
+
+add_executable(profile_diff profile_diff.cc)
+target_link_libraries(profile_diff
+  absl::flags_parse
+  llvm_profile_reader
+  symbol_map)
+
+add_executable(profile_merger profile_merger.cc)
+target_link_libraries(profile_merger
+  absl::flags_parse
+  llvm_profile_reader
+  llvm_profile_writer
+  profile_creator
+  profile_reader
+  quipper_perf
+  sample_reader
+  symbol_map
+  LLVMDebugInfoDWARF)
+
+add_executable(sample_merger sample_merger.cc)
+target_link_libraries(sample_merger
+  absl::flags_parse
+  llvm_profile_reader
+  llvm_profile_writer
+  profile_creator
+  quipper_perf
+  sample_reader
+  symbol_map
+  LLVMDebugInfoDWARF)
+
+add_executable(create_llvm_prof)
+target_link_libraries(create_llvm_prof 
+                      absl::base
+                      absl::flags
+                      absl::flags_parse
+                      absl::status
+                      absl::str_format
+                      absl::strings
+                      create_llvm_prof_object
+                      glog
+                      llvm_profile_reader
+                      llvm_profile_writer
+                      llvm_propeller_objects
+                      profile_creator
+                      quipper_perf
+                      sample_reader
+                      symbol_map
+                      LLVMDebugInfoDWARF
+                      LLVMSupport)
 
 enable_testing()
 add_executable(symbol_map_test symbol_map_test.cc)
@@ -143,6 +193,43 @@ add_library(llvm_propeller_objects OBJECT
   llvm_propeller_profile_writer.cc
   llvm_propeller_whole_program_info.cc)
 
+add_executable(instruction_map_test addr2line.cc instruction_map.cc instruction_map_test.cc)
+target_link_libraries(instruction_map_test
+  gtest
+  gtest_main
+  quipper_perf
+  sample_reader
+  symbol_map
+  LLVMDebugInfoDWARF)
+add_test(NAME instruction_map_test COMMAND instruction_map_test)
+
+add_executable(profile_symbol_list_test profile_symbol_list.cc)
+target_link_libraries(profile_symbol_list_test
+  gtest
+  gtest_main
+  symbol_map)
+add_test(NAME profile_symbol_list_test COMMAND profile_symbol_list_test)
+
+add_executable(sample_reader_test sample_reader_test.cc)
+target_link_libraries(sample_reader_test
+  absl::base
+  absl::strings
+  glog
+  gtest
+  gtest_main
+  llvm_profile_writer
+  profile_creator
+  quipper_perf
+  sample_reader
+  symbol_map
+  LLVMObject
+  LLVMDebugInfoDWARF)
+add_test(NAME sample_reader_test COMMAND sample_reader_test)
+
+add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
+add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
+add_library(llvm_propeller_whole_program_info OBJECT llvm_propeller_whole_program_info.cc)
+
 find_package(Protobuf REQUIRED)
 protobuf_generate_cpp(PERF_DATA_PROTO_CC PERF_DATA_PROTO_HDR third_party/perf_data_converter/src/quipper/perf_data.proto)
 protobuf_generate_cpp(PERF_PARSER_OPTIONS_CC PERF_PARSER_OPTIONS_HDR third_party/perf_data_converter/src/quipper/perf_parser_options.proto)
@@ -187,26 +274,3 @@ add_custom_command(PRE_BUILD
     COMMAND ln -s -f ${CMAKE_HOME_DIRECTORY}/testdata testdata)
 add_custom_target(prepare ALL
     DEPENDS prepare_cmds)
-
-add_executable(create_llvm_prof)
-target_link_libraries(create_llvm_prof 
-                      absl::base
-                      absl::flags
-                      absl::flags_parse
-                      absl::status
-                      absl::str_format
-                      absl::strings
-                      create_llvm_prof_object
-                      glog
-                      llvm_profile_writer
-                      llvm_propeller_objects
-                      profile_creator
-                      quipper_perf
-                      sample_reader
-                      symbol_map
-                      LLVMDebugInfoDWARF
-                      LLVMSupport)
-
-
-
-

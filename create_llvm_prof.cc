@@ -13,8 +13,9 @@
 #include "llvm_propeller_code_layout.h"
 #include "llvm_propeller_profile_writer.h"
 #include "profile_creator.h"
-#include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/status/status.h"
+#include "third_party/abseil/absl/flags/parse.h"
+#include "third_party/abseil/absl/flags/usage.h"
 
 ABSL_FLAG(string, profile, "perf.data", "Input profile file name");
 ABSL_FLAG(string, profiler, "perf",
@@ -71,9 +72,9 @@ devtools_crosstool_autofdo::PropellerOptions PropellerOptionsFromFlags() {
 }
 
 int main(int argc, char **argv) {
+  absl::SetProgramUsageMessage(argv[0]);
   absl::ParseCommandLine(argc, argv);
-  google::InitGoogleLogging(argv[0]);
-  
+
   // If the user specified --gcov instead of --out, use that value.
   // If both are used, they must match.
   if (!absl::GetFlag(FLAGS_gcov).empty()) {
@@ -85,8 +86,6 @@ int main(int argc, char **argv) {
     }
     absl::SetFlag(&FLAGS_out, absl::GetFlag(FLAGS_gcov));
   }
-
-  fprintf(stderr, "YYYY: <%s>\n", absl::GetFlag(FLAGS_out).c_str());
 
   if (absl::GetFlag(FLAGS_out).empty()) {
     LOG(ERROR) << "Need a name for the generated LLVM profile file.";
@@ -155,6 +154,8 @@ int main(int argc, char **argv) {
 
 #else
 #include <stdio.h>
+#include "third_party/abseil/absl/flags/parse.h"
+#include "third_party/abseil/absl/flags/usage.h"
 int main(int argc, char **argv) {
   fprintf(stderr,
           "ERROR: LLVM support was not enabled in this configuration.\nPlease "
