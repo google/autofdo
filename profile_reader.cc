@@ -1,9 +1,10 @@
+#include "profile_reader.h"
+
 #include "base/commandlineflags.h"
 #include "base/logging.h"
 #include "addr2line.h"
 #include "gcov.h"
 #include "symbol_map.h"
-#include "profile_reader.h"
 #include "third_party/abseil/absl/flags/flag.h"
 
 namespace devtools_crosstool_autofdo {

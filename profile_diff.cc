@@ -14,7 +14,7 @@
 #include "third_party/abseil/absl/flags/usage.h"
 
 ABSL_FLAG(bool, compare_function, false,
-            "whether to compare function level profile");
+          "whether to compare function level profile");
 
 int main(int argc, char **argv) {
   const char use[] =
