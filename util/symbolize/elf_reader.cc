@@ -858,7 +858,7 @@ string ElfReader::GetBuildId() {
         memcmp(id_note->gnu_name, "GNU\0", 4) == 0 && id_note->descsz <= 20) {
       // Pre-fill with '0' so that the build ID is always 40 chars long.
       // TODO(dehao): remove [adding once quipper is fixed (see b/21597512)
-      string build_id(40, '0');
+      string build_id((id_note->descsz << 1), '0');
       const char hexdigits[] = "0123456789abcdef";
       for (int i = 0; i < id_note->descsz; i++) {
         build_id[2 * i] = hexdigits[(id_note->id[i]) >> 4];
