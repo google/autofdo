@@ -43,6 +43,8 @@ include_directories(${LLVM_INCLUDE_DIRS}
 add_definitions(-DLLVM_VERSION_MAJOR=${LLVM_VERSION_MAJOR})
 add_definitions(-DLLVM_VERSION_MINOR=${LLVM_VERSION_MINOR})
 
+add_library(llvm_propeller_mock_whole_program_info OBJECT
+	    llvm_propeller_mock_whole_program_info.cc)
 add_library(create_llvm_prof_object OBJECT create_llvm_prof.cc)
 
 add_library(sample_reader OBJECT sample_reader.cc)
@@ -226,6 +228,78 @@ target_link_libraries(sample_reader_test
   LLVMDebugInfoDWARF)
 add_test(NAME sample_reader_test COMMAND sample_reader_test)
 
+add_executable(llvm_propeller_profile_writer_test llvm_propeller_profile_writer_test.cc)
+target_link_libraries(llvm_propeller_profile_writer_test
+                      absl::base
+                      absl::flags
+                      absl::flags_parse
+                      absl::status
+                      absl::str_format
+                      absl::strings
+                      glog
+		      gtest
+  		      gtest_main
+                      llvm_profile_reader
+                      llvm_profile_writer
+		      llvm_propeller_cfg_proto
+		      llvm_propeller_mock_whole_program_info
+                      llvm_propeller_objects
+                      profile_creator
+                      quipper_perf
+                      sample_reader
+                      symbol_map
+                      LLVMDebugInfoDWARF
+                      LLVMSupport )
+add_test(NAME llvm_propeller_profile_writer_test COMMAND llvm_propeller_profile_writer_test)
+
+add_executable(llvm_propeller_whole_program_info_test llvm_propeller_whole_program_info_test.cc)
+target_link_libraries(llvm_propeller_whole_program_info_test
+                      absl::base
+                      absl::flags
+                      absl::flags_parse
+                      absl::status
+                      absl::str_format
+                      absl::strings
+                      glog
+		      gtest
+  		      gtest_main
+                      llvm_profile_reader
+                      llvm_profile_writer
+		      llvm_propeller_cfg_proto
+		      llvm_propeller_mock_whole_program_info
+                      llvm_propeller_objects
+                      profile_creator
+                      quipper_perf
+                      sample_reader
+                      symbol_map
+                      LLVMDebugInfoDWARF
+                      LLVMSupport )
+add_test(NAME llvm_propeller_whole_program_info_test COMMAND llvm_propeller_whole_program_info_test)
+
+add_executable(llvm_propeller_code_layout_test llvm_propeller_code_layout_test.cc)
+target_link_libraries(llvm_propeller_code_layout_test
+                      absl::base
+                      absl::flags
+                      absl::flags_parse
+                      absl::status
+                      absl::str_format
+                      absl::strings
+                      glog
+		      gtest
+  		      gtest_main
+                      llvm_profile_reader
+                      llvm_profile_writer
+		      llvm_propeller_cfg_proto
+		      llvm_propeller_mock_whole_program_info
+                      llvm_propeller_objects
+                      profile_creator
+                      quipper_perf
+                      sample_reader
+                      symbol_map
+                      LLVMDebugInfoDWARF
+                      LLVMSupport )
+add_test(NAME llvm_propeller_code_layout_test COMMAND llvm_propeller_code_layout_test)
+
 add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
 add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
 add_library(llvm_propeller_whole_program_info OBJECT llvm_propeller_whole_program_info.cc)
@@ -235,6 +309,9 @@ protobuf_generate_cpp(PERF_DATA_PROTO_CC PERF_DATA_PROTO_HDR third_party/perf_da
 protobuf_generate_cpp(PERF_PARSER_OPTIONS_CC PERF_PARSER_OPTIONS_HDR third_party/perf_data_converter/src/quipper/perf_parser_options.proto)
 protobuf_generate_cpp(PERF_STAT_CC PERF_STAT_HDR third_party/perf_data_converter/src/quipper/perf_stat.proto)
 add_library(perf_data_proto OBJECT ${PERF_DATA_PROTO_CC})
+
+protobuf_generate_cpp(LLVM_PROPELLER_CFG_PROTO_CC LLVM_PROPELLER_CFG_PROTO_HDR llvm_propeller_cfg.proto)
+add_library(llvm_propeller_cfg_proto OBJECT ${LLVM_PROPELLER_CFG_PROTO_CC})
 
 add_library(quipper_perf OBJECT 
   third_party/perf_data_converter/src/quipper/address_mapper.cc
