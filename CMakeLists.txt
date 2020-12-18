@@ -43,6 +43,28 @@ include_directories(${LLVM_INCLUDE_DIRS}
 add_definitions(-DLLVM_VERSION_MAJOR=${LLVM_VERSION_MAJOR})
 add_definitions(-DLLVM_VERSION_MINOR=${LLVM_VERSION_MINOR})
 
+set (CMAKE_REQUIRED_INCLUDES ${LLVM_INCLUDE_DIRS})
+set (CMAKE_REQUIRED_LIBRARIES LLVMObject)
+check_cxx_source_compiles(
+    "
+    #include \"llvm/Object/ELFObjectFile.h\"
+  
+    using llvmELF64LE = llvm::object::ELF64LE;
+    using llvmELFFile = llvm::object::ELFFile<llvmELF64LE>;
+    using llvmELFObjFile = llvm::object::ELFObjectFile<llvmELF64LE>;
+
+    const llvmELFFile *foo(llvmELFObjFile *elf_object) {
+      const llvmELFFile *elf_file = &elf_object->getELFFile();
+      return elf_file;
+    }
+    int main() {
+      foo(nullptr);
+    }
+    "
+    LLVM_GETELFFILE_RET_REFERENCE
+)
+add_definitions(-DLLVM_GETELFFILE_RET_REFERENCE=${LLVM_GETELFFILE_RET_REFERENCE})
+
 add_library(llvm_propeller_mock_whole_program_info OBJECT
 	    llvm_propeller_mock_whole_program_info.cc)
 add_library(create_llvm_prof_object OBJECT create_llvm_prof.cc)
@@ -182,7 +204,8 @@ target_link_libraries(llvm_profile_writer_test
   quipper_perf
   sample_reader
   symbol_map
-  LLVMDebugInfoDWARF)
+  LLVMDebugInfoDWARF
+  LLVMProfileData)
 add_test(NAME llvm_profile_writer_test COMMAND llvm_profile_writer_test)
 
 add_library(llvm_propeller_objects OBJECT 

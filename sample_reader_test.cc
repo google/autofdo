@@ -16,11 +16,11 @@
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
 
+ABSL_DECLARE_FLAG(uint64_t, strip_dup_backedge_stride_limit);
+
 #define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 
 #define FLAGS_test_srcdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
-
-ABSL_DECLARE_FLAG(uint64_t, strip_dup_backedge_stride_limit);
 
 namespace {
 
@@ -28,7 +28,9 @@ class SampleReaderTest : public testing::Test {
  protected:
   static const char kTestDataDir[];
 
-  SampleReaderTest() { absl::SetFlag(&FLAGS_strip_dup_backedge_stride_limit, 0x50); }
+  SampleReaderTest() {
+    absl::SetFlag(&FLAGS_strip_dup_backedge_stride_limit, 0x50);
+  }
 };
 
 const char SampleReaderTest::kTestDataDir[] =

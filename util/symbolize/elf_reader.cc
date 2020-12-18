@@ -337,7 +337,8 @@ class ElfReaderImpl {
         typename ElfArch::Sym symbol = *sym;
         if (!get_raw_symbol_values)
           AdjustSymbolValue(&symbol);
-        sink->AddSymbol(name, symbol.st_value, symbol.st_size);
+        sink->AddSymbol(name, symbol.st_value, symbol.st_size,
+                        ElfArch::Bind(sym), ElfArch::Type(sym), sym->st_shndx);
       }
     }
   }

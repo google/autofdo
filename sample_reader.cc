@@ -294,10 +294,13 @@ static bool ReadLoadableSegments(BinaryInfo *binary_info) {
                      llvm::object::ObjectFile>(binary_info->object_file.get());
   if (!elf_object) return false;
 
-  const llvm::object::ELFFile<ELFT> *elf_file = elf_object->getELFFile();
-  if (!elf_file) return false;
+#ifdef LLVM_GETELFFILE_RET_REFERENCE
+  const llvm::object::ELFFile<ELFT> &elf_file = elf_object->getELFFile();
+#else
+  const llvm::object::ELFFile<ELFT> &elf_file = *elf_object->getELFFile();
+#endif
 
-  auto program_headers = elf_file->program_headers();
+  auto program_headers = elf_file.program_headers();
   if (!program_headers) return false;
 
   for (const typename ELFT::Phdr &phdr : *program_headers) {

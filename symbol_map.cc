@@ -387,7 +387,8 @@ class SymbolReader : public util::ElfReader::SymbolSink {
                         AddressSymbolMap *address_symbol_map)
       : name_alias_map_(name_alias_map),
         address_symbol_map_(address_symbol_map) { }
-  virtual void AddSymbol(const char *name, uint64 address, uint64 size) {
+  void AddSymbol(const char *name, uint64 address, uint64 size, int binding,
+                 int type, int section) override {
     std::pair<AddressSymbolMap::iterator, bool> ret =
         address_symbol_map_->insert(
             std::make_pair(address, std::make_pair(std::string(name), size)));
