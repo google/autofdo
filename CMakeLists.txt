@@ -53,9 +53,9 @@ check_cxx_source_compiles(
     using llvmELFFile = llvm::object::ELFFile<llvmELF64LE>;
     using llvmELFObjFile = llvm::object::ELFObjectFile<llvmELF64LE>;
 
-    const llvmELFFile *foo(llvmELFObjFile *elf_object) {
-      const llvmELFFile *elf_file = &elf_object->getELFFile();
-      return elf_file;
+    bool foo(llvmELFObjFile *elf_object) {
+      const llvmELFFile &elf_file = elf_object->getELFFile();
+      return elf_file.isLE();
     }
     int main() {
       foo(nullptr);
@@ -63,7 +63,9 @@ check_cxx_source_compiles(
     "
     LLVM_GETELFFILE_RET_REFERENCE
 )
-add_definitions(-DLLVM_GETELFFILE_RET_REFERENCE=${LLVM_GETELFFILE_RET_REFERENCE})
+if (LLVM_GETELFFILE_RET_REFERENCE)
+  add_definitions(-DLLVM_GETELFFILE_RET_REFERENCE=${LLVM_GETELFFILE_RET_REFERENCE})
+endif()
 
 add_library(llvm_propeller_mock_whole_program_info OBJECT
 	    llvm_propeller_mock_whole_program_info.cc)

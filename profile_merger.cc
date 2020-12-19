@@ -19,6 +19,7 @@
 #include "third_party/abseil/absl/memory/memory.h"
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
+#include "llvm/Config/llvm-config.h"
 
 ABSL_FLAG(string, output_file, "fbdata.afdo", "Output file name");
 ABSL_FLAG(bool, is_llvm, false, "Whether the profile is for LLVM");
@@ -199,6 +200,7 @@ int main(int argc, char **argv) {
     if (!sample_profile_writer) return 1;
 
     writer->setSymbolMap(&symbol_map);
+#if LLVM_VERSION_MAJOR >= 11
     if (has_prof_sym_list) {
       sample_profile_writer->setProfileSymbolList(&prof_sym_list);
     }
@@ -211,6 +213,7 @@ int main(int argc, char **argv) {
     if (absl::GetFlag(FLAGS_partial_profile)) {
       sample_profile_writer->setPartialProfile();
     }
+#endif
     writer->setSymbolMap(&symbol_map);
     if (!writer->WriteToFile(absl::GetFlag(FLAGS_output_file))) {
       LOG(FATAL) << "Error writing to " << absl::GetFlag(FLAGS_output_file);
