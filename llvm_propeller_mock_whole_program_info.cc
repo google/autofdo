@@ -2,6 +2,7 @@
 
 #include <fcntl.h>  // for "O_RDONLY"
 
+#include "llvm_propeller_options.pb.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"  // for "typename google::protobuf::io::FileInputStream"
 #include "google/protobuf/text_format.h"
 #include "llvm/Support/Allocator.h"
@@ -17,14 +18,15 @@ static void PopulateNodeFromNodePb(CFGNode *node, const CFGNodePb &nodepb) {
 }
 
 bool MockPropellerWholeProgramInfo::CreateCfgs() {
-  int fd = open(options_.perf_name.c_str(), O_RDONLY);
+  std::string perf_name = options_.perf_names(0);
+  int fd = open(perf_name.c_str(), O_RDONLY);
   if (fd == -1) {
-    LOG(ERROR) << "Failed to open and read '" << options_.perf_name << "'.";
+    LOG(ERROR) << "Failed to open and read '" << perf_name << "'.";
     return false;
   }
   typename google::protobuf::io::FileInputStream fis(fd);
   fis.SetCloseOnDelete(true);
-  LOG(INFO) << "Reading from '" << options_.perf_name << "'.";
+  LOG(INFO) << "Reading from '" << perf_name << "'.";
   if (!google::protobuf::TextFormat::Parse(&fis, &propeller_pb_)) return false;
   CreateCfgsFromProtobuf();
   return true;

@@ -10,8 +10,7 @@
 
 namespace devtools_crosstool_autofdo {
 
-class MockPropellerWholeProgramInfo final
-    : public AbstractPropellerWholeProgramInfo {
+class MockPropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
  public:
   explicit MockPropellerWholeProgramInfo(const PropellerOptions &options)
       : AbstractPropellerWholeProgramInfo(options) {}

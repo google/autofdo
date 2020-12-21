@@ -215,6 +215,12 @@ struct BinaryPerfInfo {
         perf_reader(std::move(bpi.perf_reader)),
         perf_parser(std::move(bpi.perf_parser)) {}
 
+  void ResetPerfInfo() {
+    perf_parser.reset();
+    perf_reader.reset();
+    binary_mmaps.clear();
+  }
+
   explicit operator bool() const { return !binary_mmaps.empty(); }
 };
 

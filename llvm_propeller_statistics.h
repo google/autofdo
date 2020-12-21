@@ -6,6 +6,7 @@
 namespace devtools_crosstool_autofdo {
 struct PropellerStats {
   int binary_mmap_num = 0;
+  int perf_file_parsed = 0;
   uint64_t br_counters_accumulated = 0;
   uint64_t edges_with_same_src_sink_but_different_type = 0;
   uint64_t dropped_symbols = 0;
@@ -21,6 +22,7 @@ struct PropellerStats {
   // Merge two copies of stats.
   PropellerStats & operator += (const PropellerStats &s) {
     binary_mmap_num += s.binary_mmap_num;
+    perf_file_parsed += s.perf_file_parsed;
     br_counters_accumulated += s.br_counters_accumulated;
     edges_with_same_src_sink_but_different_type +=
         s.edges_with_same_src_sink_but_different_type;

@@ -6,7 +6,8 @@
 #include "llvm_propeller_cfg.pb.h"
 #include "llvm_propeller_mock_whole_program_info.h"
 #include "llvm_propeller_node_chain_builder.h"
-#include "llvm_propeller_options.h"
+#include "llvm_propeller_options.pb.h"
+#include "llvm_propeller_options_builder.h"
 #include "llvm_propeller_whole_program_info.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -26,11 +27,12 @@ using ::devtools_crosstool_autofdo::PropellerWholeProgramInfo;
 using ::devtools_crosstool_autofdo::NodeChain;
 using ::devtools_crosstool_autofdo::NodeChainBuilder;
 using ::devtools_crosstool_autofdo::PropellerOptions;
+using ::devtools_crosstool_autofdo::PropellerOptionsBuilder;
 
 static std::unique_ptr<MockPropellerWholeProgramInfo> GetTestWholeProgramInfo(
     const std::string &testdata_path) {
-  const PropellerOptions options = {
-      .perf_name = FLAGS_test_srcdir + testdata_path};
+  const PropellerOptions options(PropellerOptionsBuilder().AddPerfNames(
+      FLAGS_test_srcdir + testdata_path));
   auto whole_program_info = std::make_unique<
       devtools_crosstool_autofdo::MockPropellerWholeProgramInfo>(options);
   if (!whole_program_info->CreateCfgs()) {
@@ -226,4 +228,5 @@ TEST(CodeLayoutTest, FindOptimalMultiFunctionLayout) {
   EXPECT_EQ(1, func_cluster_info_4.cold_cluster_layout_index);
   EXPECT_EQ(2, func_cluster_info_9.cold_cluster_layout_index);
 }
+
 }  // namespace

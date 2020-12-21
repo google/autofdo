@@ -11,9 +11,9 @@
 #include "llvm_propeller_abstract_whole_program_info.h"
 #include "llvm_propeller_code_layout.h"
 #include "llvm_propeller_formatting.h"
-#include "llvm_propeller_options.h"
 #include "llvm_propeller_statistics.h"
 #include "llvm_propeller_whole_program_info.h"
+#include "llvm_propeller_options.pb.h"
 #include "third_party/abseil/absl/status/status.h"
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "llvm/ADT/StringRef.h"
@@ -25,19 +25,9 @@ namespace devtools_crosstool_autofdo {
 
 using ::llvm::Optional;
 using ::llvm::StringRef;
+using ::devtools_crosstool_autofdo::PropellerOptions;
 
-absl::Status GeneratePropellerProfiles(
-    const std::string &binary_file_name, const std::string &perf_file_name,
-    const std::string &cluster_output_file_name,
-    const std::string &order_output_file_name,
-    const std::string &profiled_binary_name, bool ignore_build_id) {
-  PropellerOptions opts;
-  opts.WithBinaryName(binary_file_name)
-      .WithPerfName(perf_file_name)
-      .WithOutName(cluster_output_file_name)
-      .WithSymOrderName(order_output_file_name)
-      .WithProfiledBinaryName(profiled_binary_name)
-      .WithIgnoreBuildId(ignore_build_id);
+absl::Status GeneratePropellerProfiles(const PropellerOptions &opts) {
   std::unique_ptr<PropellerProfWriter> writer =
       PropellerProfWriter::Create(opts);
   if (!writer)
@@ -67,8 +57,9 @@ std::unique_ptr<PropellerProfWriter> PropellerProfWriter::Create(
 }
 
 void PropellerProfWriter::PrintStats() const {
+  LOG(INFO) << "Parsed " << stats_.perf_file_parsed << " profiles.";
   LOG(INFO) << "Total " << stats_.binary_mmap_num << " binary mmaps.";
-  LOG(INFO) << "Totaly  "
+  LOG(INFO) << "Total  "
             << CommaStyleNumberFormatter(stats_.br_counters_accumulated)
             << " br entries accumulated.";
   LOG(INFO) << "Created " << CommaStyleNumberFormatter(stats_.syms_created)
@@ -122,7 +113,7 @@ bool PropellerProfWriter::Write(const CodeLayoutResult &layout_cluster_info) {
   // layout_cluster_info, as there is one cold cluster per function.
   std::vector<CFGNode *> cold_symbol_order(layout_cluster_info.size());
 
-  std::ofstream out_stream(options_.out_name);
+  std::ofstream out_stream(options_.cluster_out_name());
   // TODO(b/160339651): Remove this in favour of structured format in LLVM code.
   for (const auto &[unused, func_layout_info] : layout_cluster_info) {
     stats_.original_intra_score += func_layout_info.original_intra_score;
@@ -149,7 +140,7 @@ bool PropellerProfWriter::Write(const CodeLayoutResult &layout_cluster_info) {
         func_layout_info.cfg->coalesced_cold_node_;
   }
 
-  std::ofstream symorder_stream(options_.symorder_name);
+  std::ofstream symorder_stream(options_.symbol_order_out_name());
   for (const auto &[func_name, cluster_id] : symbol_order) {
     symorder_stream << func_name.str();
     if (cluster_id.hasValue()) symorder_stream << "." << cluster_id.getValue();

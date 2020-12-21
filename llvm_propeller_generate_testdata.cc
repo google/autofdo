@@ -8,7 +8,8 @@
 
 #include "base/commandlineflags.h"
 #include "base/logging.h"
-#include "llvm_propeller_options.h"
+#include "llvm_propeller_options.pb.h"
+#include "llvm_propeller_options_builder.h"
 #include "llvm_propeller_whole_program_info.h"
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
@@ -26,6 +27,7 @@ DEFINE_bool(ignore_build_id, false,
             "Same as the option in create_llvm_prof.");
 
 using ::devtools_crosstool_autofdo::PropellerOptions;
+using ::devtools_crosstool_autofdo::PropellerOptionsBuilder;
 using ::devtools_crosstool_autofdo::PropellerWholeProgramInfo;
 using ::devtools_crosstool_autofdo::PropProt;
 
@@ -45,12 +47,13 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  PropellerOptions options{
-      .binary_name = FLAGS_binary,
-      .perf_name = FLAGS_profile,
-      .profiled_binary_name = FLAGS_profiled_binary_name,
-      .ignore_build_id = absl::GetFlag(FLAGS_ignore_build_id),
-      .keep_frontend_intermediate_data = true};
+  PropellerOptions options(
+      PropellerOptionsBuilder()
+          .SetBinaryName(FLAGS_binary)
+          .AddPerfNames(FLAGS_profile)
+          .SetProfiledBinaryName(FLAGS_profiled_binary_name)
+          .SetIgnoreBuildId(FLAGS_ignore_build_id)
+          .SetKeepFrontendIntermediateData(true));
 
   std::unique_ptr<PropellerWholeProgramInfo> whole_program_info =
       PropellerWholeProgramInfo::Create(options);

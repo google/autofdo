@@ -67,6 +67,18 @@ if (LLVM_GETELFFILE_RET_REFERENCE)
   add_definitions(-DLLVM_GETELFFILE_RET_REFERENCE=${LLVM_GETELFFILE_RET_REFERENCE})
 endif()
 
+find_package(Protobuf REQUIRED)
+protobuf_generate_cpp(PERF_DATA_PROTO_CC PERF_DATA_PROTO_HDR third_party/perf_data_converter/src/quipper/perf_data.proto)
+protobuf_generate_cpp(PERF_PARSER_OPTIONS_CC PERF_PARSER_OPTIONS_HDR third_party/perf_data_converter/src/quipper/perf_parser_options.proto)
+protobuf_generate_cpp(PERF_STAT_CC PERF_STAT_HDR third_party/perf_data_converter/src/quipper/perf_stat.proto)
+add_library(perf_data_proto OBJECT ${PERF_DATA_PROTO_CC})
+
+protobuf_generate_cpp(LLVM_PROPELLER_CFG_PROTO_CC LLVM_PROPELLER_CFG_PROTO_HDR llvm_propeller_cfg.proto)
+add_library(llvm_propeller_cfg_proto OBJECT ${LLVM_PROPELLER_CFG_PROTO_CC})
+
+protobuf_generate_cpp(LLVM_PROPELLER_OPTIONS_PROTO_CC LLVM_PROPELLER_OPTIONS_PROTO_HDR llvm_propeller_options.proto)
+add_library(llvm_propeller_options OBJECT llvm_propeller_options_builder.cc ${LLVM_PROPELLER_OPTIONS_PROTO_CC})
+
 add_library(llvm_propeller_mock_whole_program_info OBJECT
 	    llvm_propeller_mock_whole_program_info.cc)
 add_library(create_llvm_prof_object OBJECT create_llvm_prof.cc)
@@ -217,8 +229,11 @@ add_library(llvm_propeller_objects OBJECT
   llvm_propeller_formatting.cc
   llvm_propeller_node_chain.cc
   llvm_propeller_node_chain_builder.cc
+  llvm_propeller_options_builder.cc
+  ${LLVM_PROPELLER_OPTIONS_PROTO_CC}
   llvm_propeller_profile_writer.cc
   llvm_propeller_whole_program_info.cc)
+  
 
 add_executable(instruction_map_test addr2line.cc instruction_map.cc instruction_map_test.cc)
 target_link_libraries(instruction_map_test
@@ -328,15 +343,6 @@ add_test(NAME llvm_propeller_code_layout_test COMMAND llvm_propeller_code_layout
 add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
 add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
 add_library(llvm_propeller_whole_program_info OBJECT llvm_propeller_whole_program_info.cc)
-
-find_package(Protobuf REQUIRED)
-protobuf_generate_cpp(PERF_DATA_PROTO_CC PERF_DATA_PROTO_HDR third_party/perf_data_converter/src/quipper/perf_data.proto)
-protobuf_generate_cpp(PERF_PARSER_OPTIONS_CC PERF_PARSER_OPTIONS_HDR third_party/perf_data_converter/src/quipper/perf_parser_options.proto)
-protobuf_generate_cpp(PERF_STAT_CC PERF_STAT_HDR third_party/perf_data_converter/src/quipper/perf_stat.proto)
-add_library(perf_data_proto OBJECT ${PERF_DATA_PROTO_CC})
-
-protobuf_generate_cpp(LLVM_PROPELLER_CFG_PROTO_CC LLVM_PROPELLER_CFG_PROTO_HDR llvm_propeller_cfg.proto)
-add_library(llvm_propeller_cfg_proto OBJECT ${LLVM_PROPELLER_CFG_PROTO_CC})
 
 add_library(quipper_perf OBJECT 
   third_party/perf_data_converter/src/quipper/address_mapper.cc

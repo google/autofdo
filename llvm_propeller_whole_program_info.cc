@@ -130,14 +130,15 @@ static llvm::Optional<llvm::object::SectionRef> FindBbAddrMapSection(
 std::unique_ptr<PropellerWholeProgramInfo> PropellerWholeProgramInfo::Create(
     const PropellerOptions &options) {
   BinaryPerfInfo bpi;
-  if (!PerfDataReader().SelectBinaryInfo(options.binary_name, &bpi.binary_info))
+  if (!PerfDataReader().SelectBinaryInfo(options.binary_name(),
+                                         &bpi.binary_info))
     return nullptr;
 
   Optional<llvm::object::SectionRef> opt_bb_addr_map_section =
       FindBbAddrMapSection(*(bpi.binary_info.object_file));
   // Do not use std::make_unique, ctor is not public.
   if (opt_bb_addr_map_section)
-    LOG(INFO) << "'" << options.binary_name << "' has '"
+    LOG(INFO) << "'" << options.binary_name() << "' has '"
               << kBbAddrMapSectionName << "' section.";
   return std::unique_ptr<PropellerWholeProgramInfo>(
       new PropellerWholeProgramInfo(options, std::move(bpi),
@@ -740,32 +741,52 @@ bool PropellerWholeProgramInfo::PopulateSymbolMap() {
 
 // Parse perf data file.
 Optional<LBRAggregation> PropellerWholeProgramInfo::ParsePerfData() {
-  if (options_.perf_name.empty()) return llvm::None;
-  std::string match_mmap_name = options_.binary_name;
-  if (!options_.profiled_binary_name.empty())
+  if (!options_.perf_names_size()) return llvm::None;
+  std::string match_mmap_name = options_.binary_name();
+  if (options_.has_profiled_binary_name())
     // If user specified "--profiled_binary_name", we use it.
-    match_mmap_name = options_.profiled_binary_name;
-  else if (!options_.ignore_build_id)
+    match_mmap_name = options_.profiled_binary_name();
+  else if (!options_.ignore_build_id())
     // Set match_mmap_name to "", so PerfDataReader::SelectPerfInfo auto
     // picks filename based on build-id, if build id is present; otherwise,
     // PerfDataReader::SelectPerfInfo uses options_.binary_name to match mmap
     // event file name.
     match_mmap_name = "";
 
-  if (!PerfDataReader().SelectPerfInfo(options_.perf_name, match_mmap_name,
-                                       &binary_perf_info_)) {
-    LOG(ERROR) << "Parse perf file failed or no mmap found.";
-    return llvm::None;
-  }
-
-  if (binary_perf_info_.binary_mmaps.empty()) {
-    LOG(ERROR) << "No mmap found, cannot proceed";
-    return llvm::None;
-  }
-  stats_.binary_mmap_num = binary_perf_info_.binary_mmaps.size();
   LBRAggregation lbr_aggregation;
-  perf_data_reader_.AggregateLBR(binary_perf_info_, &lbr_aggregation);
-  stats_.br_counters_accumulated = std::accumulate(
+
+  int fi = 0;
+  binary_perf_info_.ResetPerfInfo();
+  for (const std::string &perf_file :  options_.perf_names()) {
+    if (perf_file.empty()) continue;
+    LOG(INFO) << "Parsing '" << perf_file << "' [" << ++fi << " of "
+              << options_.perf_names_size() << "] ...";
+    if (!PerfDataReader().SelectPerfInfo(perf_file, match_mmap_name,
+                                         &binary_perf_info_)) {
+      LOG(WARNING) << "Skipped profile '" << perf_file
+                   << "', because reading file failed or no mmap found.";
+      continue;
+    }
+    if (binary_perf_info_.binary_mmaps.empty()) {
+      LOG(WARNING) << "Skipped profile '" << perf_file
+                   << "', because no matching mmap found.";
+      continue;
+    }
+    stats_.binary_mmap_num += binary_perf_info_.binary_mmaps.size();
+    ++stats_.perf_file_parsed;
+    perf_data_reader_.AggregateLBR(binary_perf_info_, &lbr_aggregation);
+    if (!options_.keep_frontend_intermediate_data()) {
+      // "keep_frontend_intermediate_data" is only used by tests.
+      binary_perf_info_.ResetPerfInfo();  // Release quipper parser memory.
+    } else if (options_.perf_names_size() > 1) {
+      // If there are multiple perf data files, we must always call
+      // ResetPerfInfo regardless of options_.keep_frontend_intermediate_data.
+      LOG(ERROR) << "Usage error: --keep_frontend_intermediate_data is only "
+                    "valid for single profile file input.";
+      return llvm::None;
+    }
+  }
+  stats_.br_counters_accumulated += std::accumulate(
       lbr_aggregation.branch_counters.begin(),
       lbr_aggregation.branch_counters.end(), 0,
       [](uint64_t cnt, typename BranchCountersTy::value_type &v) {
@@ -773,6 +794,10 @@ Optional<LBRAggregation> PropellerWholeProgramInfo::ParsePerfData() {
       });
   if (stats_.br_counters_accumulated <= 100)
     LOG(WARNING) << "Too few branch records in perf data.";
+  if (!stats_.perf_file_parsed) {
+    LOG(ERROR) << "No perf file is parsed, cannot proceed.";
+    return llvm::None;
+  }
   return Optional<LBRAggregation>(std::move(lbr_aggregation));
 }
 
@@ -870,7 +895,7 @@ bool PropellerWholeProgramInfo::DoCreateCfgs(C &bb_groups,
   }
 
   // Release / cleanup.
-  if (!options_.keep_frontend_intermediate_data) {
+  if (!options_.keep_frontend_intermediate_data()) {
     name_map_.clear();
     binary_perf_info_.binary_mmaps.clear();
     lbr_aggregation = LBRAggregation();

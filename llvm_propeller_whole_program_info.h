@@ -12,7 +12,7 @@
 #include "llvm_propeller_abstract_whole_program_info.h"
 #include "llvm_propeller_bbsections.h"
 #include "llvm_propeller_cfg.h"
-#include "llvm_propeller_options.h"
+#include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_statistics.h"
 #include "sample_reader.h"
 #include "llvm/ADT/StringRef.h"

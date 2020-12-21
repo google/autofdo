@@ -7,6 +7,8 @@
 #include "llvm_propeller_bbsections.h"
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_formatting.h"
+#include "llvm_propeller_options.pb.h"
+#include "llvm_propeller_options_builder.h"
 #include "llvm_propeller_whole_program_info.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -19,6 +21,7 @@
 namespace {
 
 using ::devtools_crosstool_autofdo::PropellerOptions;
+using ::devtools_crosstool_autofdo::PropellerOptionsBuilder;
 using ::devtools_crosstool_autofdo::PropellerProfWriter;
 using ::devtools_crosstool_autofdo::PropellerWholeProgramInfo;
 using ::devtools_crosstool_autofdo::SymbolEntry;
@@ -30,7 +33,7 @@ TEST(LlvmPropellerProfileWriterTest, FindBinaryBuildId) {
                    "llvm_function_samples.binary");
   std::unique_ptr<PropellerWholeProgramInfo> pwi =
       PropellerWholeProgramInfo::Create(
-          PropellerOptions().WithBinaryName(binary));
+          PropellerOptions(PropellerOptionsBuilder().SetBinaryName(binary)));
   ASSERT_TRUE(pwi);
   EXPECT_FALSE(pwi->binary_is_pie());
   EXPECT_STREQ(pwi->binary_build_id().c_str(),
@@ -44,7 +47,7 @@ TEST(LlvmPropellerProfileWriterTest, PieAndNoBuildId) {
                    "propeller_barebone_pie_nobuildid.bin");
   std::unique_ptr<PropellerWholeProgramInfo> pwi =
       PropellerWholeProgramInfo::Create(
-          PropellerOptions().WithBinaryName(binary));
+          PropellerOptions(PropellerOptionsBuilder().SetBinaryName(binary)));
   ASSERT_TRUE(pwi);
   EXPECT_TRUE(pwi->binary_is_pie());
   EXPECT_TRUE(pwi->binary_build_id().empty());
@@ -56,9 +59,10 @@ TEST(LlvmPropellerProfileWriterTest, BBLabels1) {
                    "/testdata/"
                    "propeller_bblabels.bin");
   std::unique_ptr<PropellerWholeProgramInfo> pwi =
-      PropellerWholeProgramInfo::Create(PropellerOptions()
-                                      .WithBinaryName(binary)
-                                      .WithKeepFrontendIntermediateData(true));
+      PropellerWholeProgramInfo::Create(
+          PropellerOptions(PropellerOptionsBuilder()
+                               .SetBinaryName(binary)
+                               .SetKeepFrontendIntermediateData(true)));
   ASSERT_TRUE(pwi);
   EXPECT_TRUE(pwi->PopulateSymbolMap());
   const auto &name_map = pwi->name_map();
@@ -90,9 +94,9 @@ TEST(LlvmPropellerProfileWriterTest, BBLabelsAliases) {
                    "propeller_bblabels_aliases.bin");
   std::unique_ptr<PropellerWholeProgramInfo> pwi =
       PropellerWholeProgramInfo::Create(
-          PropellerOptions()
-              .WithBinaryName(binary)
-              .WithKeepFrontendIntermediateData(true));
+          PropellerOptions(PropellerOptionsBuilder()
+                               .SetBinaryName(binary)
+                               .SetKeepFrontendIntermediateData(true)));
   ASSERT_TRUE(pwi);
 
   EXPECT_TRUE(pwi->PopulateSymbolMap());
@@ -152,12 +156,12 @@ TEST(LlvmPropellerProfileWriterTest, ParsePerf0_relative_path) {
                    "/testdata/"
                    "propeller_sample.perfdata");
   // Test that specifying --mmap_name with relative name works.
-  auto writer_ptr = PropellerProfWriter::Create(
-      PropellerOptions()
-          .WithBinaryName(binary)
-          .WithPerfName(perfdata)
-          .WithOutName("dummy.out")
-          .WithProfiledBinaryName("any_relative_path/propeller_sample.bin"));
+  auto writer_ptr = PropellerProfWriter::Create(PropellerOptions(
+      PropellerOptionsBuilder()
+          .SetBinaryName(binary)
+          .AddPerfNames(perfdata)
+          .SetClusterOutName("dummy.out")
+          .SetProfiledBinaryName("any_relative_path/propeller_sample.bin")));
   // When relative file path is passed to "--binary", we use the name portion of
   // the path (like `basename <filename>`) to match mmap entries. Since
   // propeller_sample.perfdata contains mmaps with file name
@@ -175,12 +179,12 @@ TEST(LlvmPropellerProfileWriterTest, ParsePerf0_absolute_path) {
       absl::StrCat(FLAGS_test_srcdir,
                    "/testdata/"
                    "propeller_sample.perfdata");
-  auto writer_ptr = PropellerProfWriter::Create(
-      PropellerOptions()
-          .WithBinaryName(binary)
-          .WithPerfName(perfdata)
-          .WithOutName("dummy.out")
-          .WithProfiledBinaryName("/any_absolute_path/propeller_sample.bin"));
+  auto writer_ptr = PropellerProfWriter::Create(PropellerOptions(
+      PropellerOptionsBuilder()
+          .SetBinaryName(binary)
+          .AddPerfNames(perfdata)
+          .SetClusterOutName("dummy.out")
+          .SetProfiledBinaryName("/any_absolute_path/propeller_sample.bin")));
   // When absolute file path is passed to "--binary", we use absolute path to
   // match mmap entries. Since propeller_sample.perfdata only contains mmap with
   // file name
@@ -199,12 +203,12 @@ TEST(LlvmPropellerProfileWriterTest, ParsePerf1) {
                    "/testdata/"
                    "propeller_sample.perfdata");
   auto writer_ptr = PropellerProfWriter::Create(
-      PropellerOptions()
-          .WithBinaryName(binary)
-          .WithPerfName(perfdata)
-          .WithOutName("dummy.out")
-          .WithProfiledBinaryName("propeller_sample.bin")
-          .WithKeepFrontendIntermediateData(true));
+      PropellerOptions(PropellerOptionsBuilder()
+                           .SetBinaryName(binary)
+                           .AddPerfNames(perfdata)
+                           .SetClusterOutName("dummy.out")
+                           .SetProfiledBinaryName("propeller_sample.bin")
+                           .SetKeepFrontendIntermediateData(true)));
   ASSERT_NE(nullptr, writer_ptr);
   const PropellerWholeProgramInfo *pwi =
       static_cast<const PropellerWholeProgramInfo *>(
@@ -228,9 +232,9 @@ TEST(LlvmPropellerProfileWriterTest, BinaryWithDuplicateSymbols) {
                    "propeller_duplicate_symbols.bin");
   std::unique_ptr<PropellerWholeProgramInfo> pwi =
       PropellerWholeProgramInfo::Create(
-          PropellerOptions()
-              .WithBinaryName(binary)
-              .WithKeepFrontendIntermediateData(true));
+          PropellerOptions(PropellerOptionsBuilder()
+                           .SetBinaryName(binary)
+                           .SetKeepFrontendIntermediateData(true)));
   ASSERT_TRUE(pwi);
   EXPECT_TRUE(pwi->PopulateSymbolMap());
 

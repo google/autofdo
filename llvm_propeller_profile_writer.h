@@ -7,26 +7,15 @@
 
 #include "llvm_propeller_abstract_whole_program_info.h"
 #include "llvm_propeller_code_layout.h"
+#include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_statistics.h"
 #include "third_party/abseil/absl/status/status.h"
 
 namespace devtools_crosstool_autofdo {
 
-// Propeller interface for SWIG as well as create_llvm_prof. Arguments:
-//  `binary_file_name`: binary file name
-//  `perf_file_name`: perf.data file name
-//  `cluster_output_file_name`: propeller cluster information output file name
-//  `order_output_file_name`: propeller symbol order output file name
-//  `profiled_binary_name`: if not empty, use this as file name to match MMAP
-//                        events in perf.data file, can be "".
-//  `ignore_build_id`: if set, use binary_file_name or profiled_binary_name to
-//                     match MMAP events. Otherwise, use buildid (if exists)
-//                     to match.
+// Propeller interface for SWIG as well as create_llvm_prof.
 absl::Status GeneratePropellerProfiles(
-    const std::string &binary_file_name, const std::string &perf_file_name,
-    const std::string &cluster_output_file_name,
-    const std::string &order_output_file_name,
-    const std::string &profiled_binary_name, bool ignore_build_id);
+    const devtools_crosstool_autofdo::PropellerOptions &opts);
 
 class PropellerProfWriter {
  public:

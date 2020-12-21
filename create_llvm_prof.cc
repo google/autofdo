@@ -11,13 +11,18 @@
 #include "base/logging.h"
 #include "llvm_profile_writer.h"
 #include "llvm_propeller_code_layout.h"
+#include "llvm_propeller_options.pb.h"
+#include "llvm_propeller_options_builder.h"
 #include "llvm_propeller_profile_writer.h"
 #include "profile_creator.h"
 #include "third_party/abseil/absl/status/status.h"
+#include "third_party/abseil/absl/strings/str_split.h"
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
 
-ABSL_FLAG(string, profile, "perf.data", "Input profile file name");
+ABSL_FLAG(string, profile, "perf.data",
+          "Input profile file name. When --format=propeller, this accepts "
+          "multiple profile file names concatnated by ';'");
 ABSL_FLAG(string, profiler, "perf",
           "Input profile type. Possible values: perf, text, or prefetch");
 ABSL_FLAG(string, prefetch_hints, "", "Input cache prefetch hints");
@@ -62,13 +67,17 @@ ABSL_FLAG(bool, ignore_build_id, false,
           "Ignore build id, use file name to match data in perfdata file.");
 
 devtools_crosstool_autofdo::PropellerOptions PropellerOptionsFromFlags() {
-  return devtools_crosstool_autofdo::PropellerOptions{
-      .binary_name = absl::GetFlag(FLAGS_binary),
-      .perf_name = absl::GetFlag(FLAGS_profile),
-      .out_name = absl::GetFlag(FLAGS_out),
-      .symorder_name = absl::GetFlag(FLAGS_propeller_symorder),
-      .profiled_binary_name = absl::GetFlag(FLAGS_profiled_binary_name),
-      .ignore_build_id = absl::GetFlag(FLAGS_ignore_build_id)};
+  std::vector<std::string> perf_files =
+      absl::StrSplit(absl::GetFlag(FLAGS_profile), ';');
+  devtools_crosstool_autofdo::PropellerOptionsBuilder option_builder;
+  for (const std::string &pf : perf_files)
+    if (!pf.empty()) option_builder.AddPerfNames(pf);
+  return devtools_crosstool_autofdo::PropellerOptions(
+      option_builder.SetBinaryName(absl::GetFlag(FLAGS_binary))
+          .SetClusterOutName(absl::GetFlag(FLAGS_out))
+          .SetSymbolOrderOutName(absl::GetFlag(FLAGS_propeller_symorder))
+          .SetProfiledBinaryName(absl::GetFlag(FLAGS_profiled_binary_name))
+          .SetIgnoreBuildId(absl::GetFlag(FLAGS_ignore_build_id)));
 }
 
 int main(int argc, char **argv) {
@@ -104,10 +113,7 @@ int main(int argc, char **argv) {
   // before checking for other formats.
   if (absl::GetFlag(FLAGS_format) == "propeller") {
     absl::Status status = devtools_crosstool_autofdo::GeneratePropellerProfiles(
-        absl::GetFlag(FLAGS_binary), absl::GetFlag(FLAGS_profile),
-        absl::GetFlag(FLAGS_out), absl::GetFlag(FLAGS_propeller_symorder),
-        absl::GetFlag(FLAGS_profiled_binary_name),
-        absl::GetFlag(FLAGS_ignore_build_id));
+        PropellerOptionsFromFlags());
     if (!status.ok()) {
       LOG(ERROR) << status;
       return 1;
