@@ -3,12 +3,20 @@
 ***********************
 sudo apt install libunwind-dev libgflags-dev libssl-dev libelf-dev protobuf-compiler
 
-If llvm is built from source, add -DLLVM_INCLUDE_TESTS=OFF to cmake command.
+Autofdo tool depends on llvm. Currently it needs llvm major version >= 10. You can either install llvm using command like "sudo apt install llvm-10", or you can build the latest llvm from source.
 
-3. Commands
+2. Commands
 ***********
+2.1 If build llvm from source
+- git clone https://github.com/llvm/llvm-project.git
+- mkdir build
+- cd build
+- cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=ON -DBUILD_SHARED_LIBS=OFF -DLLVM_PARALLEL_LINK_JOBS=1 -DLLVM_INCLUDE_TESTS=OFF -DCMAKE_INSTALL_PREFIX=/path/to/llvm/install -DLLVM_ENABLE_PROJECTS="clang"
+- ninja
+- ninja install
 
-- git clone --recursive --branch internal-sync git@github.com:shenhanc78/autofdo.git    
+2.2 Build autofdo tools
+- git clone --recursive --branch internal-sync https://github.com/shenhanc78/autofdo.git
 - cd autofdo
 - mkdir build
 - cd build
