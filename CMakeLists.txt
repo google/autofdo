@@ -22,8 +22,7 @@ add_custom_target(exclude_extlib_tests ALL
     COMMAND rm -f ${gmock_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${googletest-distribution_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${glog_BINARY_DIR}/CTestTestfile.cmake
-    COMMAND rm -f ${absl_BINARY_DIR}/CTestTestfile.cmake
-    COMMAND rm -f ${RE2_BINARY_DIR}/CTestTestfile.cmake)
+    COMMAND rm -f ${absl_BINARY_DIR}/CTestTestfile.cmake)
 
 add_definitions(-DHAVE_LLVM=1)
 include_directories(${LLVM_INCLUDE_DIRS}
