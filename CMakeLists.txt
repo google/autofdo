@@ -81,6 +81,7 @@ add_library(llvm_propeller_options OBJECT llvm_propeller_options_builder.cc ${LL
 add_library(llvm_propeller_mock_whole_program_info OBJECT
 	    llvm_propeller_mock_whole_program_info.cc)
 add_library(create_llvm_prof_object OBJECT create_llvm_prof.cc)
+add_dependencies(create_llvm_prof_object llvm_propeller_options)
 
 add_library(sample_reader OBJECT sample_reader.cc)
 target_include_directories(sample_reader PUBLIC util)
