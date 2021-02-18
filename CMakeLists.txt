@@ -77,9 +77,11 @@ add_library(llvm_propeller_cfg_proto OBJECT ${LLVM_PROPELLER_CFG_PROTO_CC})
 
 protobuf_generate_cpp(LLVM_PROPELLER_OPTIONS_PROTO_CC LLVM_PROPELLER_OPTIONS_PROTO_HDR llvm_propeller_options.proto)
 add_library(llvm_propeller_options OBJECT llvm_propeller_options_builder.cc ${LLVM_PROPELLER_OPTIONS_PROTO_CC})
+add_dependencies(llvm_propeller_options quipper_perf)
 
 add_library(llvm_propeller_mock_whole_program_info OBJECT
 	    llvm_propeller_mock_whole_program_info.cc)
+add_dependencies(llvm_propeller_mock_whole_program_info llvm_propeller_options)
 add_library(create_llvm_prof_object OBJECT create_llvm_prof.cc)
 add_dependencies(create_llvm_prof_object llvm_propeller_options)
 
@@ -105,6 +107,7 @@ add_library(llvm_profile_writer OBJECT
   gcov.cc
   llvm_profile_writer.cc
   profile_writer.cc)
+add_dependencies(llvm_profile_writer quipper_perf)
 target_include_directories(llvm_profile_writer PUBLIC
   libprotobuf
   third_party/perf_data_converter/src
@@ -233,6 +236,7 @@ add_library(llvm_propeller_objects OBJECT
   ${LLVM_PROPELLER_OPTIONS_PROTO_CC}
   llvm_propeller_profile_writer.cc
   llvm_propeller_whole_program_info.cc)
+add_dependencies(llvm_propeller_objects llvm_profile_writer)
   
 
 add_executable(instruction_map_test addr2line.cc instruction_map.cc instruction_map_test.cc)
@@ -343,6 +347,7 @@ add_test(NAME llvm_propeller_code_layout_test COMMAND llvm_propeller_code_layout
 add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
 add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
 add_library(llvm_propeller_whole_program_info OBJECT llvm_propeller_whole_program_info.cc)
+add_dependencies(llvm_propeller_whole_program_info llvm_propeller_options)
 
 add_library(quipper_perf OBJECT 
   third_party/perf_data_converter/src/quipper/address_mapper.cc
