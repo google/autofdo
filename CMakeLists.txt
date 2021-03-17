@@ -82,6 +82,7 @@ add_dependencies(llvm_propeller_options quipper_perf)
 add_library(llvm_propeller_mock_whole_program_info OBJECT
 	    llvm_propeller_mock_whole_program_info.cc)
 add_dependencies(llvm_propeller_mock_whole_program_info llvm_propeller_options)
+add_dependencies(llvm_propeller_mock_whole_program_info llvm_propeller_cfg_proto)
 add_library(create_llvm_prof_object OBJECT create_llvm_prof.cc)
 add_dependencies(create_llvm_prof_object llvm_propeller_options)
 
