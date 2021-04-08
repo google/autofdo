@@ -1,20 +1,7 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2013 Google Inc. All Rights Reserved.
+// Author: dnovillo@google.com (Diego Novillo)
 
 // Convert a Perf profile to LLVM.
-
-#include "config.h"
 
 #if defined(HAVE_LLVM)
 #include <stdio.h>
@@ -25,38 +12,34 @@
 #include <utility>
 #include <vector>
 
-#include "gflags/gflags.h"
-#include "glog/logging.h"
+#include "base/commandlineflags.h"
+#include "base/logging.h"
 #include "llvm_profile_writer.h"
 #include "profile_writer.h"
+#include "third_party/abseil/absl/flags/declare.h"
+#include "third_party/abseil/absl/flags/flag.h"
 
-DECLARE_bool(debug_dump);
+ABSL_DECLARE_FLAG(bool, debug_dump);
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
-bool LLVMProfileBuilder::Write(const string &output_filename,
-                               llvm::sampleprof::SampleProfileFormat format,
-                               const SymbolMap &symbol_map,
-                               const StringIndexMap &name_table) {
+bool LLVMProfileBuilder::Write(
+    const std::string &output_filename,
+    llvm::sampleprof::SampleProfileFormat format, const SymbolMap &symbol_map,
+    const StringIndexMap &name_table,
+    llvm::sampleprof::SampleProfileWriter *sample_profile_writer) {
   // Collect the profiles for every symbol in the name table.
   LLVMProfileBuilder builder(name_table);
   const auto &profiles = builder.ConvertProfiles(symbol_map);
 
   // Write all the gathered profiles to the output file.
-  auto WriterOrErr = llvm::sampleprof::SampleProfileWriter::create(
-      llvm::StringRef(output_filename), format);
-  if (std::error_code EC = WriterOrErr.getError()) {
-    LOG(ERROR) << "Error creating profile output file '" << output_filename
-               << "': " << EC.message();
-    return false;
-  }
-  auto Writer = std::move(WriterOrErr.get());
-  if (std::error_code EC = Writer->write(profiles)) {
+  if (std::error_code EC = sample_profile_writer->write(profiles)) {
     LOG(ERROR) << "Error writing profile output to '" << output_filename
                << "': " << EC.message();
     return false;
   }
 
+  sample_profile_writer->getOutputStream().flush();
   return true;
 }
 
@@ -66,7 +49,7 @@ const llvm::StringMap<llvm::sampleprof::FunctionSamples>
   return GetProfiles();
 }
 
-void LLVMProfileBuilder::VisitTopSymbol(const string &name,
+void LLVMProfileBuilder::VisitTopSymbol(const std::string &name,
                                         const Symbol *node) {
   llvm::StringRef name_ref = GetNameRef(name);
   llvm::sampleprof::FunctionSamples &profile = profiles_[name_ref];
@@ -97,7 +80,7 @@ void LLVMProfileBuilder::VisitCallsite(const Callsite &callsite) {
   auto CalleeName = GetNameRef(Symbol::Name(callsite.second));
   auto &callee_profile =
       caller_profile.functionSamplesAt(llvm::sampleprof::LineLocation(
-          line, discriminator))[CalleeName.str()];
+          line, discriminator))[std::string(CalleeName)];
   callee_profile.setName(CalleeName);
   inline_stack_.push_back(&callee_profile);
 }
@@ -132,35 +115,63 @@ void LLVMProfileBuilder::Visit(const Symbol *node) {
     const auto &target_map = pos_count.second.target_map;
     for (const auto &target_count : target_map) {
       if (std::error_code EC = llvm::MergeResult(
-              result_, profile.addCalledTargetSamples(line, discriminator,
-                                                      target_count.first,
-                                                      target_count.second)))
+              result_, profile.addCalledTargetSamples(
+                           line, discriminator,
+                           llvm::StringRef(target_count.first.data(),
+                                           target_count.first.size()),
+                           target_count.second)))
         LOG(FATAL) << "Error updating called target samples for '"
                    << node->info.func_name << "': " << EC.message();
     }
   }
 }
 
-llvm::StringRef LLVMProfileBuilder::GetNameRef(const string &str) {
+llvm::StringRef LLVMProfileBuilder::GetNameRef(const std::string &str) {
   StringIndexMap::const_iterator ret =
       name_table_.find(Symbol::Name(str.c_str()));
   CHECK(ret != name_table_.end());
+  // Suffixes should have been elided by SymbolMap::ElideSuffixesAndMerge()
+  if (ret->first.find(".llvm.") != std::string::npos) {
+    LOG(WARNING) << "Unexpected character '.' in function name: " << ret->first
+               << ". Likely thin LTO .llvm.<hash> suffix has not been cleared.";
+  }
   return llvm::StringRef(ret->first.c_str());
 }
 
-bool LLVMProfileWriter::WriteToFile(const string &output_filename) {
-  if (FLAGS_debug_dump) Dump();
+llvm::sampleprof::SampleProfileWriter *LLVMProfileWriter::CreateSampleWriter(
+    const std::string &output_filename) {
+  auto WriterOrErr = llvm::sampleprof::SampleProfileWriter::create(
+      llvm::StringRef(output_filename), format_);
+  if (std::error_code EC = WriterOrErr.getError()) {
+    LOG(ERROR) << "Error creating profile output file '" << output_filename
+               << "': " << EC.message();
+    return nullptr;
+  }
+  sample_prof_writer_ = std::move(WriterOrErr.get());
+  return sample_prof_writer_.get();
+}
+
+bool LLVMProfileWriter::WriteToFile(const std::string &output_filename) {
+  if (absl::GetFlag(FLAGS_debug_dump)) Dump();
 
   // Populate the symbol table. This table contains all the symbols
   // for functions found in the binary.
   StringIndexMap name_table;
   StringTableUpdater::Update(*symbol_map_, &name_table);
 
+  // If the underlying llvm profile writer has not been created yet,
+  // create it here.
+  if (!sample_prof_writer_) {
+    if (!CreateSampleWriter(output_filename)) {
+      return false;
+    }
+  }
+
   // Gather profiles for all the symbols.
   return LLVMProfileBuilder::Write(output_filename, format_, *symbol_map_,
-                                   name_table);
+                                   name_table, sample_prof_writer_.get());
 }
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // HAVE_LLVM

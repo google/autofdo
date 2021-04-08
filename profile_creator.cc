@@ -1,38 +1,39 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2011 Google Inc. All Rights Reserved.
+// Author: dehao@google.com (Dehao Chen)
 
 // Create AutoFDO Profile.
 
+#include "profile_creator.h"
+
+#include <inttypes.h>
+
 #include <memory>
 
-#include "profile_creator.h"
-#include "gflags/gflags.h"
-#include "base/common.h"
+#include "base/commandlineflags.h"
+#include "base/integral_types.h"
+#include "base/logging.h"
 #include "addr2line.h"
 #include "gcov.h"
+#include "llvm_profile_writer.h"
 #include "profile.h"
+#include "profile_symbol_list.h"
 #include "profile_writer.h"
 #include "sample_reader.h"
 #include "symbol_map.h"
-#include "symbolize/elf_reader.h"
-#include "module_grouper.h"
+#include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/memory/memory.h"
+#include "util/symbolize/elf_reader.h"
+
+ABSL_FLAG(std::string, focus_binary_re, "",
+              "RE for the focused binary file name");
+
+AUTOFDO_PROFILE_SYMBOL_LIST_FLAGS;
 
 namespace {
 struct PrefetchHint {
   uint64 address;
   int64 delta;
-  string type;
+  std::string type;
 };
 
 typedef std::vector<PrefetchHint> PrefetchHints;
@@ -44,27 +45,28 @@ typedef std::vector<PrefetchHint> PrefetchHints;
 //   - a PC (hex), corresponding to a memory operation in the profiled binary
 //     (i.e. load/store);
 //   - a delta (signed, base 10); and
-//   - the hint type (lower case string) - e.g. nta, t{0|1|2}.
+//   - the hint type (string) - e.g. NTA, T{0|1|2}.
 // The delta is to the next cache miss, calculated from the memory location
 // used in the memory operation at PC.
-PrefetchHints ReadPrefetchHints(const string &file_name) {
+PrefetchHints ReadPrefetchHints(const std::string &file_name) {
   PrefetchHints hints;
   FILE *fp = fopen(file_name.c_str(), "r");
   if (fp == nullptr) {
     LOG(ERROR) << "Cannot open " << file_name << "to read";
   } else {
-    uint64 address = 0;
-    int64 delta = 0;
+    uint64_t address = 0;
+    int64_t delta = 0;
     char prefetch_type[5];
     while (!feof(fp)) {
-      if (3 != fscanf(fp, "%llx,%lld,%s\n", &address, &delta, prefetch_type)) {
+      if (3 != fscanf(fp, "%" SCNx64 ",%" SCNd64 ",%s\n", &address, &delta,
+                      prefetch_type)) {
         LOG(ERROR) << "Error reading from " << file_name;
         break;
       }
       // We don't validate the type here. We'll just use it as a suffix to the
       // "__prefetch" indirect call, and let the compiler decide if it
       // supports it.
-      string type(prefetch_type);
+      std::string type(prefetch_type);
       hints.push_back({address, delta, type});
     }
     fclose(fp);
@@ -72,9 +74,10 @@ PrefetchHints ReadPrefetchHints(const string &file_name) {
   return hints;
 }
 }  // namespace
-namespace autofdo {
+
+namespace devtools_crosstool_autofdo {
 uint64 ProfileCreator::GetTotalCountFromTextProfile(
-    const string &input_profile_name) {
+    const std::string &input_profile_name) {
   ProfileCreator creator("");
   if (!creator.ReadSample(input_profile_name, "text")) {
     return 0;
@@ -88,21 +91,19 @@ bool ProfileCreator::CheckAndAssignAddr2Line(SymbolMap *symbol_map,
     LOG(ERROR) << "Error reading binary " << binary_;
     return false;
   }
-  symbol_map->set_addr2line(std::unique_ptr<Addr2line>(addr2line));
+  symbol_map->set_addr2line(absl::WrapUnique(addr2line));
   return true;
 }
 
-bool ProfileCreator::CreateProfile(const string &input_profile_name,
-                                   const string &profiler,
+bool ProfileCreator::CreateProfile(const std::string &input_profile_name,
+                                   const std::string &profiler,
                                    ProfileWriter *writer,
-                                   const string &output_profile_name) {
+                                   const std::string &output_profile_name,
+                                   bool store_sym_list_in_profile) {
   SymbolMap symbol_map(binary_);
   symbol_map.set_use_discriminator_encoding(use_discriminator_encoding_);
-  auto grouper =
-      ModuleGrouper::GroupModule(binary_, GCOV_ELF_SECTION_NAME, &symbol_map);
 
   writer->setSymbolMap(&symbol_map);
-  writer->setModuleMap(&grouper->module_map());
   if (profiler == "prefetch") {
     symbol_map.set_ignore_thresholds(true);
     if (!ConvertPrefetchHints(input_profile_name, &symbol_map)) return false;
@@ -110,24 +111,61 @@ bool ProfileCreator::CreateProfile(const string &input_profile_name,
     if (!ReadSample(input_profile_name, profiler)) return false;
     if (!ComputeProfile(&symbol_map)) return false;
   }
+
+  // Create prof_sym_list after symbol_map is populated because prof_sym_list
+  // is expected not to contain any symbol showing up in the profile in
+  // symbol_map.
+  std::unique_ptr<llvm::sampleprof::ProfileSymbolList> prof_sym_list;
+  NameSizeList name_size_list;
+  if (store_sym_list_in_profile) {
+    prof_sym_list = absl::make_unique<llvm::sampleprof::ProfileSymbolList>();
+    name_size_list = symbol_map.collectNamesForProfSymList();
+    fillProfileSymbolList(prof_sym_list.get(), name_size_list, &symbol_map,
+                          absl::GetFlag(FLAGS_symbol_list_size_coverage_ratio));
+    prof_sym_list->setToCompress(absl::GetFlag(FLAGS_compress_symbol_list));
+    auto llvm_profile_writer = static_cast<LLVMProfileWriter *>(writer);
+    auto sample_profile_writer =
+        llvm_profile_writer->CreateSampleWriter(output_profile_name);
+    if (!sample_profile_writer) return false;
+    sample_profile_writer->setProfileSymbolList(prof_sym_list.get());
+  }
+
   bool ret = writer->WriteToFile(output_profile_name);
   return ret;
 }
 
-bool ProfileCreator::ReadSample(const string &input_profile_name,
-                                const string &profiler) {
+bool ProfileCreator::ReadSample(const std::string &input_profile_name,
+                                const std::string &profiler) {
   if (profiler == "perf") {
-    string file_base_name = basename(binary_.c_str());
-    size_t unstripped_at = file_base_name.find(".unstripped");
-    if (unstripped_at != string::npos) {
-      file_base_name.erase(unstripped_at);
-    }
-    CHECK(!file_base_name.empty()) << "Cannot find basename for: " << binary_;
+    std::string focus_binary_re;
+    std::string build_id;
+    // Sets the regular expression to filter samples for a given binary.
+    if (!absl::GetFlag(FLAGS_focus_binary_re).empty()) {
+      focus_binary_re = absl::GetFlag(FLAGS_focus_binary_re);
+    } else {
+      char *dup_name = strdup(binary_.c_str());
+      char *strip_ptr = strstr(dup_name, ".unstripped");
+      if (strip_ptr) {
+        *strip_ptr = 0;
+      }
+      const char *file_base_name = basename(dup_name);
+      CHECK(file_base_name) << "Cannot find basename for: " << binary_;
+      focus_binary_re = std::string(".*/") + file_base_name + "$";
+      free(dup_name);
 
-    ElfReader reader(binary_);
+      util::ElfReader reader(binary_);
+      // Quipper (and other parts of google3's perf infrastructure) pads build
+      // ids--if present--to 40 characters hex. Match that behavior here. See
+      // quipper/perf_data_utils.h and b/21597512 for more info.
+      const size_t kMinPerfBuildIDStringLength = 40;
+      build_id = reader.GetBuildId();
+      if (build_id.length() > 0 &&
+          build_id.length() < kMinPerfBuildIDStringLength)
+        build_id.resize(kMinPerfBuildIDStringLength, '0');
+    }
 
     sample_reader_ = new PerfDataSampleReader(
-        input_profile_name, std::move(file_base_name));
+        input_profile_name, focus_binary_re, build_id);
   } else if (profiler == "text") {
     sample_reader_ = new TextSampleReaderWriter(input_profile_name);
   } else {
@@ -151,11 +189,10 @@ bool ProfileCreator::ComputeProfile(SymbolMap *symbol_map) {
   Profile profile(sample_reader_, binary_, symbol_map->get_addr2line(),
                   symbol_map);
   profile.ComputeProfile();
-
   return true;
 }
 
-bool ProfileCreator::ConvertPrefetchHints(const string &profile_file,
+bool ProfileCreator::ConvertPrefetchHints(const std::string &profile_file,
                                           SymbolMap *symbol_map) {
   // Explicitly request constructing an Addr2line object with no sample profile
   // data. Otherwise, passing an empty sample profile map would elide all
@@ -168,7 +205,7 @@ bool ProfileCreator::ConvertPrefetchHints(const string &profile_file,
   for (auto &hint : hints) {
     uint64 pc = hint.address;
     int64 delta = hint.delta;
-    const string *name = nullptr;
+    const std::string *name = nullptr;
     if (!symbol_map->GetSymbolInfoByAddr(pc, &name, nullptr, nullptr)) {
       LOG(INFO) << "Instruction address not found:" << std::hex << pc;
       continue;
@@ -178,30 +215,23 @@ bool ProfileCreator::ConvertPrefetchHints(const string &profile_file,
     SourceStack stack;
     symbol_map->get_addr2line()->GetInlineStack(pc, &stack);
 
-    if (symbol_map->map().find(*name) == symbol_map->map().end()) {
-      symbol_map->AddSymbol(*name);
-      // Add bogus samples, so that the writer won't skip over.
-      if (!symbol_map->TraverseInlineStack(*name, stack,
-                                           symbol_map->count_threshold() + 1)) {
-        LOG(WARNING) << "Ignoring address " << std::hex << pc
-                     << ". No inline stack found.";
+    if (!symbol_map->EnsureEntryInFuncForSymbol(*name, pc))
         continue;
-      }
-    }
 
     // Currently, the profile format expects unsigned values, corresponding to
     // number of collected samples. We're hacking support for prefetch hints on
     // top of that, and prefetch hints are signed. For now, we'll explicitly
     // cast to unsigned.
     if (!symbol_map->AddIndirectCallTarget(
-            *name, stack,
-            "__prefetch_" + hint.type + "_" + std::to_string(prefetch_index),
-            static_cast<uint64>(delta))) {
+        *name, stack,
+        "__prefetch_" + hint.type + "_" + std::to_string(prefetch_index),
+        static_cast<uint64>(delta))) {
       LOG(WARNING) << "Ignoring address " << std::hex << pc
                    << ". Could not add an indirect call target. Likely the "
                       "inline stack is empty for this address.";
     }
   }
+  symbol_map->ElideSuffixesAndMerge();
   return true;
 }
 
@@ -213,8 +243,9 @@ uint64 ProfileCreator::TotalSamples() {
   }
 }
 
-bool MergeSample(const string &input_file, const string &input_profiler,
-                 const string &binary, const string &output_file) {
+bool MergeSample(const std::string &input_file,
+                 const std::string &input_profiler, const std::string &binary,
+                 const std::string &output_file) {
   TextSampleReaderWriter writer(output_file);
   if (writer.IsFileExist()) {
     if (!writer.ReadAndSetTotalCount()) {
@@ -234,4 +265,4 @@ bool MergeSample(const string &input_file, const string &input_profiler,
     return false;
   }
 }
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo

@@ -1,39 +1,33 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2013 Google Inc. All Rights Reserved.
+// Author: dehao@google.com (Dehao Chen)
 
 // Class to derive inline stack.
 
 #ifndef AUTOFDO_ADDR2LINE_H_
 #define AUTOFDO_ADDR2LINE_H_
 
-#include <string>
 #include <map>
+#include <string>
 
-#include "base/common.h"
+#include "base/integral_types.h"
+#include "base/macros.h"
 #include "source_info.h"
+#include "llvm/DebugInfo/DWARF/DWARFContext.h"
+#include "llvm/Object/Binary.h"
+#include "llvm/Object/ObjectFile.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 class Addr2line {
  public:
-  explicit Addr2line(const string &binary_name) : binary_name_(binary_name) {}
+  explicit Addr2line(const std::string &binary_name)
+      : binary_name_(binary_name) {}
 
   virtual ~Addr2line() {}
 
-  static Addr2line *Create(const string &binary_name);
+  static Addr2line *Create(const std::string &binary_name);
 
   static Addr2line *CreateWithSampledFunctions(
-      const string &binary_name,
+      const std::string &binary_name,
       const std::map<uint64, uint64> *sampled_functions);
 
   // Reads the binary to prepare necessary binary in data.
@@ -44,33 +38,24 @@ class Addr2line {
   virtual void GetInlineStack(uint64 addr, SourceStack *stack) const = 0;
 
  protected:
-  string binary_name_;
+  std::string binary_name_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Addr2line);
 };
 
-class AddressQuery;
-class InlineStackHandler;
-class ElfReader;
-class LineIdentifier;
-class AddressToLineMap;
-
-class Google3Addr2line : public Addr2line {
+class LLVMAddr2line : public Addr2line {
  public:
-  explicit Google3Addr2line(const string &binary_name,
-                            const std::map<uint64, uint64> *sampled_functions);
-  virtual ~Google3Addr2line();
+  explicit LLVMAddr2line(const std::string &binary_name);
   bool Prepare() override;
   void GetInlineStack(uint64 address, SourceStack *stack) const override;
 
  private:
-  AddressToLineMap *line_map_;
-  InlineStackHandler *inline_stack_handler_;
-  ElfReader *elf_;
-  const std::map<uint64, uint64> *sampled_functions_;
-  DISALLOW_COPY_AND_ASSIGN(Google3Addr2line);
+  // map from cu_offset to the CompileUnit.
+  std::map<uint32, llvm::DWARFUnit *> unit_map_;
+  llvm::object::OwningBinary<llvm::object::ObjectFile> binary_;
+  std::unique_ptr<llvm::DWARFContext> dwarf_info_;
 };
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_ADDR2LINE_H_

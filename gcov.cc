@@ -20,13 +20,13 @@
 #include <string.h>
 
 
-#include "gflags/gflags.h"
 #include "gcov.h"
+#include "third_party/abseil/absl/flags/flag.h"
 
 // For different GCC versions, the gcov version number is:
 //   4.6: 0x34303670
 //   4.7: 0x3430372a
-DEFINE_uint64(gcov_version, 0x3430372a,
+ABSL_FLAG(uint64_t, gcov_version, 0x3430372a,
               "Gcov version number.");
 
 const uint32 GCOV_TAG_AFDO_FILE_NAMES = 0xaa000000;

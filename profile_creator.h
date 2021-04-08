@@ -1,16 +1,5 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2011 Google Inc. All Rights Reserved.
+// Author: dehao@google.com (Dehao Chen)
 
 // Create AutoFDO profile.
 
@@ -22,11 +11,11 @@
 #include "symbol_map.h"
 #include "profile_writer.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 class ProfileCreator {
  public:
-  explicit ProfileCreator(const string &binary)
+  explicit ProfileCreator(const std::string &binary)
       : sample_reader_(nullptr),
         binary_(binary),
         use_discriminator_encoding_(false) {}
@@ -40,44 +29,45 @@ class ProfileCreator {
   }
 
   // Returns the total sample counts from a text profile.
-  static uint64 GetTotalCountFromTextProfile(const string &input_profile_name);
+  static uint64 GetTotalCountFromTextProfile(
+      const std::string &input_profile_name);
 
   // Creates AutoFDO profile, returns true if success, false otherwise.
-  bool CreateProfile(const string &input_profile_name, const string &profiler,
-                     autofdo::ProfileWriter *writer,
-                     const string &output_profile_name);
+  bool CreateProfile(const std::string &input_profile_name,
+                     const std::string &profiler,
+                     devtools_crosstool_autofdo::ProfileWriter *writer,
+                     const std::string &output_profile_name,
+                     bool store_sym_list_in_profile = false);
 
   // Reads samples from the input profile.
-  bool ReadSample(const string &input_profile_name,
-                  const string &profiler);
-
-  // Creates output profile after reading from the input profile.
-  bool CreateProfileFromSample(autofdo::ProfileWriter *writer,
-                               const string &output_name);
+  bool ReadSample(const std::string &input_profile_name,
+                  const std::string &profiler);
 
   // Returns total number of samples collected.
   uint64 TotalSamples();
 
   // Returns the SampleReader pointer.
-  const autofdo::SampleReader &sample_reader() {
+  const devtools_crosstool_autofdo::SampleReader &sample_reader() {
     return *sample_reader_;
   }
 
   // Computes the profile and updates the given symbol map and addr2line
   // instance.
-  bool ComputeProfile(SymbolMap *symbol_map);
+  bool ComputeProfile(devtools_crosstool_autofdo::SymbolMap *symbol_map);
 
  private:
-  bool ConvertPrefetchHints(const string &profile_file, SymbolMap *symbol_map);
+  bool ConvertPrefetchHints(const std::string &profile_file,
+                            SymbolMap *symbol_map);
   bool CheckAndAssignAddr2Line(SymbolMap *symbol_map, Addr2line *addr2line);
 
   SampleReader *sample_reader_;
-  string binary_;
+  std::string binary_;
   bool use_discriminator_encoding_;
 };
 
-bool MergeSample(const string &input_file, const string &input_profiler,
-                 const string &binary, const string &output_file);
-}  // namespace autofdo
+bool MergeSample(const std::string &input_file,
+                 const std::string &input_profiler, const std::string &binary,
+                 const std::string &output_file);
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_PROFILE_CREATOR_H_

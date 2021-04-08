@@ -1,0 +1,148 @@
+## CFG Proto for a function consisting of a nested loop.
+## Ordinals are intentionally out-of-order.
+##
+##        [1]  foo
+##              |
+##              |5
+##              V
+##       [4] ara.BB.foo <-----+
+##              |             |
+##           60 |             |
+##              V             |
+##       [2] a.BB.foo <--+    |
+##              |        |    |
+##          600 |    550 |    | 40
+##              V        |    |
+##    [5] aara.BB.foo ---+    |
+##              |             |
+##           55 |             |
+##              V             |
+##    [6] aaara.BB.foo -------+
+##              |
+##           10 |
+##              V
+##      [3]  ra.BB.foo
+##
+cfg {
+  name: "foo"
+  node {
+    symbol_ordinal: 1
+    bb_index: 0
+    size: 10
+    freq: 5
+    intra_outs {
+      source: 1
+      sink: 4
+      weight: 5
+      info: DEFAULT
+    }
+  }
+  node {
+    symbol_ordinal: 4
+    bb_index: 3
+    size: 10
+    freq: 60
+    intra_outs {
+      source: 4
+      sink: 2
+      weight: 60
+      info: DEFAULT
+    }
+    intra_ins {
+      source: 6
+      sink: 4
+      weight: 40
+      info: DEFAULT
+    }
+    intra_ins {
+      source: 1
+      sink: 4
+      weight: 5
+      info: DEFAULT
+    }
+  }
+  node {
+    symbol_ordinal: 2
+    bb_index: 1
+    size: 10
+    freq: 600
+    intra_outs {
+      source: 2
+      sink: 5
+      weight: 600
+      info: DEFAULT
+    }
+    intra_ins {
+      source: 5
+      sink: 2
+      weight: 550
+      info: DEFAULT
+    }
+    intra_ins {
+      source: 4
+      sink: 2
+    	weight: 60
+      info: DEFAULT
+    }
+  }
+  node {
+    symbol_ordinal: 5
+    bb_index: 4
+    size: 10
+    freq: 605
+    intra_outs {
+      source: 5
+      sink: 6
+      weight: 55
+      info: DEFAULT
+    }
+    intra_outs {
+      source: 5
+      sink: 2
+      weight: 550
+      info: DEFAULT
+    }
+    intra_ins {
+      source: 2
+      sink: 5
+      weight: 600
+      info: DEFAULT
+    }
+  }
+  node {
+    symbol_ordinal: 6
+    bb_index: 5
+    size: 10
+    freq: 55
+    intra_outs {
+      source: 6
+      sink: 4
+      weight: 40
+      info: DEFAULT
+    }
+    intra_outs {
+      source: 6
+      sink: 3
+      weight: 10
+      info: DEFAULT
+    }
+    intra_ins {
+      source: 5
+      sink: 6
+      weight: 55
+      info: DEFAULT
+    }
+  }
+  node {
+    symbol_ordinal: 3
+    bb_index: 2
+    size: 10
+    freq: 10
+    intra_ins {
+      source: 6
+      sink: 3
+      weight: 10
+      info: DEFAULT
+    }
+  }
+}

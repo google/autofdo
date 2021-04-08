@@ -1,49 +1,45 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 // Read profile from the .afdo file. The format of .afdo file is in
 // profile_writer.h.
 
 #ifndef AUTOFDO_PROFILE_READER_H_
 #define AUTOFDO_PROFILE_READER_H_
 
-#include <string>
 #include <vector>
 
-#include "module_grouper.h"
+#include "base_profile_reader.h"
 #include "symbol_map.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 class SymbolMap;
 
-class AutoFDOProfileReader {
+class AutoFDOProfileReader : public ProfileReader {
  public:
   // None of the args are owned by this class.
-  explicit AutoFDOProfileReader(SymbolMap *symbol_map, ModuleMap *module_map,
-                                bool force_update)
-      : symbol_map_(symbol_map),
-        module_map_(module_map),
-        force_update_(force_update) {}
+  explicit AutoFDOProfileReader(SymbolMap *symbol_map, bool force_update)
+      : symbol_map_(symbol_map), force_update_(force_update) {}
 
   explicit AutoFDOProfileReader()
-      : symbol_map_(NULL), module_map_(NULL), force_update_(false) {}
+      : symbol_map_(nullptr), force_update_(false) {}
 
-  void ReadFromFile(const string &output_file);
+  bool ReadFromFile(const std::string &output_file) override;
 
  private:
   void ReadWorkingSet();
+  // Reads the module grouping info into the gcda file.
+  // TODO(b/132437226): LIPO has been deprecated so no module grouping info
+  // is needed in the gcda file. However, even if no LIPO is used, gcc used
+  // by chromeOS kernel will still check the module grouping fields whenever
+  // it reads a gcda file. To be compatible, we keep the minimum fields which
+  // are necessary for gcc to be able to read a gcda file and remove the
+  // rest of LIPO stuff.
+  // We can remove the leftover if chromeOS kernel starts using llvm or can
+  // change their gcc in sync with autofdo tool.
+  //
+  // The minimum fields to keep:
+  // TAG
+  // Length of the section (will always be 0)
+  // Number of modules (will always be 0)
   void ReadModuleGroup();
   void ReadFunctionProfile();
   // Reads in profile recursively. Updates the symbol_map_ if update or
@@ -60,12 +56,10 @@ class AutoFDOProfileReader {
   void ReadNameTable();
 
   SymbolMap *symbol_map_;
-  ModuleMap *module_map_;
   bool force_update_;
-  std::vector<string> names_;
+  std::vector<std::string> names_;
 };
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_PROFILE_READER_H_
-

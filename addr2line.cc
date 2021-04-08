@@ -1,263 +1,111 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2013 Google Inc. All Rights Reserved.
+// Author: dehao@google.com (Dehao Chen)
 
 // Class to derive inline stack.
 
 #include "addr2line.h"
 
-#include <string.h>
+#include <map>
+#include <string>
 
+#include "base/commandlineflags.h"
 #include "base/logging.h"
-#include "symbolize/bytereader.h"
-#include "symbolize/dwarf2reader.h"
-#include "symbolize/dwarf3ranges.h"
-#include "symbolize/addr2line_inlinestack.h"
-#include "symbolize/functioninfo.h"
-#include "symbolize/elf_reader.h"
 #include "symbol_map.h"
+#include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/container/node_hash_map.h"
+#include "llvm/DebugInfo/DWARF/DWARFContext.h"
+#include "llvm/Object/ObjectFile.h"
+
+ABSL_RETIRED_FLAG(bool, use_legacy_symbolizer, false,
+                  "whether to use google3 symbolizer");
 
 namespace {
-void GetSection(const autofdo::SectionMap &sections,
-                const char *section_name, const char **data_p, size_t *size_p,
-                const string &file_name, const char *error) {
-  const char *data;
-  size_t size;
+// This maps from a string naming a section to a pair containing a
+// the data for the section, and the size of the section.
+typedef absl::node_hash_map<std::string, std::pair<const char *, uint64>>
+    SectionMap;
 
-  autofdo::SectionMap::const_iterator section =
-      sections.find(section_name);
-
-  if (section == sections.end()) {
-    LOG(WARNING) << "File '" << file_name << "' has no " << section_name
-                 << " section.  " << error;
-    data = NULL;
-    size = 0;
-  } else {
-    data = section->second.first;
-    size = section->second.second;
+// Given an ELF binary file with path |filename|, create and return an
+// OwningBinary object. If the file does not exist, the OwningBinary object will
+// be empty.
+llvm::object::OwningBinary<llvm::object::ObjectFile> GetOwningBinary(
+    const std::string &filename) {
+  auto object_owning_binary_or_err =
+      llvm::object::ObjectFile::createObjectFile(llvm::StringRef(filename));
+  if (!object_owning_binary_or_err) {
+    return llvm::object::OwningBinary<llvm::object::ObjectFile>();
   }
-
-  if (data_p)
-    *data_p = data;
-  if (size_p)
-    *size_p = size;
+  return std::move(object_owning_binary_or_err.get());
 }
 }  // namespace
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
-Addr2line *Addr2line::Create(const string &binary_name) {
-  return CreateWithSampledFunctions(binary_name, NULL);
+Addr2line *Addr2line::Create(const std::string &binary_name) {
+  return CreateWithSampledFunctions(binary_name, nullptr);
 }
 
 Addr2line *Addr2line::CreateWithSampledFunctions(
-    const string &binary_name,
+    const std::string &binary_name,
     const std::map<uint64, uint64> *sampled_functions) {
-  Addr2line *addr2line = new Google3Addr2line(binary_name, sampled_functions);
+  Addr2line *addr2line = new LLVMAddr2line(binary_name);
   if (!addr2line->Prepare()) {
     delete addr2line;
-    return NULL;
+    return nullptr;
   } else {
     return addr2line;
   }
 }
 
-Google3Addr2line::Google3Addr2line(const string &binary_name,
-                                   const map<uint64, uint64> *sampled_functions)
-    : Addr2line(binary_name), line_map_(new AddressToLineMap()),
-      inline_stack_handler_(NULL), elf_(new ElfReader(binary_name)),
-      sampled_functions_(sampled_functions) {}
+LLVMAddr2line::LLVMAddr2line(const std::string &binary_name)
+    : Addr2line(binary_name), binary_(GetOwningBinary(binary_name)) {}
 
-Google3Addr2line::~Google3Addr2line() {
-  delete line_map_;
-  delete elf_;
-  if (inline_stack_handler_) {
-    delete inline_stack_handler_;
+bool LLVMAddr2line::Prepare() {
+  if (!binary_.getBinary()) return false;
+  dwarf_info_ = llvm::DWARFContext::create(*binary_.getBinary());
+  for (auto &unit : dwarf_info_->compile_units()) {
+    unit_map_[unit->getOffset()] = unit.get();
   }
-}
-
-bool Google3Addr2line::Prepare() {
-  ByteReader reader(ENDIANNESS_LITTLE);
-  int width;
-  if (elf_->IsElf32File()) {
-    width = 4;
-  } else if (elf_->IsElf64File()) {
-    width = 8;
-  } else {
-    LOG(ERROR) << "'" << binary_name_ << "' is not an ELF file";
-    return false;
-  }
-  reader.SetAddressSize(width);
-
-  SectionMap sections;
-  const char *debug_section_names[] = {
-    ".debug_line", ".debug_abbrev", ".debug_info", ".debug_line", ".debug_str",
-    ".debug_ranges", ".debug_addr", ".debug_line_str"
-  };
-  for (const char *section_name : debug_section_names) {
-    size_t section_size;
-    const char *section_data = elf_->GetSectionByName(section_name,
-                                                      &section_size);
-    if (section_data == NULL)
-      continue;
-    sections[section_name] = std::make_pair(section_data, section_size);
-  }
-
-  size_t debug_info_size = 0;
-  size_t debug_ranges_size = 0;
-  const char *debug_ranges_data = NULL;
-  GetSection(sections, ".debug_info", NULL, &debug_info_size, binary_name_, "");
-  GetSection(sections, ".debug_ranges", &debug_ranges_data,
-             &debug_ranges_size, binary_name_, "");
-  AddressRangeList debug_ranges(debug_ranges_data,
-                                                debug_ranges_size,
-                                                &reader);
-  inline_stack_handler_ = new InlineStackHandler(
-      &debug_ranges, sections, &reader, sampled_functions_,
-      elf_->VaddrOfFirstLoadSegment());
-
-  // Extract the line information
-  // If .debug_info section is available, we will locate .debug_line using
-  // .debug_info. Otherwise, we'll iterate through .debug_line section,
-  // assuming that compilation units are stored continuously in it.
-  if (debug_info_size > 0) {
-    size_t debug_info_pos = 0;
-    while (debug_info_pos < debug_info_size) {
-      DirectoryVector dirs;
-      FileVector files;
-      CULineInfoHandler handler(&files, &dirs, line_map_, sampled_functions_);
-      inline_stack_handler_->set_directory_names(&dirs);
-      inline_stack_handler_->set_file_names(&files);
-      inline_stack_handler_->set_line_handler(&handler);
-      CompilationUnit compilation_unit(
-          binary_name_, sections, debug_info_pos, &reader,
-          inline_stack_handler_);
-      debug_info_pos += compilation_unit.Start();
-      if (compilation_unit.malformed()) {
-        LOG(WARNING) << "File '" << binary_name_ << "' has mangled "
-                     << ".debug_info section.";
-        // If the compilation unit is malformed, we do not know how
-        // big it is, so it is only safe to give up.
-        break;
-      }
-    }
-  } else {
-    const char *data;
-    size_t size;
-    GetSection(sections, ".debug_line", &data, &size, binary_name_, "");
-    if (data) {
-      size_t pos = 0;
-      while (pos < size) {
-        DirectoryVector dirs;
-        FileVector files;
-        CULineInfoHandler handler(&files, &dirs, line_map_);
-        LineInfo line(data + pos, size - pos, &reader, &handler);
-        uint64 read = line.Start();
-        if (line.malformed()) {
-          // If the debug_line section is malformed, we should stop
-          LOG(WARNING) << "File '" << binary_name_ << "' has mangled "
-                       << ".debug_line section.";
-          break;
-        }
-        if (!read) break;
-        pos += read;
-      }
-    }
-  }
-  inline_stack_handler_->PopulateSubprogramsByAddress();
   return true;
 }
 
-void Google3Addr2line::GetInlineStack(uint64 address,
-                                      SourceStack *stack) const {
-  AddressToLineMap::const_iterator iter = line_map_->upper_bound(address);
-  if (iter == line_map_->begin())
+void LLVMAddr2line::GetInlineStack(uint64 address, SourceStack *stack) const {
+  auto cu_iter =
+      unit_map_.find(dwarf_info_->getDebugAranges()->findAddress(address));
+  if (cu_iter == unit_map_.end())
     return;
-  --iter;
-  if (iter->second == 0)
+  const llvm::DWARFDebugLine::LineTable *line_table =
+      dwarf_info_->getLineTableForUnit(cu_iter->second);
+  if (line_table == nullptr)
     return;
+  llvm::SmallVector<llvm::DWARFDie, 4> InlinedChain;
+  cu_iter->second->getInlinedChainForAddress(address, InlinedChain);
 
-  const LineIdentifier *logical = &line_map_->GetLogical(iter->second);
-
-  // subprog points to subprogram info obtained from .debug_info.
-  const SubprogramInfo *subprog =
-      inline_stack_handler_->GetSubprogramForAddress(address);
-
-  // subprog2 points to subprogram info obtained from two-level line tables.
-  const AddressToLineMap::SubprogInfo *subprog2 = NULL;
-  if (logical->subprog_num > 0) {
-    subprog2 = &line_map_->GetSubprogInfo(logical->subprog_num);
-  }
-
-  const char *function_name = NULL;
-  uint32 start_line = 0;
-  if (subprog != NULL) {
-    const SubprogramInfo *declaration =
-        inline_stack_handler_->GetDeclaration(subprog);
-    function_name = declaration->name().c_str();
-    start_line =
-        inline_stack_handler_->GetAbstractOrigin(subprog)->callsite_line();
-    if (start_line == 0)
-      start_line = declaration->callsite_line();
-  } else if (subprog2 != NULL) {
-    function_name = subprog2->name;
-    start_line = subprog2->line_num;
-  }
-
-  stack->push_back(SourceInfo(function_name,
-                              logical->file.first,
-                              logical->file.second,
-                              start_line,
-                              logical->line,
-                              logical->discriminator));
-
-  if (logical->context > 0) {
-    // Two-level line tables.
-    while (logical->context > 0) {
-      const char *name = NULL;
-      logical = &line_map_->GetLogical(logical->context);
-      if (logical->subprog_num > 0) {
-        subprog2 = &line_map_->GetSubprogInfo(logical->subprog_num);
-        name = subprog2->name;
-        start_line = subprog2->line_num;
-      } else {
-        start_line = 0;
-      }
-      stack->push_back(SourceInfo(name, logical->file.first,
-          logical->file.second, start_line, logical->line,
-          logical->discriminator));
+  uint32 row_index = line_table->lookupAddress(
+      {address, llvm::object::SectionedAddress::UndefSection});
+  uint32 file = (row_index == -1U ? -1U : line_table->Rows[row_index].File);
+  uint32 line = (row_index == -1U ? 0 : line_table->Rows[row_index].Line);
+  uint32 discriminator =
+      (row_index == -1U ? 0 : line_table->Rows[row_index].Discriminator);
+  for (const llvm::DWARFDie &FunctionDIE : InlinedChain) {
+    const char *function_name =
+        FunctionDIE.getSubroutineName(llvm::DINameKind::LinkageName);
+    uint32 start_line = FunctionDIE.getDeclLine();
+    llvm::StringRef file_name;
+    llvm::StringRef dir_name;
+    if (line_table->hasFileAtIndex(file)) {
+      const auto &entry = line_table->Prologue.getFileNameEntry(file);
+      file_name = entry.Name.getAsCString().getValue();
+      if (entry.DirIdx > 0 &&
+          entry.DirIdx <= line_table->Prologue.IncludeDirectories.size())
+        dir_name = line_table->Prologue.IncludeDirectories[entry.DirIdx - 1]
+                       .getAsCString()
+                       .getValue();
     }
-  } else {
-    // Old-style line tables (or two-level, but not an inlined call).
-    while (subprog != NULL && subprog->inlined()) {
-      const SubprogramInfo *canonical_parent =
-          inline_stack_handler_->GetDeclaration(subprog->parent());
-      CHECK(subprog->parent() != NULL);
-      uint32 start_line = inline_stack_handler_->GetAbstractOrigin(
-          subprog->parent())->callsite_line();
-      if (start_line == 0)
-        start_line = canonical_parent->callsite_line();
-      if (start_line == 0)
-        start_line = subprog->callsite_line();
-      stack->push_back(SourceInfo(
-          canonical_parent->name().c_str(),
-          subprog->callsite_directory(),
-          subprog->callsite_filename(),
-          start_line,
-          subprog->callsite_line(),
-          subprog->callsite_discr()));
-      subprog = subprog->parent();
-    }
+    stack->push_back(SourceInfo(function_name, dir_name, file_name, start_line,
+                                line, discriminator));
+    uint32 col;
+    FunctionDIE.getCallerFrame(file, line, col, discriminator);
   }
 }
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo

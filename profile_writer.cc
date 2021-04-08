@@ -1,16 +1,5 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2011 Google Inc. All Rights Reserved.
+// Author: dehao@google.com (Dehao Chen)
 
 // Write profile to afdo file.
 
@@ -22,31 +11,27 @@
 #include <vector>
 #include <algorithm>
 
-#include "gflags/gflags.h"
-#include "base/common.h"
+#include "base/commandlineflags.h"
+#include "base/integral_types.h"
+#include "base/logging.h"
 #include "gcov.h"
-#include "symbol_map.h"
-#include "module_grouper.h"
+#include "profile.h"
 #include "profile_writer.h"
+#include "symbol_map.h"
+#include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/strings/str_format.h"
 
 // sizeof(gcov_unsigned_t)
 #define SIZEOF_UNSIGNED 4
 
-DEFINE_bool(debug_dump, false,
+ABSL_FLAG(bool, debug_dump, false,
             "If set, emit additional debugging dumps to stderr.");
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 // Opens the output file, and writes the header.
-bool AutoFDOProfileWriter::WriteHeader(const string &output_filename,
-                                       const string &imports_filename) {
+bool AutoFDOProfileWriter::WriteHeader(const std::string &output_filename) {
   if (gcov_open(output_filename.c_str(), -1) == -1) {
     LOG(FATAL) << "Cannot open file " << output_filename;
-    return false;
-  }
-
-  imports_file_ = fopen(imports_filename.c_str(), "w");
-  if (imports_file_ == NULL) {
-    LOG(FATAL) << "Cannot open file " << imports_filename;
     return false;
   }
 
@@ -62,7 +47,6 @@ bool AutoFDOProfileWriter::WriteFinish() {
     LOG(ERROR) << "Cannot close the gcov file.";
     return false;
   }
-  fclose(imports_file_);
   return true;
 }
 
@@ -77,7 +61,7 @@ class SourceProfileLengther: public SymbolTraverser {
   int num_functions() {return num_functions_;}
 
  protected:
-  virtual void VisitTopSymbol(const string &name, const Symbol *node) {
+  virtual void VisitTopSymbol(const std::string &name, const Symbol *node) {
     num_functions_++;
   }
 
@@ -125,7 +109,7 @@ class SourceProfileWriter: public SymbolTraverser {
     }
   }
 
-  virtual void VisitTopSymbol(const string &name, const Symbol *node) {
+  virtual void VisitTopSymbol(const std::string &name, const Symbol *node) {
     gcov_write_counter(node->head_count);
     gcov_write_unsigned(GetStringIndex(Symbol::Name(name.c_str())));
   }
@@ -138,7 +122,7 @@ class SourceProfileWriter: public SymbolTraverser {
  private:
   explicit SourceProfileWriter(const StringIndexMap &map) : map_(map) {}
 
-  int GetStringIndex(const string &str) {
+  int GetStringIndex(const std::string &str) {
     StringIndexMap::const_iterator ret = map_.find(str);
     CHECK(ret != map_.end());
     return ret->second;
@@ -149,12 +133,12 @@ class SourceProfileWriter: public SymbolTraverser {
 };
 
 void AutoFDOProfileWriter::WriteFunctionProfile() {
-  typedef std::map<string, int> StringIndexMap;
+  typedef std::map<std::string, int> StringIndexMap;
   // Map from a string to its index in this map. Providing a partial
   // ordering of all output strings.
   StringIndexMap string_index_map;
   int length_4bytes = 0, current_name_index = 0;
-  string_index_map[string()] = 0;
+  string_index_map[std::string()] = 0;
 
   StringTableUpdater::Update(*symbol_map_, &string_index_map);
 
@@ -198,123 +182,10 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
 
 void AutoFDOProfileWriter::WriteModuleGroup() {
   gcov_write_unsigned(GCOV_TAG_MODULE_GROUPING);
-
-  // Calculates the length of the section.
-  // Initial value: module count (an unsigned integer).
-  int length_4bytes = 1;
-  int num_modules = 0;
-  // name_string_length, is_exported, has_sym, aux_module_size,
-  // quote_paths_size, bracket_paths_size, system_paths_size,
-  // cpp_defines_size, cpp_includes_size,
-  // cl_args_size
-  static const uint32 MODULE_AUX_DATA_SIZE_IN_4BYTES = 9;
-  std::set<string> names;
-  for (const auto &module_aux : *module_map_) {
-    names.insert(module_aux.first);
-  }
-  for (const string &name : names) {
-    const Module &module = module_map_->find(name)->second;
-    if (!module.is_exported
-        && module.aux_modules.size() == 0) {
-      continue;
-    }
-    if (module.is_fake) {
-      continue;
-    }
-    num_modules++;
-    length_4bytes += (name.size() + SIZEOF_UNSIGNED)
-                     / SIZEOF_UNSIGNED;
-    length_4bytes += MODULE_AUX_DATA_SIZE_IN_4BYTES;
-    length_4bytes += module.aux_modules.size();
-    for (const auto &aux : module.aux_modules) {
-      length_4bytes += (aux.size() + SIZEOF_UNSIGNED) / SIZEOF_UNSIGNED;
-    }
-    int num_string = module.num_quote_paths
-                   + module.num_bracket_paths
-                   + module.num_system_paths
-                   + module.num_cpp_defines
-                   + module.num_cpp_includes
-                   + module.num_cl_args;
-    length_4bytes += num_string;
-    for (int i = 0; i < num_string; i++) {
-      length_4bytes += (module.options[i].second.size()
-                        + SIZEOF_UNSIGNED) / SIZEOF_UNSIGNED;
-    }
-  }
-
-  // Writes to .afdo file and .afdo.imports file.
-  gcov_write_unsigned(length_4bytes);
-  gcov_write_unsigned(num_modules);
-  for (const string &name : names) {
-    const Module &module = module_map_->find(name)->second;
-    if (!module.is_exported
-        && module.aux_modules.size() == 0) {
-      continue;
-    }
-    if (module.is_fake) {
-      continue;
-    }
-
-    // Writes the name of the module.
-    gcov_write_string(name.c_str());
-    if (module.aux_modules.size() > 0) {
-      fprintf(imports_file_, "%s:", name.c_str());
-    }
-
-    // Writes the "is_exported" flag.
-    if (module.is_exported) {
-      gcov_write_unsigned(1);
-    } else {
-      gcov_write_unsigned(0);
-    }
-
-    gcov_write_unsigned(module.lang);
-    gcov_write_unsigned(module.ggc_memory_in_kb);
-
-    // Writes the aux module info.
-    gcov_write_unsigned(module.aux_modules.size());
-    gcov_write_unsigned(module.num_quote_paths);
-    gcov_write_unsigned(module.num_bracket_paths);
-    gcov_write_unsigned(module.num_system_paths);
-    gcov_write_unsigned(module.num_cpp_defines);
-    gcov_write_unsigned(module.num_cpp_includes);
-    gcov_write_unsigned(module.num_cl_args);
-
-    std::set<string> aux_modules(module.aux_modules.begin(),
-                                 module.aux_modules.end());
-    for (const auto &aux : module.aux_modules) {
-      gcov_write_string(aux.c_str());
-      fprintf(imports_file_, " %s", aux.c_str());
-    }
-    fprintf(imports_file_, "\n");
-
-    // Writes the options recorded in the elf section of the original binary.
-    int option_offset = 0;
-    for (int i = 0; i < module.num_quote_paths; i++) {
-      gcov_write_string(
-          module.options[option_offset++].second.c_str());
-    }
-    for (int i = 0; i < module.num_bracket_paths; i++) {
-      gcov_write_string(
-          module.options[option_offset++].second.c_str());
-    }
-    for (int i = 0; i < module.num_system_paths; i++) {
-      gcov_write_string(
-          module.options[option_offset++].second.c_str());
-    }
-    for (int i = 0; i < module.num_cpp_defines; i++) {
-      gcov_write_string(
-          module.options[option_offset++].second.c_str());
-    }
-    for (int i = 0; i < module.num_cpp_includes; i++) {
-      gcov_write_string(
-          module.options[option_offset++].second.c_str());
-    }
-    for (int i = 0; i < module.num_cl_args; i++) {
-      gcov_write_string(
-          module.options[option_offset++].second.c_str());
-    }
-  }
+  // Length of the section
+  gcov_write_unsigned(0);
+  // Number of modules
+  gcov_write_unsigned(0);
 }
 
 void AutoFDOProfileWriter::WriteWorkingSet() {
@@ -327,8 +198,8 @@ void AutoFDOProfileWriter::WriteWorkingSet() {
   }
 }
 
-bool AutoFDOProfileWriter::WriteToFile(const string &output_filename) {
-  if (!WriteHeader(output_filename, output_filename + ".imports")) {
+bool AutoFDOProfileWriter::WriteToFile(const std::string &output_filename) {
+  if (!WriteHeader(output_filename)) {
     return false;
   }
   WriteFunctionProfile();
@@ -351,8 +222,9 @@ class ProfileDumper : public SymbolTraverser {
 
  protected:
   void DumpSourceInfo(SourceInfo info, int indent) {
-    printf("%*sDirectory name: %s\n", indent, " ", info.dir_name);
-    printf("%*sFile name:      %s\n", indent, " ", info.file_name);
+    printf("%*sDirectory name: %s\n", indent, " ", info.dir_name.str().c_str());
+    printf("%*sFile name:      %s\n", indent, " ",
+           info.file_name.str().c_str());
     printf("%*sFunction name:  %s\n", indent, " ", info.func_name);
     printf("%*sStart line:     %u\n", indent, " ", info.start_line);
     printf("%*sLine:           %u\n", indent, " ", info.line);
@@ -374,10 +246,10 @@ class ProfileDumper : public SymbolTraverser {
     printf("Source information:\n");
     DumpSourceInfo(node->info, 0);
     printf("\n");
-    printf("Total sampled count:            %llu\n",
-           static_cast<uint64>(node->total_count));
-    printf("Total sampled count in head bb: %llu\n",
-           static_cast<uint64>(node->head_count));
+    absl::PrintF("Total sampled count:            %u\n",
+                 static_cast<uint64>(node->total_count));
+    absl::PrintF("Total sampled count in head bb: %u\n",
+                 static_cast<uint64>(node->head_count));
     printf("\n");
     printf("Call sites:\n");
     int i = 0;
@@ -393,10 +265,10 @@ class ProfileDumper : public SymbolTraverser {
       i++;
     }
 
-    printf("node->pos_counts.size() = %llu\n",
-           static_cast<uint64>(node->pos_counts.size()));
-    printf("node->callsites.size() = %llu\n",
-           static_cast<uint64>(node->callsites.size()));
+    absl::PrintF("node->pos_counts.size() = %u\n",
+                 static_cast<uint64>(node->pos_counts.size()));
+    absl::PrintF("node->callsites.size() = %u\n",
+                 static_cast<uint64>(node->callsites.size()));
     std::vector<uint32> positions;
     for (const auto &pos_count : node->pos_counts)
       positions.push_back(pos_count.first);
@@ -411,28 +283,28 @@ class ProfileDumper : public SymbolTraverser {
       printf("#%d: location (line[.discriminator]) = ", i);
       PrintSourceLocation(node->info.start_line, location);
       printf("\n");
-      printf("#%d: profile info execution count = %llu\n", i, info.count);
-      printf("#%d: profile info number of instructions = %llu\n", i,
-             info.num_inst);
+      absl::PrintF("#%d: profile info execution count = %u\n", i, info.count);
+      absl::PrintF("#%d: profile info number of instructions = %u\n", i,
+                   info.num_inst);
       TargetCountPairs target_counts;
       GetSortedTargetCountPairs(info.target_map, &target_counts);
-      printf("#%d: profile info target map size = %llu\n", i,
-             static_cast<uint64>(info.target_map.size()));
+      absl::PrintF("#%d: profile info target map size = %u\n", i,
+                   static_cast<uint64>(info.target_map.size()));
       printf("#%d: info.target_map:\n", i);
       for (const auto &target_count : info.target_map) {
         printf("\tGetStringIndex(target_count.first): %d\n",
                GetStringIndex(target_count.first));
-        printf("\ttarget_count.second: %llu\n", target_count.second);
+        absl::PrintF("\ttarget_count.second: %u\n", target_count.second);
       }
       printf("\n");
       i++;
     }
   }
 
-  virtual void VisitTopSymbol(const string &name, const Symbol *node) {
+  virtual void VisitTopSymbol(const std::string &name, const Symbol *node) {
     printf("VisitTopSymbol: %s\n", name.c_str());
     node->Dump(0);
-    printf("node->head_count: %llu\n", node->head_count);
+    absl::PrintF("node->head_count: %u\n", node->head_count);
     printf("GetStringIndex(%s): %u\n", name.c_str(), GetStringIndex(name));
     printf("\n");
   }
@@ -441,13 +313,13 @@ class ProfileDumper : public SymbolTraverser {
     printf("VisitCallSite: %s\n", callsite.second);
     printf("callsite.first: %u\n", callsite.first);
     printf("GetStringIndex(callsite.second): %u\n",
-           GetStringIndex(callsite.second ? callsite.second : string()));
+           GetStringIndex(callsite.second ? callsite.second : std::string()));
   }
 
  private:
   explicit ProfileDumper(const StringIndexMap &map) : map_(map) {}
 
-  int GetStringIndex(const string &str) {
+  int GetStringIndex(const std::string &str) {
     StringIndexMap::const_iterator ret = map_.find(str);
     CHECK(ret != map_.end());
     return ret->second;
@@ -467,4 +339,4 @@ void ProfileWriter::Dump() {
   ProfileDumper::Write(*symbol_map_, string_index_map);
 }
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo

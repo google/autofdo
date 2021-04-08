@@ -1,14 +1,12 @@
-#ifndef DEVTOOLS_CROSSTOOL_AUTOFDO_LLVM_PROFILE_WRITER_H_
-#define DEVTOOLS_CROSSTOOL_AUTOFDO_LLVM_PROFILE_WRITER_H_
-
-#include "config.h"
+#ifndef AUTOFDO_LLVM_PROFILE_WRITER_H_
+#define AUTOFDO_LLVM_PROFILE_WRITER_H_
 
 #if defined(HAVE_LLVM)
 #include "profile_writer.h"
 #include "llvm/ProfileData/SampleProf.h"
 #include "llvm/ProfileData/SampleProfWriter.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 // Writer class for LLVM profiles.
 class LLVMProfileWriter : public ProfileWriter {
@@ -17,10 +15,19 @@ class LLVMProfileWriter : public ProfileWriter {
       llvm::sampleprof::SampleProfileFormat output_format)
       : format_(output_format) {}
 
-  bool WriteToFile(const string &output_filename) override;
+  llvm::sampleprof::SampleProfileWriter *CreateSampleWriter(
+      const std::string &output_filename);
+
+  bool WriteToFile(const std::string &output_filename) override;
+
+  llvm::sampleprof::SampleProfileWriter *GetSampleProfileWriter() {
+    return sample_prof_writer_.get();
+  }
 
  private:
   llvm::sampleprof::SampleProfileFormat format_;
+  bool compress_;
+  std::unique_ptr<llvm::sampleprof::SampleProfileWriter> sample_prof_writer_;
 
   DISALLOW_COPY_AND_ASSIGN(LLVMProfileWriter);
 };
@@ -33,10 +40,11 @@ class LLVMProfileBuilder : public SymbolTraverser {
         inline_stack_(),
         name_table_(name_table) {}
 
-  static bool Write(const string &output_filename,
-                    llvm::sampleprof::SampleProfileFormat format,
-                    const SymbolMap &symbol_map,
-                    const StringIndexMap &name_table);
+  static bool Write(
+      const std::string &output_filename,
+      llvm::sampleprof::SampleProfileFormat format, const SymbolMap &symbol_map,
+      const StringIndexMap &name_table,
+      llvm::sampleprof::SampleProfileWriter *sample_profile_writer);
 
   const llvm::StringMap<llvm::sampleprof::FunctionSamples> &ConvertProfiles(
       const SymbolMap &symbol_map);
@@ -47,10 +55,10 @@ class LLVMProfileBuilder : public SymbolTraverser {
   }
 
  protected:
-  void VisitTopSymbol(const string &name, const Symbol *node) override;
+  void VisitTopSymbol(const std::string &name, const Symbol *node) override;
   void VisitCallsite(const Callsite &callsite) override;
   void Visit(const Symbol *node) override;
-  llvm::StringRef GetNameRef(const string &str);
+  llvm::StringRef GetNameRef(const std::string &str);
 
  private:
   llvm::StringMap<llvm::sampleprof::FunctionSamples> profiles_;
@@ -64,4 +72,4 @@ class LLVMProfileBuilder : public SymbolTraverser {
 
 #endif  // HAVE_LLVM
 
-#endif  // DEVTOOLS_CROSSTOOL_AUTOFDO_LLVM_PROFILE_WRITER_H_
+#endif  // AUTOFDO_LLVM_PROFILE_WRITER_H_

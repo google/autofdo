@@ -1,0 +1,118 @@
+## CFG consisting of a function with three conditionals.
+## TODO(b/160191690) Change symbol names once unary encoding is deprecated.
+##
+##            foo
+##            / \
+##        0  /   \100
+##          /     \
+##         v       v
+##   aa.BB.foo    a.BB.foo
+##      |  \       |    \
+##      |   \      |     \
+##    10|   0\     |100   \0
+##      |     \    |       \
+##      v      \   |        \
+## raa.BB.foo   v  v         v
+##             rraa.BB.foo  rrraa.BB.foo
+##
+
+cfg {
+  name: "foo"
+  node {
+    symbol_ordinal: 1
+    bb_index: 0
+    size: 10
+    freq: 100
+    intra_outs {
+      source: 1
+      sink: 2
+      weight: 100
+    }
+    intra_outs {
+      source: 1
+      sink: 3
+      weight: 0
+    }
+  }
+  node {
+    symbol_ordinal: 2
+    bb_index: 1
+    size: 4
+    freq: 100
+    intra_outs {
+      source: 2
+      sink: 5
+      weight: 100
+    }
+    intra_outs {
+      source: 2
+      sink: 6
+      weight: 0
+    }
+    intra_ins {
+      source: 1
+      sink: 2
+      weight: 100
+    }
+  }
+  node {
+    symbol_ordinal: 3
+    bb_index: 2
+    size: 6
+    freq: 10
+    intra_outs {
+      source: 3
+      sink: 4
+      weight: 10
+    }
+    intra_outs {
+      source: 3
+      sink: 5
+      weight: 0
+      info: DEFAULT
+    }
+    intra_ins {
+      source: 1
+      sink: 3
+      weight: 0
+    }
+  }
+  node {
+    symbol_ordinal: 4
+    bb_index: 3
+    size: 2
+    freq: 10
+    intra_ins {
+      source: 3
+      sink: 4
+      weight: 10
+    }
+  }
+  node {
+    symbol_ordinal: 5
+    bb_index: 4
+    size: 6
+    freq: 100
+    intra_ins {
+      source: 2
+      sink: 5
+      weight: 100
+    }
+    intra_ins {
+      source: 3
+      sink: 5
+      weight: 0
+    }
+  }
+  node {
+    symbol_ordinal: 6
+    bb_index: 5
+    size: 4
+    freq: 0
+    intra_ins {
+      source: 2
+      sink: 5
+      weight: 0
+    }
+  }
+}

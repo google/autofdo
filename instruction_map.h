@@ -1,16 +1,5 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2011 Google Inc. All Rights Reserved.
+// Author: dehao@google.com (Dehao Chen)
 
 // Class to build a map from instruction address to its information.
 
@@ -21,11 +10,13 @@
 #include <string>
 #include <utility>
 
-#include "base/common.h"
+#include "base/integral_types.h"
+#include "base/logging.h"
+#include "base/macros.h"
 #include "symbol_map.h"
 
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 class SampleReader;
 class Addr2line;
@@ -53,8 +44,8 @@ class InstructionMap {
   }
 
   // Builds instruction map for a function.
-  void BuildPerFunctionInstructionMap(const string &name, uint64 start_addr,
-                                      uint64 end_addr);
+  void BuildPerFunctionInstructionMap(const std::string &name,
+                                      uint64 start_addr, uint64 end_addr);
 
   // Contains information about each instruction.
   struct InstInfo {
@@ -65,7 +56,7 @@ class InstructionMap {
     SourceStack source_stack;
   };
 
-  typedef map<uint64, InstInfo *> InstMap;
+  typedef std::map<uint64, InstInfo *> InstMap;
   const InstMap &inst_map() const {
     return inst_map_;
   }
@@ -82,6 +73,6 @@ class InstructionMap {
 
   DISALLOW_COPY_AND_ASSIGN(InstructionMap);
 };
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_INSTRUCTION_MAP_H_

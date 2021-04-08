@@ -1,62 +1,45 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2012 Google Inc. All Rights Reserved.
+// Author: dehao@google.com (Dehao Chen)
 
 // Class to build AutoFDO profile.
 
 #ifndef AUTOFDO_PROFILE_WRITER_H_
 #define AUTOFDO_PROFILE_WRITER_H_
 
-#include "module_grouper.h"
 #include "symbol_map.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 class SymbolMap;
 
 class ProfileWriter {
  public:
-  explicit ProfileWriter(const SymbolMap *symbol_map,
-                         const ModuleMap *module_map)
-      : symbol_map_(symbol_map), module_map_(module_map) {}
-  explicit ProfileWriter() : symbol_map_(nullptr), module_map_(nullptr) {}
+  explicit ProfileWriter(const SymbolMap *symbol_map)
+      : symbol_map_(symbol_map) {}
+  explicit ProfileWriter() : symbol_map_(nullptr) {}
   virtual ~ProfileWriter() {}
 
-  virtual bool WriteToFile(const string &output_file) = 0;
+  virtual bool WriteToFile(const std::string &output_file) = 0;
   void setSymbolMap(const SymbolMap *symbol_map) { symbol_map_ = symbol_map; }
-  void setModuleMap(const ModuleMap *module_map) { module_map_ = module_map; }
   void Dump();
 
  protected:
   const SymbolMap *symbol_map_;
-  const ModuleMap *module_map_;
 };
 
 class AutoFDOProfileWriter : public ProfileWriter {
  public:
   explicit AutoFDOProfileWriter(const SymbolMap *symbol_map,
-                                const ModuleMap *module_map,
                                 uint32 gcov_version)
-      : ProfileWriter(symbol_map, module_map),
-        gcov_version_(gcov_version) {}
+      : ProfileWriter(symbol_map), gcov_version_(gcov_version) {}
   explicit AutoFDOProfileWriter(uint32 gcov_version)
       : gcov_version_(gcov_version) {}
 
-  bool WriteToFile(const string &output_file) override;
+  bool WriteToFile(const std::string &output_file) override;
 
  private:
   // Opens the output file, and writes the header.
-  bool WriteHeader(const string &output_file, const string &imports_file);
+  bool WriteHeader(const std::string &output_file);
 
   // Finishes writing, closes the output file.
   bool WriteFinish();
@@ -102,33 +85,25 @@ class AutoFDOProfileWriter : public ProfileWriter {
   //   callsite_offset_num_callsites: symbol profile
   void WriteFunctionProfile();
 
-  // Writes the module grouping info into the gcda file. This is stored
-  // under the section tagged GCOV_TAG_MODULE_GROUPING:
+  // Writes the module grouping info into the gcda file.
+  // TODO(b/132437226): LIPO has been deprecated so no module grouping info
+  // is needed in the gcda file. However, even if no LIPO is used, gcc used
+  // by chromeOS kernel will still check the module grouping fields whenever
+  // it reads a gcda file. To be compatible, we keep the minimum fields which
+  // are necessary for gcc to be able to read a gcda file and remove the
+  // rest of LIPO stuff.
+  // We can remove the leftover if chromeOS kernel starts using llvm or can
+  // change their gcc in sync with autofdo tool.
+  //
+  // The minimum fields to keep:
   // TAG
-  // Length of the section
-  // Number of modules
-  //  Module_1: name
-  //  Module_1: is_exported
-  //  Module_1: lang
-  //  Module_1: ggc_memory_in_kb
-  //  Module_1: number of aux-modules
-  //  Module_1: number of quote paths
-  //  Module_1: number of bracket_paths
-  //  Module_1: number of system_paths [new in crosstool-17]
-  //  Module_1: number of cpp_defines
-  //  Module_1: number of cpp_includes
-  //  Module_1: number of cl_args
-  //    string_1
-  //     ...
-  //    string_n
-  //   ...
-  //  Module_n: ...
+  // Length of the section (will always be 0)
+  // Number of modules (will always be 0)
   void WriteModuleGroup();
 
   // Writes working set to gcov file.
   void WriteWorkingSet();
 
-  FILE *imports_file_;
   uint32 gcov_version_;
 };
 
@@ -147,7 +122,7 @@ class SymbolTraverser {
       Traverse(name_symbol.second);
     }
   }
-  virtual void VisitTopSymbol(const string &name, const Symbol *node) {}
+  virtual void VisitTopSymbol(const std::string &name, const Symbol *node) {}
   virtual void Visit(const Symbol *node) = 0;
   virtual void VisitCallsite(const Callsite &offset) {}
   int level_;
@@ -165,7 +140,7 @@ class SymbolTraverser {
   DISALLOW_COPY_AND_ASSIGN(SymbolTraverser);
 };
 
-typedef std::map<string, int> StringIndexMap;
+typedef std::map<std::string, int> StringIndexMap;
 
 class StringTableUpdater: public SymbolTraverser {
  public:
@@ -187,7 +162,7 @@ class StringTableUpdater: public SymbolTraverser {
     (*map_)[Symbol::Name(callsite.second)] = 0;
   }
 
-  void VisitTopSymbol(const string &name, const Symbol *node) override {
+  void VisitTopSymbol(const std::string &name, const Symbol *node) override {
     (*map_)[Symbol::Name(name.c_str())] = 0;
   }
 
@@ -197,6 +172,6 @@ class StringTableUpdater: public SymbolTraverser {
   DISALLOW_COPY_AND_ASSIGN(StringTableUpdater);
 };
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_PROFILE_WRITER_H_

@@ -1,0 +1,54 @@
+syntax = "proto2";
+
+package devtools_crosstool_autofdo;
+
+// // Edges.
+// // Next Available: 5.
+message CFGEdgePb {
+  // Symbol ordinal of source bb.
+  optional uint64 source = 1;
+
+  // Symbol ordinal of sink bb.
+  optional uint64 sink = 2;
+
+  // Frequency count of the jump from profile.
+  optional uint64 weight = 3;
+
+  enum Info {
+    DEFAULT = 0;
+    CALL = 1;
+    RETURN = 2;
+  }
+
+  // Edge type.
+  optional Info info = 4;
+}
+
+// Basic blocks.
+// Next Available: 9.
+message CFGNodePb {
+  optional uint64 symbol_ordinal = 1;
+
+  optional uint64 size = 2;
+
+  optional uint64 freq = 3;
+
+  repeated CFGEdgePb intra_outs = 4;
+  repeated CFGEdgePb intra_ins = 5;
+  repeated CFGEdgePb inter_outs = 6;
+  repeated CFGEdgePb inter_ins = 7;
+
+  optional uint32 bb_index = 8;
+}
+//
+// Control flow graph where basic blocks are vertices and jumps are edges.
+// Next Available: 3
+message ControlFlowGraphPb {
+  repeated CFGNodePb node = 1;
+  repeated string name = 2;
+}
+
+// Next Available: 2.
+message PropellerPb {
+  repeated ControlFlowGraphPb cfg = 1;
+}

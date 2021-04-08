@@ -1,19 +1,7 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2011 Google Inc. All Rights Reserved.
+// Author: dehao@google.com (Dehao Chen)
 
 // Class to represent source level profile.
-
 #include "profile.h"
 
 #include <map>
@@ -21,28 +9,34 @@
 #include <utility>
 #include <vector>
 
-#include "base/common.h"
+#include "base/commandlineflags.h"
+#include "base/logging.h"
 #include "instruction_map.h"
-#include "symbol_map.h"
 #include "sample_reader.h"
+#include "symbol_map.h"
+#include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/strings/match.h"
+#include "third_party/abseil/absl/strings/strip.h"
 
-DEFINE_bool(use_lbr, true,
+ABSL_FLAG(bool, use_lbr, true,
             "Whether to use lbr profile.");
+ABSL_FLAG(bool, llc_misses, false, "The profile represents llc misses.");
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 Profile::ProfileMaps *Profile::GetProfileMaps(uint64 addr) {
-  const string *name;
+  const std::string *name;
   uint64 start_addr, end_addr;
   if (symbol_map_->GetSymbolInfoByAddr(addr, &name,
                                        &start_addr, &end_addr)) {
     std::pair<SymbolProfileMaps::iterator, bool> ret =
-        symbol_profile_maps_.insert(SymbolProfileMaps::value_type(*name, NULL));
+        symbol_profile_maps_.insert(
+            SymbolProfileMaps::value_type(*name, nullptr));
     if (ret.second) {
       ret.first->second = new ProfileMaps(start_addr, end_addr);
     }
     return ret.first->second;
   } else {
-    return NULL;
+    return nullptr;
   }
 }
 
@@ -51,14 +45,14 @@ void Profile::AggregatePerFunctionProfile() {
   const AddressCountMap *count_map = &sample_reader_->address_count_map();
   for (const auto &addr_count : *count_map) {
     ProfileMaps *maps = GetProfileMaps(addr_count.first + start);
-    if (maps != NULL) {
+    if (maps != nullptr) {
       maps->address_count_map[addr_count.first + start] += addr_count.second;
     }
   }
   const RangeCountMap *range_map = &sample_reader_->range_count_map();
   for (const auto &range_count : *range_map) {
     ProfileMaps *maps = GetProfileMaps(range_count.first.first + start);
-    if (maps != NULL) {
+    if (maps != nullptr) {
       maps->range_count_map[std::make_pair(range_count.first.first + start,
                                            range_count.first.second + start)] +=
           range_count.second;
@@ -67,20 +61,26 @@ void Profile::AggregatePerFunctionProfile() {
   const BranchCountMap *branch_map = &sample_reader_->branch_count_map();
   for (const auto &branch_count : *branch_map) {
     ProfileMaps *maps = GetProfileMaps(branch_count.first.first + start);
-    if (maps != NULL) {
+    if (maps != nullptr) {
       maps->branch_count_map[std::make_pair(
           branch_count.first.first + start,
           branch_count.first.second + start)] += branch_count.second;
     }
+  }
+
+  // Add an entry for each symbol so that later we can decide if the hot and
+  // cold parts together need to be emitted.
+  for (const auto &[name, addr] : symbol_map_->GetNameAddrMap()) {
+    CHECK(GetProfileMaps(addr));
   }
 }
 
 uint64 Profile::ProfileMaps::GetAggregatedCount() const {
   uint64 ret = 0;
 
-  if (range_count_map.size() > 0) {
+  if (!range_count_map.empty()) {
     for (const auto &range_count : range_count_map) {
-      ret += range_count.second * (range_count.first.second -
+      ret += range_count.second * (1 + range_count.first.second -
                                    range_count.first.first);
     }
   } else {
@@ -91,7 +91,7 @@ uint64 Profile::ProfileMaps::GetAggregatedCount() const {
   return ret;
 }
 
-void Profile::ProcessPerFunctionProfile(string func_name,
+void Profile::ProcessPerFunctionProfile(std::string func_name,
                                         const ProfileMaps &maps) {
   InstructionMap inst_map(addr2line_, symbol_map_);
   inst_map.BuildPerFunctionInstructionMap(func_name, maps.start_addr,
@@ -99,8 +99,9 @@ void Profile::ProcessPerFunctionProfile(string func_name,
 
   AddressCountMap map;
   const AddressCountMap *map_ptr;
-  if (FLAGS_use_lbr) {
-    if (maps.range_count_map.size() == 0) {
+  if (absl::GetFlag(FLAGS_use_lbr)) {
+    if (maps.range_count_map.empty()) {
+      LOG(WARNING) << "use_lbr was enabled but range_count_map was empty!";
       return;
     }
     for (const auto &range_count : maps.range_count_map) {
@@ -124,14 +125,14 @@ void Profile::ProcessPerFunctionProfile(string func_name,
       continue;
     }
     const InstructionMap::InstInfo *info = iter->second;
-    if (info == NULL) {
+    if (info == nullptr) {
       continue;
     }
-    if (info->source_stack.size() > 0) {
+    if (!info->source_stack.empty()) {
       symbol_map_->AddSourceCount(
           func_name, info->source_stack,
           address_count.second * info->source_stack[0].DuplicationFactor(), 0,
-          SymbolMap::MAX);
+          SymbolMap::PERFDATA);
     }
   }
 
@@ -142,18 +143,19 @@ void Profile::ProcessPerFunctionProfile(string func_name,
       continue;
     }
     const InstructionMap::InstInfo *info = iter->second;
-    if (info == NULL) {
+    if (info == nullptr) {
       continue;
     }
-    const string *callee = symbol_map_->GetSymbolNameByStartAddr(
-        branch_count.first.second);
+    const std::string *callee =
+        symbol_map_->GetSymbolNameByStartAddr(branch_count.first.second);
     if (!callee) {
       continue;
     }
     if (symbol_map_->map().count(*callee)) {
       symbol_map_->AddSymbolEntryCount(*callee, branch_count.second);
-      symbol_map_->AddIndirectCallTarget(func_name, info->source_stack,
-                                         *callee, branch_count.second);
+      symbol_map_->AddIndirectCallTarget(func_name, info->source_stack, *callee,
+                                         branch_count.second,
+                                         SymbolMap::PERFDATA);
     }
   }
 
@@ -167,22 +169,61 @@ void Profile::ComputeProfile() {
       sample_reader_->GetTotalCount());
   AggregatePerFunctionProfile();
 
-  // First add all symbols that needs to be outputted to the symbol_map_. We
-  // need to do this before hand because ProcessPerFunctionProfile will call
-  // AddSymbolEntryCount for other symbols, which may or may not had been
-  // processed by ProcessPerFunctionProfile.
-  for (const auto &symbol_profile : symbol_profile_maps_) {
-    if (symbol_map_->ShouldEmit(symbol_profile.second->GetAggregatedCount()))
-      symbol_map_->AddSymbol(symbol_profile.first);
-  }
+  if (absl::GetFlag(FLAGS_llc_misses)) {
+    for (const auto &symbol_profile : symbol_profile_maps_) {
+      const auto func_name = symbol_profile.first;
+      const auto &maps = *symbol_profile.second;
 
-  // Traverse the symbol map to process the profiles.
-  for (const auto &symbol_profile : symbol_profile_maps_) {
-    if (symbol_map_->ShouldEmit(symbol_profile.second->GetAggregatedCount()))
-      ProcessPerFunctionProfile(symbol_profile.first, *symbol_profile.second);
+      std::map<uint64_t, uint64_t> counts;
+      for (const auto &address_count : maps.address_count_map) {
+        auto pc = address_count.first;
+        DCHECK(maps.start_addr <= pc && pc <= maps.end_addr);
+        if (!symbol_map_->EnsureEntryInFuncForSymbol(func_name, pc))
+          continue;
+        counts[pc] += address_count.second;
+      }
+
+      CHECK(maps.branch_count_map.empty());
+      for (const auto pair : counts) {
+        uint64_t pc = pair.first;
+        uint64_t count = pair.second;
+        SourceStack stack;
+        symbol_map_->get_addr2line()->GetInlineStack(pc, &stack);
+        symbol_map_->AddIndirectCallTarget(func_name, stack, "__llc_misses__",
+                                           count);
+      }
+    }
+    symbol_map_->ElideSuffixesAndMerge();
+  } else {
+    // Precompute the aggregated counts of hot and cold parts. Both function
+    // parts are emitted only if their total sample count is above the required
+    // threshold.
+    absl::flat_hash_map<absl::string_view, uint64> symbol_counts;
+    for (const auto &[name, profile] : symbol_profile_maps_) {
+      symbol_counts[absl::StripSuffix(name, ".cold")] +=
+          profile->GetAggregatedCount();
+    }
+
+    // First add all symbols that needs to be outputted to the symbol_map_. We
+    // need to do this before hand because ProcessPerFunctionProfile will call
+    // AddSymbolEntryCount for other symbols, which may or may not had been
+    // processed by ProcessPerFunctionProfile.
+    for (const auto &[name, ignored] : symbol_profile_maps_) {
+      const uint64 count = symbol_counts.at(absl::StripSuffix(name, ".cold"));
+      if (symbol_map_->ShouldEmit(count)) {
+        symbol_map_->AddSymbol(name);
+      }
+    }
+
+    for (const auto &[name, profile] : symbol_profile_maps_) {
+      const uint64 count = symbol_counts.at(absl::StripSuffix(name, ".cold"));
+      if (symbol_map_->ShouldEmit(count)) {
+        ProcessPerFunctionProfile(name, *profile);
+      }
+    }
+    symbol_map_->ElideSuffixesAndMerge();
+    symbol_map_->ComputeWorkingSets();
   }
-  symbol_map_->Merge();
-  symbol_map_->ComputeWorkingSets();
 }
 
 Profile::~Profile() {
@@ -190,4 +231,4 @@ Profile::~Profile() {
     delete symbol_maps.second;
   }
 }
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo

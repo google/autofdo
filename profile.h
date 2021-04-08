@@ -1,31 +1,20 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2011 Google Inc. All Rights Reserved.
+// Author: dehao@google.com (Dehao Chen)
 
 // Class to extract function level profile from binary level samples.
 
 #ifndef AUTOFDO_PROFILE_H_
 #define AUTOFDO_PROFILE_H_
 
-#include <map>
 #include <set>
 #include <string>
 
-#include "gflags/gflags.h"
-#include "base/common.h"
+#include "base/integral_types.h"
+#include "base/macros.h"
 #include "sample_reader.h"
+#include "third_party/abseil/absl/container/node_hash_map.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 class Addr2line;
 class SymbolMap;
@@ -40,12 +29,12 @@ class Profile {
   //   addr2line: an Addr2line.
   //   symbol_map: the symbol map is written by this class to store all symbol
   //               information.
-  Profile(const SampleReader *sample_reader,
-          const string &binary_name,
-          Addr2line *addr2line,
-          SymbolMap *symbol_map)
-      : sample_reader_(sample_reader), binary_name_(binary_name),
-        addr2line_(addr2line), symbol_map_(symbol_map) {}
+  Profile(const SampleReader *sample_reader, const std::string &binary_name,
+          Addr2line *addr2line, SymbolMap *symbol_map)
+      : sample_reader_(sample_reader),
+        binary_name_(binary_name),
+        addr2line_(addr2line),
+        symbol_map_(symbol_map) {}
 
   ~Profile();
 
@@ -63,7 +52,7 @@ class Profile {
     RangeCountMap range_count_map;
     BranchCountMap branch_count_map;
   };
-  typedef map<string, ProfileMaps*> SymbolProfileMaps;
+  typedef absl::node_hash_map<std::string, ProfileMaps *> SymbolProfileMaps;
 
   // Returns the profile maps for a give function.
   ProfileMaps *GetProfileMaps(uint64 addr);
@@ -74,10 +63,10 @@ class Profile {
   // Builds function level profile for specified function:
   //   1. Traverses all instructions to build instruction map.
   //   2. Unwinds the inline stack to add symbol count to each inlined symbol.
-  void ProcessPerFunctionProfile(string func_name, const ProfileMaps &map);
+  void ProcessPerFunctionProfile(std::string func_name, const ProfileMaps &map);
 
   const SampleReader *sample_reader_;
-  const string binary_name_;
+  const std::string binary_name_;
   Addr2line *addr2line_;
   SymbolMap *symbol_map_;
   AddressCountMap global_addr_count_map_;
@@ -85,6 +74,6 @@ class Profile {
 
   DISALLOW_COPY_AND_ASSIGN(Profile);
 };
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_PROFILE_H_

@@ -1,17 +1,3 @@
-// Copyright 2014 Google Inc. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 // Class to represent the symbol map. The symbol map is a map from
 // symbol names to the symbol class.
 // This class is thread-safe.
@@ -20,25 +6,30 @@
 #define AUTOFDO_SYMBOL_MAP_H_
 
 #include <map>
-#include <memory>
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include "addr2line.h"
-#include "base/common.h"
+#include "base/integral_types.h"
+#include "base/logging.h"
 #include "base/macros.h"
+#include "addr2line.h"
 #include "source_info.h"
+#include "third_party/abseil/absl/container/flat_hash_map.h"
+#include "third_party/abseil/absl/container/flat_hash_set.h"
+#include "third_party/abseil/absl/container/node_hash_map.h"
+#include "llvm/ProfileData/SampleProf.h"
 
 // Macros from gcc (profile.c)
 #define NUM_GCOV_WORKING_SETS 128
 #define WORKING_SET_INSN_PER_BB 10
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
-typedef std::map<string, uint64> CallTargetCountMap;
-typedef std::pair<string, uint64> TargetCountPair;
+typedef std::map<std::string, uint64> CallTargetCountMap;
+typedef std::pair<std::string, uint64> TargetCountPair;
 typedef std::vector<TargetCountPair> TargetCountPairs;
 
 class Addr2line;
@@ -61,6 +52,9 @@ struct gcov_working_set_info {
 void GetSortedTargetCountPairs(const CallTargetCountMap &call_target_count_map,
                                TargetCountPairs *target_counts);
 
+// The miminal total samples for a outline symbol to be emitted to the profile.
+const int64 kMinSamples = 10;
+
 // Represents profile information of a given source.
 class ProfileInfo {
  public:
@@ -82,19 +76,30 @@ typedef std::map<uint32, ProfileInfo> PositionCountMap;
 // callsite_location, callee_name
 typedef std::pair<uint32, const char *> Callsite;
 
-struct CallsiteLess {
+struct CallsiteHash {
+  size_t operator()(const Callsite &callsite) const {
+    return callsite.first;
+  }
+};
+struct CallsiteEqual {
   bool operator()(const Callsite& c1, const Callsite& c2) const {
     if (c1.first != c2.first)
-      return c1.first < c2.first;
+      return false;
     if ((c1.second == NULL || c2.second == NULL))
-      return c1.second < c2.second;
-    return strcmp(c1.second, c2.second) < 0;
+      return c1.second == c2.second;
+    return strcmp(c1.second, c2.second) == 0;
   }
 };
 class Symbol;
 // Map from a callsite to the callee symbol.
-typedef std::map<Callsite, Symbol *, CallsiteLess> CallsiteMap;
+typedef absl::node_hash_map<Callsite, Symbol *, CallsiteHash, CallsiteEqual>
+    CallsiteMap;
+// Maps function names to symbols. Symbols are not owned and multiple names can
+// map to the same symbol.
+typedef std::map<std::string, Symbol *> NameSymbolMap;
 
+struct SCCNode;
+class CallGraph;
 // Contains information about a specific symbol.
 // There are two types of symbols:
 // 1. Actual symbol: the symbol exists in the binary as a standalone function.
@@ -106,49 +111,89 @@ typedef std::map<Callsite, Symbol *, CallsiteLess> CallsiteMap;
 class Symbol {
  public:
   // This constructor is used to create inlined symbol.
-  Symbol(const char *name, const char *dir, const char *file, uint32 start)
+  Symbol(const char *name, llvm::StringRef dir, llvm::StringRef file,
+         uint32 start)
       : info(SourceInfo(name, dir, file, start, 0, 0)),
-        total_count(0), head_count(0) {}
+        total_count(0),
+        total_count_incl(0),
+        head_count(0),
+        callsites(0),
+        pos_counts() {}
 
   // This constructor is used to create aliased symbol.
   Symbol(const Symbol *src, const char *new_func_name)
-      : info(src->info), total_count(src->total_count),
-        head_count(src->head_count) {
+      : info(src->info),
+        total_count(src->total_count),
+        total_count_incl(src->total_count_incl),
+        head_count(src->head_count),
+        callsites(0),
+        pos_counts() {
     info.func_name = new_func_name;
   }
 
-  Symbol() : total_count(0), head_count(0) {}
+  Symbol()
+      : total_count(0),
+        total_count_incl(0),
+        head_count(0),
+        callsites(0),
+        pos_counts() {}
 
   ~Symbol();
 
-  static string Name(const char *name) {
+  static std::string Name(const char *name) {
     return (name && strlen(name) > 0) ? name : "noname";
   }
 
-  string name() const {
-    return Name(info.func_name);
-  }
+  std::string name() const { return Name(info.func_name); }
 
   // Merges profile stored in src symbol with this symbol.
   void Merge(const Symbol *src);
 
+  // Get an estimation of head count from the starting source or callsite
+  // locations.
+  void EstimateHeadCount();
+
+  // Convert an inline instance profile into a callsite location.
+  void FlattenCallsite(uint32 offset, const Symbol *callee);
+
+  // Merges flat profile stored in src symbol with this symbol.
+  void FlatMerge(const Symbol *src);
+
+  // Update each count with count * ratio inside current symbol.
+  void UpdateWithRatio(double ratio);
+
   // Returns the module name of the symbol. Module name is the source file
   // that the symbol belongs to. It is an attribute of the actual symbol.
-  string ModuleName() const;
+  std::string ModuleName() const;
 
   // Returns true if the symbol is from a header file.
   bool IsFromHeader() const;
 
+  void ComputeTotalCountIncl(const NameSymbolMap &nsmap,
+                             std::vector<Symbol *> *stacksyms,
+                             absl::flat_hash_set<Symbol *> *scc);
+  void BuildCallGraph(const NameSymbolMap &nsmap, SCCNode *callerSCC,
+                      CallGraph *callgraph);
+
+  // Dumps the body of the symbol.
+  void DumpBody(int ident, bool for_analysis) const;
   // Dumps content of the symbol with a give indentation.
   void Dump(int indent) const;
+  // Similar as Dump, but with information for performance analysis.
+  void DumpForAnalysis(int ident) const;
 
-  // Returns the max of pos_counts and callsites' pos_counts.
-  uint64 MaxPosCallsiteCount() const;
+  // Returns the entry count based on pos_counts and callsites.
+  uint64 EntryCount() const;
 
-  // Source information about the the symbol (func_name, file_name, etc.)
+  // Source information about the symbol (func_name, file_name, etc.)
   SourceInfo info;
-  // The total sampled count.
+  // The total sampled count, including all the samples collected from
+  // current symbol, but not including those collected from any callee
+  // of the symbol.
   uint64 total_count;
+  // The total sampled count, including all the sample counts from
+  // current symbol and all its decedents called by the symbol.
+  uint64 total_count_incl;
   // The total sampled count in the head bb.
   uint64 head_count;
   // Map from callsite location to callee symbol.
@@ -157,25 +202,30 @@ class Symbol {
   PositionCountMap pos_counts;
 };
 
-// Maps function name to actual symbol. (Top level map).
-typedef map<string, Symbol *> NameSymbolMap;
+// Vector of unique pointers to symbols.
+typedef std::vector<std::unique_ptr<Symbol>> SymbolUniquePtrVector;
 // Maps symbol's start address to its name and size.
-typedef std::map<uint64, std::pair<string, uint64> > AddressSymbolMap;
+typedef std::map<uint64, std::pair<std::string, uint64>> AddressSymbolMap;
 // Maps from symbol's name to its start address.
-typedef std::map<string, uint64> NameAddressMap;
+typedef std::map<std::string, uint64> NameAddressMap;
 // Maps function name to alias names.
-typedef map<string, set<string> > NameAliasMap;
+typedef absl::node_hash_map<std::string, absl::flat_hash_set<std::string>>
+    NameAliasMap;
+// List of pairs containing function name and size.
+using NameSizeList = std::vector<std::pair<llvm::StringRef, uint64>>;
 
 // SymbolMap stores the symbols in the binary, and maintains
 // a map from symbol name to its related information.
 class SymbolMap {
  public:
-  explicit SymbolMap(const string &binary)
+  explicit SymbolMap(const std::string &binary)
       : binary_(binary),
         base_addr_(0),
         count_threshold_(0),
         use_discriminator_encoding_(false),
-        ignore_thresholds_(false) {
+        ignore_thresholds_(false),
+        suffix_elision_policy_(ElideAll) {
+    initSuffixElisionPolicy();
     if (!binary.empty()) {
       BuildSymbolMap();
       BuildNameAddressMap();
@@ -185,9 +235,12 @@ class SymbolMap {
   SymbolMap()
       : base_addr_(0),
         count_threshold_(0),
-        use_discriminator_encoding_(false) {}
+        use_discriminator_encoding_(false),
+        suffix_elision_policy_(ElideAll) {
+    initSuffixElisionPolicy();
+  }
 
-  ~SymbolMap();
+  static bool IsLLVMCompiler(const std::string &path);
 
   uint64 size() const {
     return map_.size();
@@ -196,10 +249,11 @@ class SymbolMap {
   void set_count_threshold(int64 n) {count_threshold_ = n;}
   int64 count_threshold() const {return count_threshold_;}
 
+  void set_suffix_elision_policy(const std::string &policy);
+  const std::string suffix_elision_policy() const;
+
   // Returns true if the count is large enough to be emitted.
   bool ShouldEmit(int64 count) const {
-    if (ignore_thresholds_) return true;
-    CHECK_GT(count_threshold_, 0);
     return count > count_threshold_;
   }
 
@@ -230,21 +284,27 @@ class SymbolMap {
   Addr2line *get_addr2line() const { return addr2line_.get(); }
 
   // Adds an empty named symbol.
-  void AddSymbol(const string &name);
+  void AddSymbol(const std::string &name);
+
+  // Removes a symbol by setting total and head count to zero.
+  void RemoveSymbol(const std::string &name);
+
+  // Adds the given symbols and their mappings to the symbol map. SymbolMap
+  // takes ownership of the symbols in new_map. Existing mappings in SymbolMap
+  // that overlap with entries in new_map, will be updated to the new symbols.
+  void AddSymbolMappings(const NameSymbolMap &new_map);
 
   const NameSymbolMap &map() const {
     return map_;
   }
 
-  NameSymbolMap &map() {
-    return map_;
-  }
+  const NameAddressMap &GetNameAddrMap() const { return name_addr_map_; }
 
   const gcov_working_set_info *GetWorkingSets() const {
     return working_set_;
   }
 
-  uint64 GetSymbolStartAddr(const string &name) const {
+  uint64 GetSymbolStartAddr(const std::string &name) const {
     const auto &iter = name_addr_map_.find(name);
     if (iter == name_addr_map_.end()) {
       return 0;
@@ -265,7 +325,7 @@ class SymbolMap {
     working_set_[i].min_counter += min_counter;
   }
 
-  const Symbol *GetSymbolByName(const string &name) const {
+  const Symbol *GetSymbolByName(const std::string &name) const {
     NameSymbolMap::const_iterator ret = map_.find(name);
     if (ret != map_.end()) {
       return ret->second;
@@ -274,45 +334,80 @@ class SymbolMap {
     }
   }
 
-  // Merges symbols with suffixes like .isra, .part as a single symbol.
-  void Merge();
+  // Trims suffix from name, returning trimmed name (according to
+  // current suffix elision policy).
+  std::string GetOriginalName(const char *name) const;
+
+  // Merges symbols with suffixes like .isra, .part, or .llvm as a single
+  // symbol, and elides the suffixes. These suffixes are not stable between
+  // compilations, and the compiler is also expected to elide them when matching
+  // profile data.
+  void ElideSuffixesAndMerge();
 
   // Increments symbol's entry count.
-  void AddSymbolEntryCount(const string &symbol, uint64 count);
+  void AddSymbolEntryCount(const std::string &symbol, uint64 head_count,
+                           uint64 total_count = 0);
 
-  typedef enum {INVALID = 1, SUM, MAX} Operation;
+  // DataSource represents what kind of data is used to generate afdo profile.
+  // PERFDATA: convert perf.data to afdo profile.
+  // AFDOPROTO: convert afdo proto generated by GWP autofdo pipeline to
+  //            afdo profile.
+  // AFDOPROFILE: merge an existing afdo profile into current one.
+  typedef enum { INVALID = 0, PERFDATA, AFDOPROTO, AFDOPROFILE } DataSource;
   // Increments source stack's count.
   //   symbol: name of the symbol in which source is located.
   //   source: source location (in terms of inlined source stack).
   //   count: total sampled count.
   //   num_inst: number of instructions that is mapped to the source.
-  //   op: operation used to calculate count (SUM or MAX).
-  void AddSourceCount(const string &symbol, const SourceStack &source,
-                      uint64 count, uint64 num_inst, Operation op);
+  //   data_source: the type of data used to generate autofdo profile.
+  //   Typically it is perf data, autofdo proto or some other autofdo
+  //   profile.
+  void AddSourceCount(const std::string &symbol, const SourceStack &source,
+                      uint64 count, uint64 num_inst,
+                      DataSource data_source = AFDOPROFILE);
+
+  // Convert hierarchy profile into flat profile. Hierarchy profile
+  // contains more context information for optimization while flat
+  // profiles are more easier to be merged together.
+  void BuildFlatProfile(const SymbolMap *srcmap);
+
+  // Update each count inside of the map with count * ratio.
+  void UpdateWithRatio(double ratio);
+
+  // Return the sum of total counts of all the outline symbols
+  uint64_t GetTotalSum();
 
   // Adds the indirect call target to source stack.
   //   symbol: name of the symbol in which source is located.
   //   source: source location (in terms of inlined source stack).
   //   target: indirect call target.
   //   count: total sampled count.
+  //   data_source: the type of data used to generate autofdo profile.
+  //   Typically it is perf data, autofdo proto or some other autofdo
+  //   profile.
   // Returns false if we failed to add the call target.
-  bool AddIndirectCallTarget(const string &symbol, const SourceStack &source,
-                             const string &target, uint64 count);
+  bool AddIndirectCallTarget(const std::string &symbol, const SourceStack &src,
+                             const std::string &target, uint64 count,
+                             DataSource data_source = AFDOPROFILE);
 
   // Traverses the inline stack in source, update the symbol map by adding
   // count to the total count in the inlined symbol. Returns the leaf symbol. If
   // the inline stack is empty, returns nullptr without any other updates.
-  Symbol *TraverseInlineStack(const string &symbol, const SourceStack &source,
-                              uint64 count);
+  //   data_source: the type of data used to generate autofdo profile.
+  //   Typically it is perf data, autofdo proto or some other autofdo
+  //   profile.
+  Symbol *TraverseInlineStack(const std::string &symbol,
+                              const SourceStack &source, uint64 count,
+                              DataSource data_source = AFDOPROFILE);
 
   // Updates function name, start_addr, end_addr of a function that has a
   // given address. Returns false if no such symbol exists.
-  const bool GetSymbolInfoByAddr(uint64 addr, const string **name,
+  const bool GetSymbolInfoByAddr(uint64 addr, const std::string **name,
                                  uint64 *start_addr, uint64 *end_addr) const;
 
   // Returns a pointer to the symbol name for a given start address. Returns
   // NULL if no such symbol exists.
-  const string *GetSymbolNameByStartAddr(uint64 address) const;
+  const std::string *GetSymbolNameByStartAddr(uint64 address) const;
 
   // Returns the overlap between two symbol maps. For two profiles, if
   // count_i_j denotes the function count of the ith function in profile j;
@@ -355,17 +450,36 @@ class SymbolMap {
   // read debug info for the symbols that has been sampled in the old profile.
   std::map<uint64, uint64> GetLegacySymbolStartAddressSizeMap() const;
 
-  void Dump() const;
+  void ComputeTotalCountIncl();
+  void BuildCallGraph(CallGraph *callgraph);
+
+  void Dump(bool dump_for_analysis = false) const;
   void DumpFuncLevelProfileCompare(const SymbolMap &map) const;
 
-  void AddAlias(const string& sym, const string& alias);
+  void AddAlias(const std::string &sym, const std::string &alias);
 
   // Validates if the current symbol map is sane.
   bool Validate() const;
 
+  // For scenarios such as llc misses or profile-guided prefetching, we need to
+  // setup the symbol map such that the func_name appears to have samples.
+  // That data is ignored by readers.
+  bool EnsureEntryInFuncForSymbol(const std::string& func_name, uint64_t pc);
+
+  // Collect all function symbols and size in address_symbol_map_, but remove
+  // the names showing up in the profile.
+  NameSizeList collectNamesForProfSymList();
+
+  // Collect all names including names of outline instances, inline instances
+  // and call targets in current map.
+  llvm::StringSet<> collectNamesInProfile();
+
  private:
   // Reads from the binary's elf section to build the symbol map.
   void BuildSymbolMap();
+
+  // Initialize suffix elision policy from flags.
+  void initSuffixElisionPolicy();
 
   // Reads from address_symbol_map_ and update name_addr_map_.
   void BuildNameAddressMap() {
@@ -374,22 +488,30 @@ class SymbolMap {
     }
   }
 
+  SymbolUniquePtrVector unique_symbols_;  // Owns the symbols.
   NameSymbolMap map_;
   NameAliasMap name_alias_map_;
   NameAddressMap name_addr_map_;
   AddressSymbolMap address_symbol_map_;
-  const string binary_;
+  const std::string binary_;
   uint64 base_addr_;
   int64 count_threshold_;
   bool use_discriminator_encoding_;
   bool ignore_thresholds_;
+  uint8 suffix_elision_policy_;
   std::unique_ptr<Addr2line> addr2line_;
   /* working_set_[i] stores # of instructions that consumes
      i/NUM_GCOV_WORKING_SETS of total instruction counts.  */
   gcov_working_set_info working_set_[NUM_GCOV_WORKING_SETS];
 
+  enum {
+    ElideAll = 0,
+    ElideSelected = 1,
+    ElideNone = 2
+  };
+
   DISALLOW_COPY_AND_ASSIGN(SymbolMap);
 };
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_SYMBOL_MAP_H_

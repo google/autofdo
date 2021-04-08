@@ -3,24 +3,24 @@
 
 // Main function to merge different type of profile into txt profile.
 
-#include "base/common.h"
+#include "base/commandlineflags.h"
 #include "profile_creator.h"
+#include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/flags/parse.h"
+#include "third_party/abseil/absl/flags/usage.h"
 
-DEFINE_string(profile, "data.profile",
-              "Profile file name");
-DEFINE_string(profiler, "perf",
-              "Profile type");
-DEFINE_string(output_file, "data.txt",
-              "Merged profile file name");
-DEFINE_string(binary, "data.binary",
-              "Binary file name");
+ABSL_FLAG(string, profile, "data.profile", "Profile file name");
+ABSL_FLAG(string, profiler, "perf", "Profile type");
+ABSL_FLAG(string, output_file, "data.txt", "Merged profile file name");
+ABSL_FLAG(string, binary, "data.binary", "Binary file name");
 
 int main(int argc, char **argv) {
-  google::ParseCommandLineFlags(&argc, &argv, true);
-  google::InitGoogleLogging(argv[0]);
+  absl::SetProgramUsageMessage(argv[0]);
+  absl::ParseCommandLine(argc, argv);
 
-  if (autofdo::MergeSample(
-      FLAGS_profile, FLAGS_profiler, FLAGS_binary, FLAGS_output_file)) {
+  if (devtools_crosstool_autofdo::MergeSample(
+          absl::GetFlag(FLAGS_profile), absl::GetFlag(FLAGS_profiler),
+          absl::GetFlag(FLAGS_binary), absl::GetFlag(FLAGS_output_file))) {
     return 0;
   } else {
     return -1;
