@@ -16,9 +16,10 @@ Autofdo tool depends on llvm. Currently it needs llvm major version >= 10. You c
   - ninja install
 
 2.2 Build autofdo tools
-  - git clone --recursive --branch internal-sync https://github.com/shenhanc78/autofdo.git
+  - git clone --recursive https://github.com/google/autofdo.git
   - cd autofdo
   - mkdir build
   - cd build
   - cmake -G Ninja -DCMAKE_INSTALL_PREFIX=. -DLLVM_PATH=/path/to/llvm/install ../   # Note: "-DCMAKE_INSTALL_PREFIX=." must be used, because there is a bug in the basil cmakelist.
   - ninja
+  - ninja test
