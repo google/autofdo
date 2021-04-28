@@ -623,7 +623,7 @@ bool PerfDataSampleReader::Append(const string &profile_file) {
   if (build_id_ != "") {
     GetFileNameFromBuildID(&reader);
     if (focus_bins_.empty())
-      return true;
+      return false;
   } else {
     LOG(ERROR) << "No buildid found in binary";
   }
