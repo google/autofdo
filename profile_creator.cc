@@ -7,6 +7,7 @@
 
 #include <inttypes.h>
 
+#include <cstdint>
 #include <memory>
 
 #include "base/commandlineflags.h"
@@ -31,8 +32,8 @@ AUTOFDO_PROFILE_SYMBOL_LIST_FLAGS;
 
 namespace {
 struct PrefetchHint {
-  uint64 address;
-  int64 delta;
+  uint64_t address;
+  int64_t delta;
   std::string type;
 };
 
@@ -76,7 +77,7 @@ PrefetchHints ReadPrefetchHints(const std::string &file_name) {
 }  // namespace
 
 namespace devtools_crosstool_autofdo {
-uint64 ProfileCreator::GetTotalCountFromTextProfile(
+uint64_t ProfileCreator::GetTotalCountFromTextProfile(
     const std::string &input_profile_name) {
   ProfileCreator creator("");
   if (!creator.ReadSample(input_profile_name, "text")) {
@@ -179,8 +180,8 @@ bool ProfileCreator::ReadSample(const std::string &input_profile_name,
   return true;
 }
 bool ProfileCreator::ComputeProfile(SymbolMap *symbol_map) {
-  std::set<uint64> sampled_addrs = sample_reader_->GetSampledAddresses();
-  std::map<uint64, uint64> sampled_functions =
+  std::set<uint64_t> sampled_addrs = sample_reader_->GetSampledAddresses();
+  std::map<uint64_t, uint64_t> sampled_functions =
       symbol_map->GetSampledSymbolStartAddressSizeMap(sampled_addrs);
   if (!CheckAndAssignAddr2Line(
           symbol_map,
@@ -201,16 +202,16 @@ bool ProfileCreator::ConvertPrefetchHints(const std::string &profile_file,
   if (!CheckAndAssignAddr2Line(symbol_map, Addr2line::Create(binary_)))
     return false;
   PrefetchHints hints = ReadPrefetchHints(profile_file);
-  std::map<uint64, uint8> repeated_prefetches_indices;
+  std::map<uint64_t, uint8_t> repeated_prefetches_indices;
   for (auto &hint : hints) {
-    uint64 pc = hint.address;
-    int64 delta = hint.delta;
+    uint64_t pc = hint.address;
+    int64_t delta = hint.delta;
     const std::string *name = nullptr;
     if (!symbol_map->GetSymbolInfoByAddr(pc, &name, nullptr, nullptr)) {
       LOG(INFO) << "Instruction address not found:" << std::hex << pc;
       continue;
     }
-    uint8 prefetch_index = repeated_prefetches_indices[pc]++;
+    uint8_t prefetch_index = repeated_prefetches_indices[pc]++;
 
     SourceStack stack;
     symbol_map->get_addr2line()->GetInlineStack(pc, &stack);
@@ -223,9 +224,9 @@ bool ProfileCreator::ConvertPrefetchHints(const std::string &profile_file,
     // top of that, and prefetch hints are signed. For now, we'll explicitly
     // cast to unsigned.
     if (!symbol_map->AddIndirectCallTarget(
-        *name, stack,
-        "__prefetch_" + hint.type + "_" + std::to_string(prefetch_index),
-        static_cast<uint64>(delta))) {
+            *name, stack,
+            "__prefetch_" + hint.type + "_" + std::to_string(prefetch_index),
+            static_cast<uint64_t>(delta))) {
       LOG(WARNING) << "Ignoring address " << std::hex << pc
                    << ". Could not add an indirect call target. Likely the "
                       "inline stack is empty for this address.";
@@ -235,7 +236,7 @@ bool ProfileCreator::ConvertPrefetchHints(const std::string &profile_file,
   return true;
 }
 
-uint64 ProfileCreator::TotalSamples() {
+uint64_t ProfileCreator::TotalSamples() {
   if (sample_reader_ == nullptr) {
     return 0;
   } else {

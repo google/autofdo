@@ -5,26 +5,23 @@
 #include <vector>
 
 #include "llvm_propeller_cfg.h"
+#include "llvm_propeller_code_layout.h"
 #include "llvm_propeller_node_chain.h"
 
 namespace devtools_crosstool_autofdo {
-// Parameters used to compute the layout score.
-extern const uint64_t kBackwardJumpDistance;
-extern const uint64_t kForwardJumpDistance;
-extern const uint64_t kBackwardJumpWeight;
-extern const uint64_t kForwardJumpWeight;
-extern const uint64_t kFallThroughWeight;
-
-uint64_t GetEdgeScore(const CFGEdge *edge, int64_t src_sink_distance);
 
 // TODO(b/159842094): Make NodeChainBuilder exception-block aware.
 // This class builds BB chains for one or multiple CFGs.
 class NodeChainBuilder {
  public:
-  explicit NodeChainBuilder(const std::vector<ControlFlowGraph *> &cfgs)
-      : cfgs_(cfgs) {}
+  NodeChainBuilder(const PropellerCodeLayoutScorer &scorer,
+                   const std::vector<ControlFlowGraph *> &cfgs)
+      : code_layout_scorer_(scorer),
+        cfgs_(cfgs) {}
 
-  explicit NodeChainBuilder(ControlFlowGraph *cfg) : cfgs_(1, cfg) {}
+  NodeChainBuilder(const PropellerCodeLayoutScorer &scorer,
+                   ControlFlowGraph *cfg)
+      : code_layout_scorer_(scorer), cfgs_(1, cfg) {}
 
   // Const public accessors for the internal data structures of chain. Used for
   // testing only.
@@ -67,6 +64,8 @@ class NodeChainBuilder {
   void CoalesceChains();
 
  private:
+  const PropellerCodeLayoutScorer code_layout_scorer_;
+
   // CFGs targeted for BB chaining.
   const std::vector<ControlFlowGraph *> cfgs_;
 

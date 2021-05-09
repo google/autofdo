@@ -36,8 +36,9 @@ struct SpecialSyms {
 class LLVMProfileReader : public ProfileReader {
  public:
   explicit LLVMProfileReader(SymbolMap *symbol_map,
+                             absl::node_hash_set<std::string>& names,
                              SpecialSyms *special_syms = nullptr)
-      : symbol_map_(symbol_map), special_syms_(special_syms) {}
+      : symbol_map_(symbol_map), names_(names), special_syms_(special_syms) {}
 
   bool ReadFromFile(const std::string &output_file) override;
 
@@ -59,7 +60,7 @@ class LLVMProfileReader : public ProfileReader {
                                const llvm::sampleprof::FunctionSamples &fs);
 
   SymbolMap *symbol_map_;
-  absl::node_hash_set<std::string> names_;
+  absl::node_hash_set<std::string>& names_;
   SpecialSyms *special_syms_;
   std::unique_ptr<llvm::sampleprof::ProfileSymbolList> prof_sym_list_;
 };

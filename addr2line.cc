@@ -5,14 +5,15 @@
 
 #include "addr2line.h"
 
+#include <cstdint>
 #include <map>
 #include <string>
 
 #include "base/commandlineflags.h"
 #include "base/logging.h"
 #include "symbol_map.h"
-#include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/container/node_hash_map.h"
+#include "third_party/abseil/absl/flags/flag.h"
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
 #include "llvm/Object/ObjectFile.h"
 
@@ -22,7 +23,7 @@ ABSL_RETIRED_FLAG(bool, use_legacy_symbolizer, false,
 namespace {
 // This maps from a string naming a section to a pair containing a
 // the data for the section, and the size of the section.
-typedef absl::node_hash_map<std::string, std::pair<const char *, uint64>>
+typedef absl::node_hash_map<std::string, std::pair<const char *, uint64_t>>
     SectionMap;
 
 // Given an ELF binary file with path |filename|, create and return an
@@ -47,7 +48,7 @@ Addr2line *Addr2line::Create(const std::string &binary_name) {
 
 Addr2line *Addr2line::CreateWithSampledFunctions(
     const std::string &binary_name,
-    const std::map<uint64, uint64> *sampled_functions) {
+    const std::map<uint64_t, uint64_t> *sampled_functions) {
   Addr2line *addr2line = new LLVMAddr2line(binary_name);
   if (!addr2line->Prepare()) {
     delete addr2line;
@@ -69,7 +70,7 @@ bool LLVMAddr2line::Prepare() {
   return true;
 }
 
-void LLVMAddr2line::GetInlineStack(uint64 address, SourceStack *stack) const {
+void LLVMAddr2line::GetInlineStack(uint64_t address, SourceStack *stack) const {
   auto cu_iter =
       unit_map_.find(dwarf_info_->getDebugAranges()->findAddress(address));
   if (cu_iter == unit_map_.end())
@@ -81,16 +82,16 @@ void LLVMAddr2line::GetInlineStack(uint64 address, SourceStack *stack) const {
   llvm::SmallVector<llvm::DWARFDie, 4> InlinedChain;
   cu_iter->second->getInlinedChainForAddress(address, InlinedChain);
 
-  uint32 row_index = line_table->lookupAddress(
+  uint32_t row_index = line_table->lookupAddress(
       {address, llvm::object::SectionedAddress::UndefSection});
-  uint32 file = (row_index == -1U ? -1U : line_table->Rows[row_index].File);
-  uint32 line = (row_index == -1U ? 0 : line_table->Rows[row_index].Line);
-  uint32 discriminator =
+  uint32_t file = (row_index == -1U ? -1U : line_table->Rows[row_index].File);
+  uint32_t line = (row_index == -1U ? 0 : line_table->Rows[row_index].Line);
+  uint32_t discriminator =
       (row_index == -1U ? 0 : line_table->Rows[row_index].Discriminator);
   for (const llvm::DWARFDie &FunctionDIE : InlinedChain) {
     const char *function_name =
         FunctionDIE.getSubroutineName(llvm::DINameKind::LinkageName);
-    uint32 start_line = FunctionDIE.getDeclLine();
+    uint32_t start_line = FunctionDIE.getDeclLine();
     llvm::StringRef file_name;
     llvm::StringRef dir_name;
     if (line_table->hasFileAtIndex(file)) {
@@ -104,7 +105,7 @@ void LLVMAddr2line::GetInlineStack(uint64 address, SourceStack *stack) const {
     }
     stack->push_back(SourceInfo(function_name, dir_name, file_name, start_line,
                                 line, discriminator));
-    uint32 col;
+    uint32_t col;
     FunctionDIE.getCallerFrame(file, line, col, discriminator);
   }
 }

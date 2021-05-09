@@ -57,7 +57,7 @@ class ElfReader {
   class SymbolSink {
    public:
     virtual ~SymbolSink() {}
-    virtual void AddSymbol(const char *name, uint64 address, uint64 size,
+    virtual void AddSymbol(const char *name, uint64_t address, uint64_t size,
                            int binding, int type, int section) = 0;
 
     // If "filter" is set, only entries for which it returns true are added.

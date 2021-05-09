@@ -1,5 +1,7 @@
 #include "profile_reader.h"
 
+#include <cstdint>
+
 #include "base/commandlineflags.h"
 #include "base/logging.h"
 #include "addr2line.h"
@@ -20,24 +22,24 @@ void AutoFDOProfileReader::ReadModuleGroup() {
 void AutoFDOProfileReader::ReadFunctionProfile() {
   CHECK_EQ(gcov_read_unsigned(), GCOV_TAG_AFDO_FUNCTION);
   gcov_read_unsigned();
-  uint32 num_functions = gcov_read_unsigned();
+  uint32_t num_functions = gcov_read_unsigned();
   SourceStack stack;
-  for (uint32 i = 0; i < num_functions; i++) {
+  for (uint32_t i = 0; i < num_functions; i++) {
     ReadSymbolProfile(stack, true);
   }
 }
 
 void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
                                              bool update) {
-  uint64 head_count;
+  uint64_t head_count;
   if (stack.size() == 0) {
     head_count = gcov_read_counter();
   } else {
     head_count = 0;
   }
   const char *name = names_.at(gcov_read_unsigned()).c_str();
-  uint32 num_pos_counts = gcov_read_unsigned();
-  uint32 num_callsites = gcov_read_unsigned();
+  uint32_t num_pos_counts = gcov_read_unsigned();
+  uint32_t num_callsites = gcov_read_unsigned();
   if (stack.size() == 0) {
     symbol_map_->AddSymbol(name);
     if (!force_update_ && symbol_map_->GetSymbolByName(name)->total_count > 0) {
@@ -48,9 +50,9 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
     }
   }
   for (int i = 0; i < num_pos_counts; i++) {
-    uint32 offset = gcov_read_unsigned();
-    uint32 num_targets = gcov_read_unsigned();
-    uint64 count = gcov_read_counter();
+    uint32_t offset = gcov_read_unsigned();
+    uint32_t num_targets = gcov_read_unsigned();
+    uint64_t count = gcov_read_counter();
     SourceInfo info(name, "", "", 0, offset >> 16, offset & 0xffff);
     SourceStack new_stack;
     new_stack.push_back(info);
@@ -63,7 +65,7 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
       // Only indirect call target histogram is supported now.
       CHECK_EQ(gcov_read_unsigned(), HIST_TYPE_INDIR_CALL_TOPN);
       const std::string &target_name = names_.at(gcov_read_counter());
-      uint64 target_count = gcov_read_counter();
+      uint64_t target_count = gcov_read_counter();
       if (force_update_ || update) {
         symbol_map_->AddIndirectCallTarget(
             new_stack[new_stack.size() - 1].func_name,
@@ -75,7 +77,7 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
     // offset is encoded as:
     //   higher 16 bits: line offset to the start of the function.
     //   lower 16 bits: discriminator.
-    uint32 offset = gcov_read_unsigned();
+    uint32_t offset = gcov_read_unsigned();
     SourceInfo info(name, "", "", 0, offset >> 16, offset & 0xffff);
     SourceStack new_stack;
     new_stack.push_back(info);
@@ -87,8 +89,8 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
 void AutoFDOProfileReader::ReadNameTable() {
   CHECK_EQ(gcov_read_unsigned(), GCOV_TAG_AFDO_FILE_NAMES);
   gcov_read_unsigned();
-  uint32 name_vector_size = gcov_read_unsigned();
-  for (uint32 i = 0; i < name_vector_size; i++) {
+  uint32_t name_vector_size = gcov_read_unsigned();
+  for (uint32_t i = 0; i < name_vector_size; i++) {
     names_.push_back(gcov_read_string());
   }
 }
@@ -96,9 +98,9 @@ void AutoFDOProfileReader::ReadNameTable() {
 void AutoFDOProfileReader::ReadWorkingSet() {
   CHECK_EQ(gcov_read_unsigned(), GCOV_TAG_AFDO_WORKING_SET);
   gcov_read_unsigned();
-  for (uint32 i = 0; i < NUM_GCOV_WORKING_SETS; i++) {
-    uint32 num_counters = gcov_read_unsigned();
-    uint64 min_counter = gcov_read_counter();
+  for (uint32_t i = 0; i < NUM_GCOV_WORKING_SETS; i++) {
+    uint32_t num_counters = gcov_read_unsigned();
+    uint64_t min_counter = gcov_read_counter();
     symbol_map_->UpdateWorkingSet(
         i, num_counters * WORKING_SET_INSN_PER_BB, min_counter);
   }

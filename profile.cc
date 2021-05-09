@@ -4,6 +4,7 @@
 // Class to represent source level profile.
 #include "profile.h"
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <utility>
@@ -23,9 +24,9 @@ ABSL_FLAG(bool, use_lbr, true,
 ABSL_FLAG(bool, llc_misses, false, "The profile represents llc misses.");
 
 namespace devtools_crosstool_autofdo {
-Profile::ProfileMaps *Profile::GetProfileMaps(uint64 addr) {
+Profile::ProfileMaps *Profile::GetProfileMaps(uint64_t addr) {
   const std::string *name;
-  uint64 start_addr, end_addr;
+  uint64_t start_addr, end_addr;
   if (symbol_map_->GetSymbolInfoByAddr(addr, &name,
                                        &start_addr, &end_addr)) {
     std::pair<SymbolProfileMaps::iterator, bool> ret =
@@ -41,7 +42,7 @@ Profile::ProfileMaps *Profile::GetProfileMaps(uint64 addr) {
 }
 
 void Profile::AggregatePerFunctionProfile() {
-  uint64 start = symbol_map_->base_addr();
+  uint64_t start = symbol_map_->base_addr();
   const AddressCountMap *count_map = &sample_reader_->address_count_map();
   for (const auto &addr_count : *count_map) {
     ProfileMaps *maps = GetProfileMaps(addr_count.first + start);
@@ -75,8 +76,8 @@ void Profile::AggregatePerFunctionProfile() {
   }
 }
 
-uint64 Profile::ProfileMaps::GetAggregatedCount() const {
-  uint64 ret = 0;
+uint64_t Profile::ProfileMaps::GetAggregatedCount() const {
+  uint64_t ret = 0;
 
   if (!range_count_map.empty()) {
     for (const auto &range_count : range_count_map) {
@@ -198,7 +199,7 @@ void Profile::ComputeProfile() {
     // Precompute the aggregated counts of hot and cold parts. Both function
     // parts are emitted only if their total sample count is above the required
     // threshold.
-    absl::flat_hash_map<absl::string_view, uint64> symbol_counts;
+    absl::flat_hash_map<absl::string_view, uint64_t> symbol_counts;
     for (const auto &[name, profile] : symbol_profile_maps_) {
       symbol_counts[absl::StripSuffix(name, ".cold")] +=
           profile->GetAggregatedCount();
@@ -209,14 +210,14 @@ void Profile::ComputeProfile() {
     // AddSymbolEntryCount for other symbols, which may or may not had been
     // processed by ProcessPerFunctionProfile.
     for (const auto &[name, ignored] : symbol_profile_maps_) {
-      const uint64 count = symbol_counts.at(absl::StripSuffix(name, ".cold"));
+      const uint64_t count = symbol_counts.at(absl::StripSuffix(name, ".cold"));
       if (symbol_map_->ShouldEmit(count)) {
         symbol_map_->AddSymbol(name);
       }
     }
 
     for (const auto &[name, profile] : symbol_profile_maps_) {
-      const uint64 count = symbol_counts.at(absl::StripSuffix(name, ".cold"));
+      const uint64_t count = symbol_counts.at(absl::StripSuffix(name, ".cold"));
       if (symbol_map_->ShouldEmit(count)) {
         ProcessPerFunctionProfile(name, *profile);
       }

@@ -49,10 +49,10 @@ int main(int argc, char **argv) {
 
   PropellerOptions options(
       PropellerOptionsBuilder()
-          .SetBinaryName(FLAGS_binary)
-          .AddPerfNames(FLAGS_profile)
-          .SetProfiledBinaryName(FLAGS_profiled_binary_name)
-          .SetIgnoreBuildId(FLAGS_ignore_build_id)
+          .SetBinaryName(absl::GetFlag(FLAGS_binary))
+          .AddPerfNames(absl::GetFlag(FLAGS_profile))
+          .SetProfiledBinaryName(absl::GetFlag(FLAGS_profiled_binary_name))
+          .SetIgnoreBuildId(absl::GetFlag(FLAGS_ignore_build_id))
           .SetKeepFrontendIntermediateData(true));
 
   std::unique_ptr<PropellerWholeProgramInfo> whole_program_info =
@@ -64,7 +64,7 @@ int main(int argc, char **argv) {
   }
 
   PropProt prop_prot;
-  if (!prop_prot.InitWriter(FLAGS_propeller_protobuf_out)) {
+  if (!prop_prot.InitWriter(absl::GetFlag(FLAGS_propeller_protobuf_out))) {
     LOG(ERROR) << "Could not initialize protobuf writer.";
     return 1;
   }

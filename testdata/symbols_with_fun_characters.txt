@@ -1,2 +1,2 @@
 main:1000:1000
- 2: 1000 ..foo.bar:800 foo.llvm.1234:100 glom.something:50 a.b.part.101.llvm.567:50
+ 2: 1000 ..foo.bar:800 foo.llvm.1234:100 glom.something:50 a.b.llvm.567.part1:50 goo.llvm.2835.cold:70 xoo.cold.part2:120

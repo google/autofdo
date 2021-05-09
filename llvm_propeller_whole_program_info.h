@@ -14,7 +14,7 @@
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_statistics.h"
-#include "sample_reader.h"
+#include "perfdata_reader.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -32,23 +32,8 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   using AddressMapTy =
       std::map<uint64_t, llvm::SmallVector<std::unique_ptr<SymbolEntry>, 2>>;
 
-  // Symbol name -> SymbolEntry map. Below are 2 examples.
-  // For function symbol obj@0x12345 {name=foo, alias={foo, foo1, foo2}}, this
-  // is emplaced like:
-  //   name_map_["foo"][""]  = 0x12345
-  //   name_map_["foo1"][""] = 0x12345
-  //   name_map_["foo2"][""] = 0x12345
-  //
-  // For bb symbol obj@0x6789a {name=aaaa.BB.foo1, func_ptr=0x12345}, this is
-  // emplaced like:
-  //   name_map_["foo1"]["aaaa"] == 0x6789a
-  //
-  using NameMapTy =
-      std::map<llvm::StringRef, std::map<llvm::StringRef, SymbolEntry *>>;
-
-  // "name_map_" equivalent for bb_addr_map workflow. All SymbolEntries in the
-  // vector (which is never empty) are bb symbols. We don't store FuncPtr
-  // directly in the map, but we can always get it from:
+  // All SymbolEntries in the vector (which is never empty) are bb symbols.
+  // We don't store FuncPtr directly in the map, but we can always get it from:
   // bb_addr_map_[func_name].front()->func_ptr. And BBSymbol with index "x" is
   // stored in bb_addr_map_[BBSymbol->func_ptr->name][x].
   using BbAddrMapTy = std::map<llvm::StringRef, std::vector<SymbolEntry *>>;
@@ -77,10 +62,10 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   PropellerWholeProgramInfo(
       const PropellerOptions &options,
       BinaryPerfInfo &&bpi,
-      llvm::Optional<llvm::object::SectionRef> opt_bb_addr_map_section)
+      llvm::object::SectionRef bb_addr_map_section)
       : AbstractPropellerWholeProgramInfo(options),
         binary_perf_info_(std::move(bpi)),
-        opt_bb_addr_map_section_(std::move(opt_bb_addr_map_section)) {}
+        bb_addr_map_section_(bb_addr_map_section) {}
 
  public:
   ~PropellerWholeProgramInfo() override {}
@@ -88,18 +73,12 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   // Whether binary is position independe.
   bool binary_is_pie() const { return binary_perf_info_.binary_info.is_pie; }
 
-  bool binary_has_bb_addr_map_section() const {
-    return opt_bb_addr_map_section_.hasValue();
-  }
-
   // Getters.
   const string binary_build_id() const {
     return binary_perf_info_.binary_info.build_id;
   }
 
   const PropellerOptions &options() const { return options_; }
-
-  const NameMapTy &name_map() const { return name_map_; }
 
   const BbAddrMapTy &bb_addr_map() const { return bb_addr_map_; }
 
@@ -112,28 +91,6 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   const PerfDataReader &perf_data_reader() const { return perf_data_reader_; }
 
   const SymTabTy &symtab() const { return symtab_; }
-
-  // Find a function symbol by name. func_name could also be a alias.
-  const SymbolEntry *FindFunction(llvm::StringRef func_name) const {
-    auto l1i = name_map_.find(func_name);
-    if (l1i != name_map_.end()) {
-      auto l2i = l1i->second.find("");
-      if (l2i != l1i->second.end()) return l2i->second;
-    }
-    return nullptr;
-  }
-
-  // Find a basicblock by its full name (e.g. "a.BB.main").
-  const SymbolEntry *FindBasicblock(llvm::StringRef bbname) const {
-    auto r = bbname.split(kBasicBlockSeparator);
-    if (r.first.empty() || r.second.empty()) return nullptr;
-    auto l1i = name_map_.find(r.second);
-    if (l1i != name_map_.end()) {
-      auto l2i = l1i->second.find(r.first);
-      if (l2i != l1i->second.end()) return l2i->second;
-    }
-    return nullptr;
-  }
 
   const SymbolEntry *FindSymbolUsingBinaryAddress(uint64_t symbol_addr) const {
     auto i = address_map_.upper_bound(symbol_addr);
@@ -204,11 +161,11 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   // Get file content and set up binary_is_pie_ flag.
   bool InitBinaryFile();
 
-  // Reading symbols into memory.
+  // Reading symbols info from .bb_addr_map section. The second overloaded
+  // version is used in multi-threaded mode. The first version is used
+  // in unit tests.
   bool PopulateSymbolMap();
-
-  // Reading symbols info from .bb_addr_map section.
-  bool PopulateSymbolMapFromBbAddrMap(std::promise<bool> result_promise);
+  bool PopulateSymbolMapWithPromise(std::promise<bool> result_promise);
 
   // Read function symbols from elf's symbol table.
   void ReadSymbolTable();
@@ -217,21 +174,7 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   // parsed correctly.
   bool ReadBbAddrMapSection();
 
-  // See comment in implementation.
-  bool MapFunctionAndBasicBlockSymbols();
-
-  // See comment in implementation.
-  bool FixupNameMap();
-
   bool WriteSymbolsToProtobuf();
-
-  // See comment in implementation.
-  bool FixupFuncName(SymbolEntry *func_sym, llvm::StringRef bb_func_name);
-
-  // Shorten bb name "aaa.BB.main" to "aaa".
-  bool ShortenBBName(SymbolEntry *bb_sym);
-
-  bool EmplaceSymbol(SymbolEntry *sym);
 
   // We select mmap events from perfdata file by comparing the mmap event's
   // binary name against one of the following:
@@ -246,11 +189,6 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   bool CreateCfgs() override;
 
   bool DoCreateCfgs(LBRAggregation &&lbr_aggregation);
-
-  // Create control flow graph from symbol information and perf data. Details in
-  // .cc.
-  template <class C>
-  bool DoCreateCfgs(C &bb_groups, LBRAggregation &&lbr_aggregation);
 
   // Helper method.
   CFGEdge *InternalCreateEdge(
@@ -299,12 +237,11 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   std::list<std::unique_ptr<char, Deleter>> string_vault_;
   // See AddressMapTy.
   AddressMapTy address_map_;
-  // See NameMapTy. Released after cfgs_ is created.
-  NameMapTy name_map_;
+  // See BbAddrMapTy.
   BbAddrMapTy bb_addr_map_;
 
   // Handle to .llvm_bb_addr_map section.
-  llvm::Optional<llvm::object::SectionRef> opt_bb_addr_map_section_;
+  llvm::object::SectionRef bb_addr_map_section_;
   // See SymTabTy definition. Deleted after "CreateCfgs()".
   SymTabTy symtab_;
 

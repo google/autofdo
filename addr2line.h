@@ -6,6 +6,7 @@
 #ifndef AUTOFDO_ADDR2LINE_H_
 #define AUTOFDO_ADDR2LINE_H_
 
+#include <cstdint>
 #include <map>
 #include <string>
 
@@ -28,14 +29,14 @@ class Addr2line {
 
   static Addr2line *CreateWithSampledFunctions(
       const std::string &binary_name,
-      const std::map<uint64, uint64> *sampled_functions);
+      const std::map<uint64_t, uint64_t> *sampled_functions);
 
   // Reads the binary to prepare necessary binary in data.
   // Returns True on success.
   virtual bool Prepare() = 0;
 
   // Stores the inline stack of ADDR in STACK.
-  virtual void GetInlineStack(uint64 addr, SourceStack *stack) const = 0;
+  virtual void GetInlineStack(uint64_t addr, SourceStack *stack) const = 0;
 
  protected:
   std::string binary_name_;
@@ -48,11 +49,11 @@ class LLVMAddr2line : public Addr2line {
  public:
   explicit LLVMAddr2line(const std::string &binary_name);
   bool Prepare() override;
-  void GetInlineStack(uint64 address, SourceStack *stack) const override;
+  void GetInlineStack(uint64_t address, SourceStack *stack) const override;
 
  private:
   // map from cu_offset to the CompileUnit.
-  std::map<uint32, llvm::DWARFUnit *> unit_map_;
+  std::map<uint32_t, llvm::DWARFUnit *> unit_map_;
   llvm::object::OwningBinary<llvm::object::ObjectFile> binary_;
   std::unique_ptr<llvm::DWARFContext> dwarf_info_;
 };

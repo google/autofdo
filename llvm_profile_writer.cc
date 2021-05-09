@@ -3,6 +3,7 @@
 
 // Convert a Perf profile to LLVM.
 
+#include <cstdint>
 #if defined(HAVE_LLVM)
 #include <stdio.h>
 #include <algorithm>
@@ -70,9 +71,9 @@ void LLVMProfileBuilder::VisitTopSymbol(const std::string &name,
 
 void LLVMProfileBuilder::VisitCallsite(const Callsite &callsite) {
   DCHECK_GE(inline_stack_.size(), 1);
-  uint32 offset = callsite.first;
-  uint32 line = offset >> 16;
-  uint32 discriminator = offset & 0xffff;
+  uint32_t offset = callsite.first;
+  uint32_t line = offset >> 16;
+  uint32_t discriminator = offset & 0xffff;
   while (inline_stack_.size() > level_) {
     inline_stack_.pop_back();
   }
@@ -99,9 +100,9 @@ void LLVMProfileBuilder::Visit(const Symbol *node) {
 
   // Emit all the locations and their sample counts.
   for (const auto &pos_count : node->pos_counts) {
-    uint32 offset = pos_count.first;
-    uint32 line = offset >> 16;
-    uint32 discriminator = offset & 0xffff;
+    uint32_t offset = pos_count.first;
+    uint32_t line = offset >> 16;
+    uint32_t discriminator = offset & 0xffff;
     const auto &num_samples = pos_count.second.count;
     if (std::error_code EC = llvm::MergeResult(
             result_, profile.addBodySamples(line, discriminator, num_samples)))

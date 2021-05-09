@@ -4,7 +4,7 @@
 
 #ifndef AUTOFDO_SYMBOL_MAP_H_
 #define AUTOFDO_SYMBOL_MAP_H_
-
+#include <cstdint>
 #include <map>
 #include <set>
 #include <string>
@@ -21,15 +21,14 @@
 #include "third_party/abseil/absl/container/flat_hash_set.h"
 #include "third_party/abseil/absl/container/node_hash_map.h"
 #include "llvm/ProfileData/SampleProf.h"
-
 // Macros from gcc (profile.c)
 #define NUM_GCOV_WORKING_SETS 128
 #define WORKING_SET_INSN_PER_BB 10
 
 namespace devtools_crosstool_autofdo {
 
-typedef std::map<std::string, uint64> CallTargetCountMap;
-typedef std::pair<std::string, uint64> TargetCountPair;
+typedef std::map<std::string, uint64_t> CallTargetCountMap;
+typedef std::pair<std::string, uint64_t> TargetCountPair;
 typedef std::vector<TargetCountPair> TargetCountPairs;
 
 class Addr2line;
@@ -41,9 +40,9 @@ struct gcov_working_set_info {
  public:
   gcov_working_set_info() : num_counters(0), min_counter(0) {}
   /* Number of hot counters included in this working set.  */
-  uint32 num_counters;
+  uint32_t num_counters;
   /* Smallest counter included in this working set.  */
-  uint64 min_counter;
+  uint64_t min_counter;
 };
 
 // Returns a sorted vector of target_count pairs. target_counts is a pointer
@@ -53,7 +52,7 @@ void GetSortedTargetCountPairs(const CallTargetCountMap &call_target_count_map,
                                TargetCountPairs *target_counts);
 
 // The miminal total samples for a outline symbol to be emitted to the profile.
-const int64 kMinSamples = 10;
+const int64_t kMinSamples = 10;
 
 // Represents profile information of a given source.
 class ProfileInfo {
@@ -61,8 +60,8 @@ class ProfileInfo {
   ProfileInfo() : count(0), num_inst(0) {}
   ProfileInfo &operator+=(const ProfileInfo &other);
 
-  uint64 count;
-  uint64 num_inst;
+  uint64_t count;
+  uint64_t num_inst;
   CallTargetCountMap target_map;
 };
 
@@ -71,10 +70,10 @@ class ProfileInfo {
 typedef std::map<const SourceStack, ProfileInfo> SourceStackCountMap;
 
 // Map from a source location (represented by offset+discriminator) to profile.
-typedef std::map<uint32, ProfileInfo> PositionCountMap;
+typedef std::map<uint32_t, ProfileInfo> PositionCountMap;
 
 // callsite_location, callee_name
-typedef std::pair<uint32, const char *> Callsite;
+typedef std::pair<uint32_t, const char *> Callsite;
 
 struct CallsiteHash {
   size_t operator()(const Callsite &callsite) const {
@@ -91,6 +90,7 @@ struct CallsiteEqual {
   }
 };
 class Symbol;
+class SymbolMap;
 // Map from a callsite to the callee symbol.
 typedef absl::node_hash_map<Callsite, Symbol *, CallsiteHash, CallsiteEqual>
     CallsiteMap;
@@ -112,7 +112,7 @@ class Symbol {
  public:
   // This constructor is used to create inlined symbol.
   Symbol(const char *name, llvm::StringRef dir, llvm::StringRef file,
-         uint32 start)
+         uint32_t start)
       : info(SourceInfo(name, dir, file, start, 0, 0)),
         total_count(0),
         total_count_incl(0),
@@ -146,6 +146,10 @@ class Symbol {
 
   std::string name() const { return Name(info.func_name); }
 
+  void PopulateSymbolRetainingHotInlineStacks(Symbol &, const uint64_t,
+                                              SymbolMap &, uint64_t &,
+                                              uint64_t &);
+
   // Merges profile stored in src symbol with this symbol.
   void Merge(const Symbol *src);
 
@@ -154,7 +158,7 @@ class Symbol {
   void EstimateHeadCount();
 
   // Convert an inline instance profile into a callsite location.
-  void FlattenCallsite(uint32 offset, const Symbol *callee);
+  void FlattenCallsite(uint32_t offset, const Symbol *callee);
 
   // Merges flat profile stored in src symbol with this symbol.
   void FlatMerge(const Symbol *src);
@@ -183,19 +187,19 @@ class Symbol {
   void DumpForAnalysis(int ident) const;
 
   // Returns the entry count based on pos_counts and callsites.
-  uint64 EntryCount() const;
+  uint64_t EntryCount() const;
 
   // Source information about the symbol (func_name, file_name, etc.)
   SourceInfo info;
   // The total sampled count, including all the samples collected from
   // current symbol, but not including those collected from any callee
   // of the symbol.
-  uint64 total_count;
+  uint64_t total_count;
   // The total sampled count, including all the sample counts from
   // current symbol and all its decedents called by the symbol.
-  uint64 total_count_incl;
+  uint64_t total_count_incl;
   // The total sampled count in the head bb.
-  uint64 head_count;
+  uint64_t head_count;
   // Map from callsite location to callee symbol.
   CallsiteMap callsites;
   // Map from source location to count and instruction number.
@@ -205,14 +209,14 @@ class Symbol {
 // Vector of unique pointers to symbols.
 typedef std::vector<std::unique_ptr<Symbol>> SymbolUniquePtrVector;
 // Maps symbol's start address to its name and size.
-typedef std::map<uint64, std::pair<std::string, uint64>> AddressSymbolMap;
+typedef std::map<uint64_t, std::pair<std::string, uint64_t>> AddressSymbolMap;
 // Maps from symbol's name to its start address.
-typedef std::map<std::string, uint64> NameAddressMap;
+typedef std::map<std::string, uint64_t> NameAddressMap;
 // Maps function name to alias names.
 typedef absl::node_hash_map<std::string, absl::flat_hash_set<std::string>>
     NameAliasMap;
 // List of pairs containing function name and size.
-using NameSizeList = std::vector<std::pair<llvm::StringRef, uint64>>;
+using NameSizeList = std::vector<std::pair<llvm::StringRef, uint64_t>>;
 
 // SymbolMap stores the symbols in the binary, and maintains
 // a map from symbol name to its related information.
@@ -242,32 +246,26 @@ class SymbolMap {
 
   static bool IsLLVMCompiler(const std::string &path);
 
-  uint64 size() const {
-    return map_.size();
-  }
+  uint64_t size() const { return map_.size(); }
 
-  void set_count_threshold(int64 n) {count_threshold_ = n;}
-  int64 count_threshold() const {return count_threshold_;}
+  void set_count_threshold(int64_t n) { count_threshold_ = n; }
+  int64_t count_threshold() const { return count_threshold_; }
 
   void set_suffix_elision_policy(const std::string &policy);
   const std::string suffix_elision_policy() const;
 
   // Returns true if the count is large enough to be emitted.
-  bool ShouldEmit(int64 count) const {
-    return count > count_threshold_;
-  }
+  bool ShouldEmit(int64_t count) const { return count > count_threshold_; }
 
   // Caculates sample threshold from given total count.
-  void CalculateThresholdFromTotalCount(int64 total_count);
+  void CalculateThresholdFromTotalCount(int64_t total_count);
 
   // Caculates sample threshold from symbol map.
   // All symbols should have been counted.
   void CalculateThreshold();
 
   // Returns relocation start address.
-  uint64 base_addr() const {
-    return base_addr_;
-  }
+  uint64_t base_addr() const { return base_addr_; }
 
   void set_use_discriminator_encoding(bool v) {
     use_discriminator_encoding_ = v;
@@ -304,7 +302,7 @@ class SymbolMap {
     return working_set_;
   }
 
-  uint64 GetSymbolStartAddr(const std::string &name) const {
+  uint64_t GetSymbolStartAddr(const std::string &name) const {
     const auto &iter = name_addr_map_.find(name);
     if (iter == name_addr_map_.end()) {
       return 0;
@@ -312,7 +310,7 @@ class SymbolMap {
     return iter->second;
   }
 
-  void UpdateWorkingSet(int i, uint32 num_counters, uint64 min_counter) {
+  void UpdateWorkingSet(int i, uint32_t num_counters, uint64_t min_counter) {
     if (working_set_[i].num_counters == 0) {
       working_set_[i].num_counters = num_counters;
     } else {
@@ -345,8 +343,8 @@ class SymbolMap {
   void ElideSuffixesAndMerge();
 
   // Increments symbol's entry count.
-  void AddSymbolEntryCount(const std::string &symbol, uint64 head_count,
-                           uint64 total_count = 0);
+  void AddSymbolEntryCount(const std::string &symbol, uint64_t head_count,
+                           uint64_t total_count = 0);
 
   // DataSource represents what kind of data is used to generate afdo profile.
   // PERFDATA: convert perf.data to afdo profile.
@@ -363,13 +361,29 @@ class SymbolMap {
   //   Typically it is perf data, autofdo proto or some other autofdo
   //   profile.
   void AddSourceCount(const std::string &symbol, const SourceStack &source,
-                      uint64 count, uint64 num_inst,
+                      uint64_t count, uint64_t num_inst,
                       DataSource data_source = AFDOPROFILE);
 
-  // Convert hierarchy profile into flat profile. Hierarchy profile
-  // contains more context information for optimization while flat
-  // profiles are more easier to be merged together.
-  void BuildFlatProfile(const SymbolMap *srcmap);
+  // Generates hybrid profiles by flattening callsites whose total counts are
+  // below the threshold, recursively. This is a fine-grained flattening
+  // algorithm that allows inline calls close to the top-level function to
+  // persist while their colder callees are flattened. This provides a good
+  // balance between profile size and performance.
+  void BuildHybridProfile(const SymbolMap &srcmap, uint64_t threshold,
+                          uint64_t &num_callsites, uint64_t &num_flattened);
+
+  // Selectively convert hierarchical profiles into flat profiles.
+  // Hierarchical profiles contains context information for optimization. Flat
+  // profiles contain do not contain context information. This tradeoff allows
+  // for smaller profile size (leading to smaller XFDO profiles) and lower
+  // Forge/Piper costs. Selective flattening allows hot functions to retain
+  // context sensitive information, while removing it from cold functions to
+  // strike a balance between optimization and Forge/Piper costs.
+  void BuildFlatProfile(const SymbolMap & srcmap, bool selectively_flatten,
+                        uint64_t threshold, uint64_t &num_total_functions,
+                        uint64_t &num_flattened);
+
+  void AddSymbolToMap(const Symbol & symbol);
 
   // Update each count inside of the map with count * ratio.
   void UpdateWithRatio(double ratio);
@@ -387,7 +401,7 @@ class SymbolMap {
   //   profile.
   // Returns false if we failed to add the call target.
   bool AddIndirectCallTarget(const std::string &symbol, const SourceStack &src,
-                             const std::string &target, uint64 count,
+                             const std::string &target, uint64_t count,
                              DataSource data_source = AFDOPROFILE);
 
   // Traverses the inline stack in source, update the symbol map by adding
@@ -397,17 +411,18 @@ class SymbolMap {
   //   Typically it is perf data, autofdo proto or some other autofdo
   //   profile.
   Symbol *TraverseInlineStack(const std::string &symbol,
-                              const SourceStack &source, uint64 count,
+                              const SourceStack &source, uint64_t count,
                               DataSource data_source = AFDOPROFILE);
 
   // Updates function name, start_addr, end_addr of a function that has a
   // given address. Returns false if no such symbol exists.
-  const bool GetSymbolInfoByAddr(uint64 addr, const std::string **name,
-                                 uint64 *start_addr, uint64 *end_addr) const;
+  const bool GetSymbolInfoByAddr(uint64_t addr, const std::string **name,
+                                 uint64_t *start_addr,
+                                 uint64_t *end_addr) const;
 
   // Returns a pointer to the symbol name for a given start address. Returns
   // NULL if no such symbol exists.
-  const std::string *GetSymbolNameByStartAddr(uint64 address) const;
+  const std::string *GetSymbolNameByStartAddr(uint64_t address) const;
 
   // Returns the overlap between two symbol maps. For two profiles, if
   // count_i_j denotes the function count of the ith function in profile j;
@@ -435,12 +450,12 @@ class SymbolMap {
   // Traverses all symbols that has been sampled (appears in sampled_functions).
   // Uses addr2line to derive  symbol's source info and update the symbol.
   void UpdateSymbolMap(const Addr2line *addr2line,
-                       const std::map<uint64, uint64> &sampled_functions);
+                       const std::map<uint64_t, uint64_t> &sampled_functions);
 
   // Returns a map from start addresses of functions that have been sampled to
   // the size of the function.
-  std::map<uint64, uint64> GetSampledSymbolStartAddressSizeMap(
-      const std::set<uint64> &sampled_addrs) const;
+  std::map<uint64_t, uint64_t> GetSampledSymbolStartAddressSizeMap(
+      const std::set<uint64_t> &sampled_addrs) const;
 
   // Returns a map from start addresses of functions that have been sampled in
   // the old profile that has already been loaded, to the size of the function.
@@ -448,7 +463,7 @@ class SymbolMap {
   // input, and use the debug/module info in the new binary to update the old
   // profile's module info. For the efficiency consideration, we only need to
   // read debug info for the symbols that has been sampled in the old profile.
-  std::map<uint64, uint64> GetLegacySymbolStartAddressSizeMap() const;
+  std::map<uint64_t, uint64_t> GetLegacySymbolStartAddressSizeMap() const;
 
   void ComputeTotalCountIncl();
   void BuildCallGraph(CallGraph *callgraph);
@@ -494,11 +509,11 @@ class SymbolMap {
   NameAddressMap name_addr_map_;
   AddressSymbolMap address_symbol_map_;
   const std::string binary_;
-  uint64 base_addr_;
-  int64 count_threshold_;
+  uint64_t base_addr_;
+  int64_t count_threshold_;
   bool use_discriminator_encoding_;
   bool ignore_thresholds_;
-  uint8 suffix_elision_policy_;
+  uint8_t suffix_elision_policy_;
   std::unique_ptr<Addr2line> addr2line_;
   /* working_set_[i] stores # of instructions that consumes
      i/NUM_GCOV_WORKING_SETS of total instruction counts.  */

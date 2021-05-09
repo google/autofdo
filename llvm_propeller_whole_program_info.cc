@@ -31,7 +31,7 @@ using ::llvm::Optional;
 using ::llvm::StringRef;
 using ::llvm::object::ObjectFile;
 
-// Section .bb_addr_map consists of many AddrMapEntry.
+// Section .llvm_bb_addr_map consists of many AddrMapEntry.
 struct AddrMapEntry {
   struct BbInfo {
     uint64_t offset;
@@ -80,38 +80,8 @@ absl::optional<AddrMapEntry> ReadOneEntry(const uint8_t **p,
   }
   return AddrMapEntry{address, blocks};
 }
-}  // namespace
 
-// Return true if func_sym is a valid wrapping function for bbName.
-// For example, obj@0x12345 {name=foo, alias={foo, foo1, foo2}} is a valid
-// wrapping function symbol for bbName "aaaa.BB.foo2".
-static bool
-IsFunctionForBBName(SymbolEntry *func_sym, llvm::StringRef bb_name) {
-  auto a = bb_name.split(kBasicBlockSeparator);
-  if (a.second == func_sym->name)
-    return true;
-  for (auto n : func_sym->aliases)
-    if (a.second == n)
-      return true;
-  return false;
-}
-
-static bool
-ContainsAnotherSymbol(SymbolEntry *sym, SymbolEntry *other) {
-  // Note if other's size is 0, we allow O on the end boundary. For example, if
-  // foo.BB.4 is at address 0x10. foo is [0x0, 0x10), we then assume foo
-  // contains foo.BB.4.
-  return sym->addr <= other->addr &&
-         (other->addr + other->size) < (sym->addr + sym->size + 1);
-}
-
-static bool
-IsValidWrappingFunction(SymbolEntry *func_sym, SymbolEntry *bb_sym) {
-  return IsFunctionForBBName(func_sym, bb_sym->name) &&
-         ContainsAnotherSymbol(func_sym, bb_sym);
-}
-
-static llvm::Optional<llvm::object::SectionRef> FindBbAddrMapSection(
+llvm::Optional<llvm::object::SectionRef> FindBbAddrMapSection(
     const llvm::object::ObjectFile &obj) {
   for (auto sec : obj.sections()) {
     Expected<llvm::StringRef> sn = sec.getName();
@@ -126,6 +96,7 @@ static llvm::Optional<llvm::object::SectionRef> FindBbAddrMapSection(
   }
   return llvm::None;
 }
+}  // namespace
 
 std::unique_ptr<PropellerWholeProgramInfo> PropellerWholeProgramInfo::Create(
     const PropellerOptions &options) {
@@ -136,408 +107,16 @@ std::unique_ptr<PropellerWholeProgramInfo> PropellerWholeProgramInfo::Create(
 
   Optional<llvm::object::SectionRef> opt_bb_addr_map_section =
       FindBbAddrMapSection(*(bpi.binary_info.object_file));
-  // Do not use std::make_unique, ctor is not public.
-  if (opt_bb_addr_map_section)
-    LOG(INFO) << "'" << options.binary_name() << "' has '"
+
+  if (!opt_bb_addr_map_section) {
+    LOG(ERROR) << "'" << options.binary_name() << "' does not have '"
               << kBbAddrMapSectionName << "' section.";
+    return nullptr;
+  }
+  // Do not use std::make_unique, ctor is not public.
   return std::unique_ptr<PropellerWholeProgramInfo>(
       new PropellerWholeProgramInfo(options, std::move(bpi),
-                                    std::move(opt_bb_addr_map_section)));
-}
-
-// Emplace symbols to name_map_.
-//
-// For function symbol obj@0x12345 {name=foo, alias={foo, foo1, foo2}}, this is
-// emplaced like:
-//   name_map_["foo"][""] == 0x12345
-//   name_map_["foo1"][""] == 0x12345
-//   name_map_["foo2"][""] == 0x12345
-//
-// For bb symbol obj@0x6789a {name=aaaa.BB.foo1, func_ptr=0x12345}, this is
-// emplaced like:
-//   name_map_["foo1"]["aaaa"] == 0x6789a
-bool PropellerWholeProgramInfo::EmplaceSymbol(SymbolEntry *sym) {
-  CHECK(sym && sym->func_ptr);
-  if (sym->IsFunction()) {
-    bool duplicates_found = false;
-    for (StringRef name : sym->aliases) {
-      auto existing_fi = name_map_[name].find("");
-      if (existing_fi != name_map_[name].end()) {
-        existing_fi->second = nullptr;
-        duplicates_found = true;
-        LOG(WARNING) << "Duplicated entry: name_map_ slot[" << name.str()
-                     << "][] already occupied by other symbol.";
-        ++stats_.duplicate_symbols;
-      } else {
-        name_map_[name][""] = sym;
-      }
-    }
-    return !duplicates_found;
-  }
-  auto r = sym->name.split(kBasicBlockSeparator);
-  StringRef l1Index = r.second;
-  StringRef l2Index = r.first;
-  if (!name_map_[l1Index].emplace(l2Index, sym).second) {
-    // b/159167176 : in case of duplicate symbols, give a warning and mark
-    // such duplicates with nullptr. We shall not immediate "delete" the
-    // SymbolEntry instances now, because we are still in the middle of setting
-    // up name_map_ and address_map_.
-    LOG(WARNING) << "Duplicated entry: name_map_ slot[" << l1Index.str() << "]["
-                 << l2Index.str() << "] already occupied by other symbol.";
-    name_map_[l1Index][l2Index] = nullptr;
-    ++stats_.duplicate_symbols;
-    return false;
-  }
-  return true;
-}
-
-// Minimal check if 2 names are ctor/dtor variants.
-// <ctor-dtor-name> ::= C1      # complete object constructor
-//                  ::= C2      # base object constructor
-//                  ::= C3      # complete object allocating constructor
-//                  ::= D0      # deleting destructor
-//                  ::= D1      # complete object destructor
-//                  ::= D2      # base object destructor
-// Refer to:
-// Itanium C++ ABI (yes, indeed, 2 "http://"s in the url):
-//    http://web.archive.org/web/20100315072857/http://www.codesourcery.com/public/cxx-abi/abi.html
-// _Z     | N      | 5Thing  | C1          | E          | i
-// prefix | nested | `Thing` | Constructor | end nested | parameters: `int`
-// _Z     | N      | 5Thing  | D1          | E          | v
-// prefix | nested | `Thing` | Destructor  | end nested | void
-static bool IsCtorAndDtorNameVariants(SymbolEntry *func_sym,
-                                      SymbolEntry *bb_sym) {
-  // If only 1 difference between 2 names
-  StringRef n1 = func_sym->name;
-  StringRef n2 = bb_sym->name.split(kBasicBlockSeparator).second;
-  if (n1.size() != n2.size()) return false;
-  auto size = n1.size();
-  const unsigned char *s = n1.bytes_begin(), *t = n2.bytes_begin();
-  int diff_pos = -1;
-  for (int p = 0; p < size; ++p)
-    if (s[p] != t[p]) {
-      if (diff_pos == -1)
-        diff_pos = p;
-      else
-        return false;
-    }
-  // Should  not happen, but for completeness.
-  if (diff_pos == -1) return true;
-  return diff_pos > 1 && diff_pos < size - 1 &&
-         ((s[diff_pos - 1] == 'C' || s[diff_pos - 1] == 'D') &&
-          s[diff_pos - 1] == t[diff_pos - 1]) &&
-         (s[diff_pos + 1] == 'E' && t[diff_pos + 1] == 'E') &&
-         '0' <= s[diff_pos] && s[diff_pos] <= '3' && '0' <= t[diff_pos] &&
-         t[diff_pos] <= '3';
-}
-
-// Populate internal mapping "name_map_" and associate bbsymbols to their
-// corresponding function symbols.
-bool PropellerWholeProgramInfo::MapFunctionAndBasicBlockSymbols() {
-  SymbolEntry *current_func = nullptr;
-  for (auto p = address_map_.begin(); p != address_map_.end();
-       (p->second.empty() ? p = address_map_.erase(p) : ++p)) {
-    uint64_t address = p->first;
-    if (p->second.empty()) continue;
-    if (p->second.size() == 1) {  // 99% of the cases
-      SymbolEntry *se = p->second.front().get();
-      // Do not use se->IsBasicBlock() - because at this time, "se" is in
-      // incomplete status, func_ptr is not set up yet.
-      if (SymbolEntry::IsBbSymbol(se->name)) {
-        if (current_func && IsValidWrappingFunction(current_func, se)) {
-          se->func_ptr = current_func;
-        } else {
-          // In the following scenario, we explicitly check if symbol at
-          // 0x314f0cb could be wrapped by symbol at 0x314f0b0.
-
-          // 314f05c t a.BB._ZN4llvm19DependenceGraphInfoINS_7DDGNodeEEC2EOS2_
-          // 314f068 t ra.BB._ZN4llvm19DependenceGraphInfoINS_7DDGNodeEEC2EOS2_
-          // 314f0a1 t ara.BB._ZN4llvm19DependenceGraphInfoINS_7DDGNodeEEC2EOS2_
-          // 314f0b0 W _ZN4llvm19DependenceGraphInfoINS_7DDGNodeEED1Ev
-          // 314f0cb t r.BB._ZN4llvm19DependenceGraphInfoINS_7DDGNodeEED2Ev ***
-          // 314f0d0 W _ZNK4llvm19DependenceGraphInfoINS_7DDGNodeEE7getNameEv
-          // 314f0e0 W _ZNK4llvm19DependenceGraphInfoINS_7DDGNodeEE7getRootEv
-          if (!IsCtorAndDtorNameVariants(current_func, se)) {
-            LOG(WARNING) << "Drop symbol at address " << std::showbase
-                         << std::hex << address << ", bb symbol '"
-                         << se->name.str()
-                         << "' does not have a valid function.";
-            p->second.clear();
-            ++stats_.dropped_symbols;
-            continue;
-          }
-          // Note all names are StringRefs into readonly MemoryBuffer. So we do
-          // renaming by copying.
-          char *new_name = new char[se->name.size() + 1];
-          int t = se->name.split(kBasicBlockSeparator).first.size() +
-                  strlen(kBasicBlockSeparator);
-          strncpy(new_name, se->name.data(), t);
-          strncpy(new_name + t, current_func->name.data(),
-                  current_func->name.size());
-          // Note: no '\0' at the end of current_func->name. So we put one at
-          // the end.
-          new_name[se->name.size()] = '\0';
-          StringRef old_name = se->name;
-          se->name = StringRef(new_name);
-          se->func_ptr = current_func;
-          CHECK(IsFunctionForBBName(current_func, se->name));
-          string_vault_.emplace_back(new_name);
-          LOG(INFO) << "Renamed '" << old_name.str() << "' to '" << new_name
-                    << "'.";
-        }
-      } else {
-        se->func_ptr = se;
-        current_func = se;
-      }
-      se->ordinal = AllocateSymbolOrdinal();
-      EmplaceSymbol(se);
-      continue;
-    }
-
-    if (p->second.size() > 2) {
-      // We have to drop symbols like below:
-      //  0000000003725e0f 5b t aa.foo
-      //  0000000003725e0f 0  t aaa.foo
-      //  0000000003725e0f 0  t aaaa.foo
-      LOG(WARNING)
-          << "Drop all symbols at address " << std::showbase << std::hex
-          << address
-          << ": cannot process more than 2 bb/func symbols at the same "
-             "address.";
-      stats_.dropped_symbols += p->second.size();
-      p->second.clear();
-      continue;
-    }
-
-    //  Now dealing with 2 symbols on the same address.
-    bool all_are_bbs = true;
-    SymbolEntry *func_sym = nullptr;
-    for (auto &s : p->second) {
-      bool s_is_bb = SymbolEntry::IsBbSymbol(s->name);
-      all_are_bbs &= s_is_bb;
-      if (!s_is_bb) {
-        if (func_sym) {
-          // Case 0: 2 func symbols, error and return.
-          LOG(ERROR) << "Analyzing failure: at address " << std::showbase
-                     << std::hex << address
-                     << ", more than 1 function symbols defined that cannot be "
-                        "aliased.";
-          return false;
-        }
-        func_sym = s.get();
-      }
-    }
-
-    // Case 1: both are bb symbols.
-    if (all_are_bbs) {
-      if (!current_func) {
-        LOG(ERROR) << "Analyzing failure: at address " << std::showbase
-                   << std::hex << address
-                   << ", symbols do not have a containing func.";
-        return false;
-      }
-      auto *front = p->second.front().get();
-      auto *back = p->second.back().get();
-      if (IsFunctionForBBName(current_func, front->name) &&
-          IsFunctionForBBName(current_func, back->name)) {
-        front->func_ptr = current_func;
-        back->func_ptr = current_func;
-      } else {
-        LOG(WARNING) << "Drop all bb symbols at address " << std::showbase
-                     << std::hex << address
-                     << ": cannot find a wrapping function for both.";
-        p->second.clear();
-        continue;
-      }
-      if (front->size != 0 && back->size != 0)
-        LOG(WARNING) << "2 non-empty bb symbols at address "
-                   << std::showbase << std::hex << address;
-      if (front->size == 0 && back->size == 0)
-        LOG(WARNING) << "2 empty bb symbols at address " << std::showbase
-                     << std::hex << address;
-      // Zero sized bb is placed before the non zero sized bb.
-      if (front->size != 0) p->second.front().swap(p->second.back());
-      p->second.front()->ordinal = AllocateSymbolOrdinal();
-      p->second.back()->ordinal = AllocateSymbolOrdinal();
-      EmplaceSymbol(p->second.front().get());
-      EmplaceSymbol(p->second.back().get());
-      continue;
-    }
-
-    // Case 2: 1 func sym, 1 bb sym.
-    func_sym->func_ptr = func_sym;
-    SymbolEntry *bb_sym = (p->second.front().get() == func_sym)
-                             ? p->second.back().get()
-                             : p->second.front().get();
-    if (!SymbolEntry::IsBbSymbol(bb_sym->name) ||
-        SymbolEntry::IsBbSymbol(func_sym->name)) {
-      LOG(ERROR) << "Analyzing failure: unexpected mixed symbol at "
-                 << std::showbase << std::hex << address;
-      return false;
-    }
-
-    // So now we have func_sym and bb_sym on the same address.
-    if (IsFunctionForBBName(func_sym, bb_sym->name)) {
-      // Case 2.1: bb_sym belongs to func_sym.
-      // 00000000018a3047 000000000000000c t  aaa.BB.foo   <- last_sym
-      // 00000000018a3060 000000000000000c t  a.BB.bar     <- bb_sym
-      // 00000000018a3060 000000000000000d W  bar          <- func_sym
-      bb_sym->func_ptr = func_sym;
-      if (p->second.front().get() != func_sym)
-        p->second.front().swap(p->second.back());
-    } else {
-      // Case 2.2: bb_sym bleongs to last_sym.
-      // 00000000018a3047 000000000000000c t  aaa.BB.foo   <- last_sym
-      // 00000000018a3060 000000000000000c t aaaa.BB.foo   <- bb_sym
-      // 00000000018a3060 000000000000000d W  bar          <- func_sym
-      SymbolEntry *last_sym = p == address_map_.begin()
-                                 ? nullptr
-                                 : (std::prev(p))->second.back().get();
-      if (last_sym && IsFunctionForBBName(last_sym->func_ptr, bb_sym->name)) {
-        bb_sym->func_ptr = last_sym->func_ptr;
-        if (p->second.front().get() != bb_sym)
-          p->second.front().swap(p->second.back());
-      } else {
-        LOG(ERROR) << "Unable to analyze " << std::showbase << std::hex
-                   << address;
-        return false;
-      }
-    }
-    current_func = func_sym;
-    p->second.front()->ordinal = AllocateSymbolOrdinal();
-    p->second.back()->ordinal = AllocateSymbolOrdinal();
-    EmplaceSymbol(p->second.front().get());
-    EmplaceSymbol(p->second.back().get());
-  }  // End of iterating address_map_
-  return true;
-}
-
-// If we have the following symbol entry,
-//  obj@0x12345 {symbolentry: name=f1, alias={f1, f2, f3}, func_ptr=0x12345}
-//  obj@0x45678 {symbolentry: name=a.BB.f3, bbtag=true, funct_ptr=0x12345}
-//  obj@0x789ab {symbolentry: name=aa.BB.f3, bbtag=true,funct_ptr=0x12345}
-//  obj@0xabcde {symbolentry: name=aaa.BB.f3, bbtag=true, funct_ptr=0x12345}
-// These objects are mapped into name_map_ like below:
-//
-//  {  "f1":
-//          {
-//             "": obj@0x12345  {symbolentry: name=f1, alias={f1, f2, f3}}
-//          },
-//     "f2":
-//          {
-//             "": obj@0x12345  {symbolentry: name=f1, alias={f1, f2, f3}}
-//          },
-//     "f3":
-//          {
-//             "": obj@0x12345  {symbolentry: name=f1, alias={f1, f2, f3}}
-//             "a": obj@0x45678   {symbolentry: name=a.BB.f3, bbtag=true},
-//             "aa": obj@0x789ab  {symbolentry: name=aa.BB.f3, bbtag=true},
-//             "aaa": obj@0xabcde {symbolentry: name=aaa.BB.f3, bbtag=true},
-//          }
-//  }
-//
-// This FixupNameMap changes obj@0x12345 as well as the mapping into:
-//  obj@0x12345 {symbolentry: name=f3, alias={f3, f1, f2}, func_ptr=0x12345}
-//
-//  {  "f1":
-//          {
-//             "": obj@0x12345  {symbolentry: name=f3, alias={f3, f1, f2}}
-//          },
-//     "f2":
-//          {
-//             "": obj@0x12345  {symbolentry: name=f3, alias={f3, f1, f2}}
-//          },
-//     "f3":
-//          {
-//             "": obj@0x12345  {symbolentry: name=f3, alias={f3, f1, f2}}
-//             "a": obj@0x45678   {symbolentry: name=a.BB.f3, bbtag=true},
-//             "aa": obj@0x789ab  {symbolentry: name=aa.BB.f3, bbtag=true},
-//             "aaa": obj@0xabcde {symbolentry: name=aaa.BB.f3, bbtag=true},
-//          }
-//  }
-bool PropellerWholeProgramInfo::FixupNameMap() {
-  for (auto i = name_map_.begin(), e = name_map_.end(); i != e;
-       i = (i->second.empty() ? name_map_.erase(i) : ++i)) {
-    NameMapTy::mapped_type &function_bbs = i->second;
-    // Prune duplicate symbols (duplicates are marked by nullptr in name_map_).
-    bool duplicates_found = false;
-    for (auto si = function_bbs.begin(), se = function_bbs.end();
-         !duplicates_found && si != se; ++si)
-      duplicates_found = (si->second == nullptr);
-    if (duplicates_found)
-      function_bbs.clear();
-    if (function_bbs.empty()) continue;
-
-    SymbolEntry *func_sym = function_bbs[""];
-    if (!func_sym) {
-      LOG(ERROR) << "Internal error. No func ptr for '" << i->first.str()
-                 << "'.";
-      return false;
-    }
-    StringRef bb_func_name = "";
-    for (auto &j : function_bbs) {
-      SymbolEntry *sym = j.second;
-      if (sym->IsFunction()) continue;
-      StringRef n = sym->name.split(kBasicBlockSeparator).second;
-      if (!bb_func_name.empty() && bb_func_name != n) {
-        LOG(ERROR) << "Internal error. name_map_['" << i->first.str()
-                   << "'] contains bbs that have different func name part.";
-        return false;
-      }
-      bb_func_name = n;
-    }
-    if (!bb_func_name.empty() && bb_func_name != func_sym->name &&
-        !FixupFuncName(func_sym, bb_func_name))
-      return false;
-    // We only shorten bb name after FixupFuncName is done.
-    for (auto &j : function_bbs)
-      if (j.second->IsBasicBlock()) ShortenBBName(j.second);
-  }
-  return true;
-}
-
-// One tricky thing to fix:
-//    Func symbol: name=_zfooc2, aliases={_zfooc2, _zfooc1, _zfooc3}
-//    BB symbol: a.BB._zfooc1
-//
-// We want to make sure the primary name (the name first appears in the
-// alias) matches the bb name, so we change the func's name and aliases to:
-//    name=_zfooc1, aliases={_zfooc1, _zfooc2, _zfooc3}
-bool PropellerWholeProgramInfo::FixupFuncName(SymbolEntry *func_sym,
-                                              StringRef bb_func_name) {
-  if (func_sym->aliases.size() > 1) {
-    if (bb_func_name != func_sym->name) {
-      auto &aliases = func_sym->aliases;
-      SymbolEntry::AliasesTy::iterator p, q;
-      for (p = aliases.begin(), q = aliases.end(); p != q; ++p)
-        if (*p == bb_func_name) break;
-
-      if (p == q) {
-        LOG(ERROR) << "Internal check error: bb symbol '" << bb_func_name.str()
-                   << "' does not have a valid wrapping function.";
-        return false;
-      }
-      if (p != aliases.begin()) {
-        func_sym->name = bb_func_name;
-        aliases.erase(p);
-        aliases.insert(aliases.begin(), bb_func_name);
-      }
-    }
-  }
-  return true;
-}
-
-// Shorten bb name "aaa.BB.main" to "aaa".
-bool PropellerWholeProgramInfo::ShortenBBName(SymbolEntry *bb_sym) {
-  StringRef fname, bname;
-  bool r = SymbolEntry::IsBbSymbol(bb_sym->name, &fname, &bname);
-  if (!r || fname != bb_sym->func_ptr->name) {
-    LOG(ERROR) << "Internal check error: bb symbol '" << bb_sym->name.str()
-               << "' in conflict state.";
-    return false;
-  }
-  bb_sym->name = bname;
-  return true;
+                                    *opt_bb_addr_map_section));
 }
 
 SymbolEntry *PropellerWholeProgramInfo::CreateFuncSymbolEntry(
@@ -552,8 +131,8 @@ SymbolEntry *PropellerWholeProgramInfo::CreateFuncSymbolEntry(
   }
   // Pre-allocate "func_bb_num" nullptrs in bb_addr_map_[func_name].
   bb_addr_map_.emplace(std::piecewise_construct,
-                      std::forward_as_tuple(func_name),
-                      std::forward_as_tuple(func_bb_num, nullptr));
+                       std::forward_as_tuple(func_name),
+                       std::forward_as_tuple(func_bb_num, nullptr));
   // Note, funcsym is not put into bb_addr_map_. It's accessible via
   // bb_addr_map_[func_name].front()->func_ptr.
   SymbolEntry *funcsym =
@@ -601,11 +180,12 @@ void PropellerWholeProgramInfo::ReadSymbolTable() {
     if (!address || !*address) continue;
     Expected<StringRef> func_name = symbol.getName();
     if (!func_name) continue;
+    const uint64_t func_size = symbol.getSize();
+    if (func_size == 0) continue;
 
     auto &addr_sym_list = symtab_[*address];
     // Check whether there are already symbols on the same address, if so make
     // sure they have the same size and thus they can be aliased.
-    const uint64_t func_size = symbol.getSize();
     bool check_size_ok = true;
     for (auto &sym_ref : addr_sym_list) {
       uint64_t sym_size = llvm::object::ELFSymbolRef(sym_ref).getSize();
@@ -615,7 +195,7 @@ void PropellerWholeProgramInfo::ReadSymbolTable() {
                      << AddressFormatter(*address) << ": '" << func_name->str()
                      << "(" << func_size << ")' and '"
                      << llvm::cantFail(sym_ref.getName()).str() << "("
-                     << sym_size << ")', the latter will be dropped.";
+                     << sym_size << ")', the former will be dropped.";
         check_size_ok = false;
         break;
       }
@@ -625,10 +205,10 @@ void PropellerWholeProgramInfo::ReadSymbolTable() {
 }
 
 bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
-  llvm::Expected<StringRef> exp_contents =
-      (*opt_bb_addr_map_section_).getContents();
+  llvm::Expected<StringRef> exp_contents = bb_addr_map_section_.getContents();
   if (!exp_contents) {
-    LOG(ERROR) << "Error accessing .bb_info section content.";
+    LOG(ERROR) << "Error accessing '" << kBbAddrMapSectionName
+               << "' section content.";
     return false;
   }
   StringRef sec_contents = *exp_contents;
@@ -636,6 +216,68 @@ bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
   const unsigned char * const end = sec_contents.bytes_end();
 
   uint64_t ordinal = 0;
+  std::set<llvm::StringRef> conflicting_symbols;
+  auto remove_conflicting_symbols = [this, &conflicting_symbols]() {
+    uint32_t total_symbols_removed = 0;
+    for (llvm::StringRef conflicting_name : conflicting_symbols) {
+      BbAddrMapTy::iterator i = bb_addr_map_.find(conflicting_name);
+      CHECK(i != bb_addr_map_.end());
+      std::vector<SymbolEntry *> symbols_to_remove(std::move(i->second));
+      bb_addr_map_.erase(i);
+      // "symbols_to_remove" now contains all the BB symbols.
+      CHECK(!symbols_to_remove.empty());
+      // Add function symbol to "symbols_to_remove".
+      symbols_to_remove.push_back(symbols_to_remove.front()->func_ptr);
+      // "symbols_to_remove" contains the function symbol + all its bb symbols.
+      for (SymbolEntry *symbol_to_remove : symbols_to_remove) {
+        CHECK(symbol_to_remove);
+        AddressMapTy::iterator addri =
+            address_map_.find(symbol_to_remove->addr);
+        CHECK(addri != address_map_.end());
+        bool removed = false;
+        llvm::SmallVector<std::unique_ptr<SymbolEntry>, 2> &addrlist =
+            addri->second;
+        for (auto symi = addrlist.begin(), syme = addrlist.end();
+             !removed && symi != syme; ++symi) {
+          if ((*symi).get() == symbol_to_remove) {
+            addrlist.erase(symi);
+            removed = true;
+            break;
+          }
+        }
+        CHECK(removed);
+        if (addrlist.empty())
+          address_map_.erase(addri);
+      }
+      total_symbols_removed += symbols_to_remove.size();
+    }
+    LOG(INFO) << "Dropped " << total_symbols_removed
+              << " function and basicblock symbols because of conflicting "
+                 "function name.";
+  };
+  auto check_conflicting_symbols =
+      [this, &conflicting_symbols](
+          llvm::SmallVector<llvm::object::SymbolRef, 2> &symbol_refs) {
+        bool conflicting_symbols_found = false;
+        for (llvm::object::SymbolRef sr : symbol_refs) {
+          StringRef alias = llvm::cantFail(sr.getName());
+          BbAddrMapTy::iterator i = bb_addr_map_.find(alias);
+          if (i == bb_addr_map_.end()) continue;
+          // Conflicting symbol found, check alias does not have "__uniq" part
+          // and symbol_ref is not local. (bindings could be GLOBALE, LOCAL,
+          // WEAK, etc)
+          if (llvm::object::ELFSymbolRef(sr).getBinding() ==
+              llvm::ELF::STB_GLOBAL) {
+            LOG(INFO) << "Found global symbol '" << alias.str()
+                      << "' conflicting with LOCAL symbol.";
+          }
+          CHECK(alias.find("__uniq") == std::string::npos);
+          conflicting_symbols.insert(alias);
+          conflicting_symbols_found = true;
+          ++stats_.duplicate_symbols;
+        }
+        return conflicting_symbols_found;
+      };
   while (p != end) {
     // ReadOneEntry moves p ahead ...
     auto entry = ReadOneEntry(&p, end);
@@ -647,8 +289,8 @@ bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
     // b/169962287 under some circumstances, bb_addr_map's symbol may not have
     // associated symbols.
     if (iter == symtab_.end()) {
-      LOG(WARNING) << "Invalid entry inside '.bb_addr_map', at offset: "
-                   << std::showbase << std::hex
+      LOG(WARNING) << "Invalid entry inside '" << kBbAddrMapSectionName
+                   << "', at offset: " << std::showbase << std::hex
                    << p - sec_contents.bytes_begin()
                    << ". Function address listed: " << std::showbase << std::hex
                    << func_address;
@@ -663,6 +305,14 @@ bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
     const uint64_t func_size =
         llvm::object::ELFSymbolRef(iter->second.front()).getSize();
     const auto &blocks = entry.value().bb_info;
+    // TODO(b/183514655): revisit this after bug fixes.
+    if (blocks.empty() || (blocks.size() == 1 && blocks.front().size == 0)) {
+      LOG(WARNING) << "Skipped trivial bbentry : " << std::showbase << std::hex
+                   << func_address;
+      continue;
+    }
+    if (check_conflicting_symbols(iter->second))
+      continue;
     SymbolEntry *func_symbol =
         CreateFuncSymbolEntry(++ordinal, func_aliases.front(), func_aliases,
                               blocks.size(), func_address, func_size);
@@ -680,63 +330,20 @@ bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
         return false;
     }
   }  // end of iterating bb info section.
+  remove_conflicting_symbols();
   return true;
 }
 
-// Populate internal data structure: name_map_ and address_map_ from bb_info
-// section && binary symbol table.
-bool PropellerWholeProgramInfo::PopulateSymbolMapFromBbAddrMap(
-    std::promise<bool> result_promise) {
+bool PropellerWholeProgramInfo::PopulateSymbolMap() {
   ReadSymbolTable();
-  bool result = ReadBbAddrMapSection();
-  result_promise.set_value_at_thread_exit(result);
-  return result;
+  return ReadBbAddrMapSection();
 }
 
-// Populate internal data structure: name_map_ and address_map_.
-bool PropellerWholeProgramInfo::PopulateSymbolMap() {
-  auto symbols = binary_perf_info_.binary_info.object_file->symbols();
-  for (const auto &sym : symbols) {
-    auto addr_e = sym.getAddress();
-    auto section_e = sym.getSection();
-    auto name_e = sym.getName();
-    auto type_e = sym.getType();
-    if (!(addr_e && *addr_e && section_e && (*section_e)->isText() && name_e &&
-          type_e))
-      continue;
-    StringRef name = *name_e;
-    if (name.empty()) continue;
-    uint64_t addr = *addr_e;
-    uint8_t type(*type_e);
-    llvm::object::ELFSymbolRef elf_sym(sym);
-
-    StringRef bb_func_name;
-    bool is_func = (type == llvm::object::SymbolRef::ST_Function);
-    bool is_bb = SymbolEntry::IsBbSymbol(name, &bb_func_name);
-    if (!is_func && !is_bb) continue;
-
-    uint64_t size =  elf_sym.getSize();
-    auto &addr_sym_list = address_map_[addr];
-    if (!addr_sym_list.empty()) {
-      // If we already have a symbol at the same address, try merging.
-      SymbolEntry *aliased_symbol = nullptr;
-      for (auto &sym : addr_sym_list) {
-        // If both are functions, then alias both and set the size to the larger
-        // one.
-        if (!SymbolEntry::IsBbSymbol(sym->name) && is_func) {
-          sym->size = (sym->size > size ? sym->size : size);
-          sym->aliases.push_back(name);
-          aliased_symbol = sym.get();
-          break;
-        }
-      }
-      if (aliased_symbol) continue;
-    }
-    addr_sym_list.emplace_back(new SymbolEntry(
-        0, name, SymbolEntry::AliasesTy({name}), addr, size, nullptr, 0));
-  }  // end of iterating object symbols.
-
-  return MapFunctionAndBasicBlockSymbols() && FixupNameMap();
+bool PropellerWholeProgramInfo::PopulateSymbolMapWithPromise(
+    std::promise<bool> result_promise) {
+  bool result = PopulateSymbolMap();
+  result_promise.set_value_at_thread_exit(result);
+  return result;
 }
 
 // Parse perf data file.
@@ -801,48 +408,12 @@ Optional<LBRAggregation> PropellerWholeProgramInfo::ParsePerfData() {
   return Optional<LBRAggregation>(std::move(lbr_aggregation));
 }
 
-// TODO(b/162192070): cleanup after migrating to bbinfo.
-// Return a pair of (FunctionSymbol *, a vector of <SymbolEntries> that are to
-// be turned into CFGNodes).
-template <class C>
-static std::pair<SymbolEntry *, std::vector<SymbolEntry *>>
-GetFunctionAndBasicBlockSymbols(typename C::value_type &item) {
-  CHECK(!item.second.empty());
-  if constexpr (std::is_same_v<PropellerWholeProgramInfo::NameMapTy, C>) {
-    // BasicBlock Labels workflow.
-    std::vector<SymbolEntry *> result;
-    result.reserve(item.second.size());
-    for (auto &[symbol_name, symbol_entry] : item.second)
-      result.push_back(symbol_entry);
-    return {result[0], result};
-  } else {
-    return {item.second[0]->func_ptr, item.second};
-  }
-  // Unreachable.
-  return {};
-}
-
-// A non-templated "DoCreateCfgs" is needed. Because there are unittests that
-// directly calls DoCreateCfgs with LBRAggregation.
-// TODO(b/162192070): cleanup after migrating to bbinfo.
 bool PropellerWholeProgramInfo::DoCreateCfgs(LBRAggregation &&lbr_aggregation) {
-  if (binary_has_bb_addr_map_section())
-    return DoCreateCfgs(bb_addr_map_, std::move(lbr_aggregation));
-  return DoCreateCfgs(name_map_, std::move(lbr_aggregation));
-}
-
-// Create control flow graph from symbol information and perf data. CFGNodes are
-// created from "name_map_" or "bb_addr_map_" and template type "C" is used to
-// represent either name_map_ or bb_addr_map_.
-// TODO(b/162192070): remove template parameter after migrating to bbinfo.
-template <class C>
-bool PropellerWholeProgramInfo::DoCreateCfgs(C &bb_groups,
-                                             LBRAggregation &&lbr_aggregation) {
   std::map<const SymbolEntry *, std::vector<SymbolEntry *>, SymbolPtrComparator>
       largest_alias_syms;
-  for (auto &bb_group : bb_groups) {
-    auto [func_symbol, syms] = GetFunctionAndBasicBlockSymbols<C>(bb_group);
-
+  for (auto &bb_group : bb_addr_map_) {
+    const SymbolEntry *func_symbol = bb_group.second[0]->func_ptr;
+    std::vector<SymbolEntry *> &syms = bb_group.second;
     auto [cur_iter, inserted] = largest_alias_syms.emplace(func_symbol, syms);
     if (!inserted && syms.size() > cur_iter->second.size()) {
       cur_iter->second = syms;
@@ -857,14 +428,9 @@ bool PropellerWholeProgramInfo::DoCreateCfgs(C &bb_groups,
   for (auto& [func_symbol, syms] : largest_alias_syms) {
     CHECK(!syms.empty());
     CHECK(func_symbol);
-    // TODO(b/162192070): remove template parameter after migrating to bbinfo.
+    CHECK(tmp_cfg_map.find(func_symbol) == tmp_cfg_map.end());
+
     std::sort(syms.begin(), syms.end(), SymbolPtrComparator());
-
-    auto i = tmp_cfg_map.find(func_symbol);
-    // cfg with symbol func_symbol may already exist, because the same
-    // SymbolEntry may occupy multiple slots of name_map_, because of aliases.
-    if (i != tmp_cfg_map.end()) continue;
-
     ControlFlowGraph *cfg = new ControlFlowGraph();
     cfg->names_ = func_symbol->aliases;
     tmp_cfg_map.emplace(func_symbol, cfg);
@@ -885,10 +451,7 @@ bool PropellerWholeProgramInfo::DoCreateCfgs(C &bb_groups,
 
   for (auto &cfgi : tmp_cfg_map) {
     ControlFlowGraph *cfg_ptr = cfgi.second;
-    // TODO(b/162192070): cleanup after removing bblabels workflow.
-    // Only adjust CFGNode size for basic block labels workflow.
-    cfg_ptr->FinishCreatingControlFlowGraph(
-        std::is_same<PropellerWholeProgramInfo::NameMapTy, C>::value);
+    cfg_ptr->FinishCreatingControlFlowGraph();
     cfgs_.emplace(std::piecewise_construct,
                   std::forward_as_tuple(cfgi.first->name),
                   std::forward_as_tuple(cfg_ptr));
@@ -896,7 +459,6 @@ bool PropellerWholeProgramInfo::DoCreateCfgs(C &bb_groups,
 
   // Release / cleanup.
   if (!options_.keep_frontend_intermediate_data()) {
-    name_map_.clear();
     binary_perf_info_.binary_mmaps.clear();
     lbr_aggregation = LBRAggregation();
     // Release ownership and delete SymbolEntry instances.
@@ -1190,12 +752,10 @@ bool PropellerWholeProgramInfo::CalculateFallthroughBBs(
 }
 
 bool PropellerWholeProgramInfo::CreateCfgs() {
-  // TODO(b/160191690): Replace usage of thread::Fiber and thread::Channel with
-  // std::thread before open source.
   std::promise<bool> read_symbols_promise;
   std::future<bool> future_result = read_symbols_promise.get_future();
   std::thread populate_symbol_map_thread(
-      &PropellerWholeProgramInfo::PopulateSymbolMapFromBbAddrMap, this,
+      &PropellerWholeProgramInfo::PopulateSymbolMapWithPromise, this,
       std::move(read_symbols_promise));
 
   Optional<LBRAggregation> opt_lbr_aggregation = ParsePerfData();

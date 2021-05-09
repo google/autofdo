@@ -7,6 +7,8 @@
 
 #include <string.h>
 
+#include <cstdint>
+
 #include "addr2line.h"
 #include "symbol_map.h"
 
@@ -18,12 +20,12 @@ InstructionMap::~InstructionMap() {
 }
 
 void InstructionMap::BuildPerFunctionInstructionMap(const std::string &name,
-                                                    uint64 start_addr,
-                                                    uint64 end_addr) {
+                                                    uint64_t start_addr,
+                                                    uint64_t end_addr) {
   if (start_addr >= end_addr) {
     return;
   }
-  for (uint64 addr = start_addr; addr < end_addr; addr++) {
+  for (uint64_t addr = start_addr; addr < end_addr; addr++) {
     InstInfo *info = new InstInfo();
     addr2line_->GetInlineStack(addr, &info->source_stack);
     inst_map_.insert(InstMap::value_type(addr, info));

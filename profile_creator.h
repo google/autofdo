@@ -6,10 +6,12 @@
 #ifndef AUTOFDO_PROFILE_CREATOR_H_
 #define AUTOFDO_PROFILE_CREATOR_H_
 
+#include <cstdint>
+
 #include "addr2line.h"
+#include "profile_writer.h"
 #include "sample_reader.h"
 #include "symbol_map.h"
-#include "profile_writer.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -29,7 +31,7 @@ class ProfileCreator {
   }
 
   // Returns the total sample counts from a text profile.
-  static uint64 GetTotalCountFromTextProfile(
+  static uint64_t GetTotalCountFromTextProfile(
       const std::string &input_profile_name);
 
   // Creates AutoFDO profile, returns true if success, false otherwise.
@@ -44,7 +46,7 @@ class ProfileCreator {
                   const std::string &profiler);
 
   // Returns total number of samples collected.
-  uint64 TotalSamples();
+  uint64_t TotalSamples();
 
   // Returns the SampleReader pointer.
   const devtools_crosstool_autofdo::SampleReader &sample_reader() {

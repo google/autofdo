@@ -6,6 +6,7 @@
 #ifndef AUTOFDO_PROFILE_H_
 #define AUTOFDO_PROFILE_H_
 
+#include <cstdint>
 #include <set>
 #include <string>
 
@@ -44,10 +45,11 @@ class Profile {
  private:
   // Internal data structure that aggregates profile for each symbol.
   struct ProfileMaps {
-    ProfileMaps(uint64 start, uint64 end) : start_addr(start), end_addr(end) {}
-    uint64 GetAggregatedCount() const;
-    uint64 start_addr;
-    uint64 end_addr;
+    ProfileMaps(uint64_t start, uint64_t end)
+        : start_addr(start), end_addr(end) {}
+    uint64_t GetAggregatedCount() const;
+    uint64_t start_addr;
+    uint64_t end_addr;
     AddressCountMap address_count_map;
     RangeCountMap range_count_map;
     BranchCountMap branch_count_map;
@@ -55,7 +57,7 @@ class Profile {
   typedef absl::node_hash_map<std::string, ProfileMaps *> SymbolProfileMaps;
 
   // Returns the profile maps for a give function.
-  ProfileMaps *GetProfileMaps(uint64 addr);
+  ProfileMaps *GetProfileMaps(uint64_t addr);
 
   // Aggregates raw profile for each symbol.
   void AggregatePerFunctionProfile();

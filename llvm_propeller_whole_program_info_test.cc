@@ -56,7 +56,6 @@ TEST(LlvmPropellerWholeProgramInfo, CreateCFG) {
   ASSERT_TRUE(wpi->CreateCfgs());
 
   // Test resources are released after CreateCFG.
-  EXPECT_TRUE(wpi->name_map().empty());
   EXPECT_TRUE(wpi->binary_mmaps().empty());
 
   const ControlFlowGraph *main = wpi->FindCfg("main");
@@ -115,7 +114,6 @@ TEST(LlvmPropellerWholeProgramInfoBbAddrMapTest, BbAddrMapExist) {
       PropellerOptionsBuilder().SetBinaryName(binary).SetClusterOutName(
           "dummy.out")));
   ASSERT_NE(nullptr, wpi) << "Could not initialize whole program info";
-  EXPECT_TRUE(wpi->binary_has_bb_addr_map_section());
 }
 
 TEST(LlvmPropellerWholeProgramInfoBbAddrTest, BbAddrMapReadSymbolTable) {
@@ -127,7 +125,6 @@ TEST(LlvmPropellerWholeProgramInfoBbAddrTest, BbAddrMapReadSymbolTable) {
       PropellerOptionsBuilder().SetBinaryName(binary).SetClusterOutName(
           "dummy.out")));
   ASSERT_NE(nullptr, wpi) << "Could not initialize whole program info";
-  ASSERT_TRUE(wpi->binary_has_bb_addr_map_section());
   wpi->ReadSymbolTable();
   auto &symtab = wpi->symtab();
   bool found = false;
@@ -140,66 +137,6 @@ TEST(LlvmPropellerWholeProgramInfoBbAddrTest, BbAddrMapReadSymbolTable) {
   EXPECT_TRUE(found);
 }
 
-TEST(LlvmPropellerWholeProgramInfo, CalculateFallthroughs) {
-  PropellerOptions options =
-      PropellerOptions(PropellerOptionsBuilder()
-                           .SetBinaryName(GetAutoFdoTestDataFilePath(
-                               "propeller_bblabels_aliases.bin"))
-                           .SetKeepFrontendIntermediateData(true));
-
-  auto wpi = PropellerWholeProgramInfo::Create(options);
-  ASSERT_NE(wpi.get(), nullptr);
-  ASSERT_TRUE(wpi->PopulateSymbolMap());
-
-  auto a1 = wpi->FindBasicblock("a.BB.main2");
-  auto a2 = wpi->FindBasicblock("aa.BB.main2");
-  auto a3 = wpi->FindBasicblock("aaa.BB.main2");
-  auto a6 = wpi->FindBasicblock("aaaaaa.BB.main2");
-  auto a7 = wpi->FindBasicblock("aaaaaaa.BB.main2");
-  auto a10 = wpi->FindBasicblock("aaaaaaaaaa.BB.main2");
-
-  ASSERT_NE(a1, nullptr);
-  ASSERT_NE(a2, nullptr);
-  ASSERT_NE(a3, nullptr);
-  ASSERT_NE(a6, nullptr);
-  ASSERT_NE(a7, nullptr);
-  ASSERT_NE(a10, nullptr);
-  std::vector<const SymbolEntry *> path;
-  EXPECT_TRUE(wpi->CalculateFallthroughBBs(*a1, *a2, &path));
-  // a.BB.foo and aa.BB.foo are adjacent. No other BBs in between.
-  EXPECT_TRUE(path.empty());
-
-  ASSERT_TRUE(wpi->CalculateFallthroughBBs(*a1, *a3, &path));
-  EXPECT_EQ(path.size(), 1);
-  // a2 is on the path a1->a3
-  EXPECT_EQ(path.front(), a2);
-
-  ASSERT_TRUE(wpi->CalculateFallthroughBBs(*a1, *a7, &path));
-  EXPECT_EQ(path.size(), 6);
-  EXPECT_EQ(a10->addr, a6->addr);
-  EXPECT_NE(a10->ordinal, a6->ordinal);
-  // a2, a3, a4, a5, r10, a6 is on the path a1->a3
-  // Note r10 and a6 have same address, but both are included.
-  EXPECT_EQ(path.front(), a2);
-  EXPECT_EQ(path[1], a3);
-  EXPECT_THAT(path, ::testing::Contains(a10));
-  EXPECT_THAT(path, ::testing::Contains(a6));
-
-  auto ar = wpi->FindBasicblock("raaaaaaa.BB.main2");
-  auto a9 = wpi->FindBasicblock("aaaaaaaaa.BB.main2");
-  ASSERT_NE(ar, nullptr);
-  // raaaaaaa.BB.main2 and aaaaaaaaa.BB.main2 have same address, but they are 2
-  // different symbols.
-  EXPECT_EQ(ar->addr, a9->addr);
-  EXPECT_NE(a9->ordinal, ar->ordinal);
-  EXPECT_NE(ar, a9);
-  ASSERT_TRUE(wpi->CalculateFallthroughBBs(*a7, *ar, &path));
-  EXPECT_EQ(path.size(), 1);
-  // a9 is on the path: a7 -> ar, although a9 and a7 share same address. We
-  // include a9, but we exclude ar (because ar equals to "to").
-  EXPECT_EQ(path.front(), a9);
-}
-
 TEST(LlvmPropellerWholeProgramInfoBbAddrMapTest, SkipEntryIfSymbolNotInSymtab) {
   const std::string binary =
       absl::StrCat(FLAGS_test_srcdir,
@@ -209,7 +146,6 @@ TEST(LlvmPropellerWholeProgramInfoBbAddrMapTest, SkipEntryIfSymbolNotInSymtab) {
       PropellerOptionsBuilder().SetBinaryName(binary).SetClusterOutName(
           "dummy.out")));
   ASSERT_NE(nullptr, wpi) << "Could not initialize whole program info";
-  ASSERT_TRUE(wpi->binary_has_bb_addr_map_section());
   wpi->ReadSymbolTable();
   ASSERT_TRUE(wpi->ReadBbAddrMapSection());
   EXPECT_GT(wpi->stats().bbaddrmap_function_does_not_have_symtab_entry, 1);
@@ -224,7 +160,6 @@ TEST(LlvmPropellerWholeProgramInfoBbAddrMapTest, ReadBbAddrMap) {
       PropellerOptionsBuilder().SetBinaryName(binary).SetClusterOutName(
           "dummy.out")));
   ASSERT_NE(nullptr, wpi) << "Could not initialize whole program info";
-  ASSERT_TRUE(wpi->binary_has_bb_addr_map_section());
   wpi->ReadSymbolTable();
   ASSERT_TRUE(wpi->ReadBbAddrMapSection());
   EXPECT_GT(wpi->bb_addr_map().at("compute_flag").size(), 0);
@@ -412,4 +347,22 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, TestDroppingInvalidDataFile) {
   EXPECT_EQ(wpi->stats().perf_file_parsed, 1);
 }
 
+TEST(LlvmPropellerWholeProgramInfoBbInfoTest, DuplicateSymbolsDropped) {
+  const PropellerOptions options = PropellerOptions(
+      PropellerOptionsBuilder()
+          .SetBinaryName(
+              GetAutoFdoTestDataFilePath("propeller_duplicate_symbols.bin")));
+  std::unique_ptr<PropellerWholeProgramInfo> wpi =
+        PropellerWholeProgramInfo::Create(options);
+    EXPECT_NE(wpi.get(), nullptr);
+
+  EXPECT_TRUE(wpi->PopulateSymbolMap());
+  const PropellerWholeProgramInfo::BbAddrMapTy &bb_addr_map =
+      wpi->bb_addr_map();
+  // Not a single instance of function that have duplicate names are kept.
+  EXPECT_EQ(bb_addr_map.find("sample1_func"), bb_addr_map.end());
+  // Other functions are not affected.
+  EXPECT_NE(bb_addr_map.find("compute_flag"), bb_addr_map.end());
+  EXPECT_GE(wpi->stats().duplicate_symbols, 1);
+}
 }  // namespace

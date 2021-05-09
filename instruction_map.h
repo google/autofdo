@@ -6,6 +6,7 @@
 #ifndef AUTOFDO_INSTRUCTION_MAP_H_
 #define AUTOFDO_INSTRUCTION_MAP_H_
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <utility>
@@ -39,13 +40,11 @@ class InstructionMap {
   ~InstructionMap();
 
   // Returns the size of the instruction map.
-  uint64 size() const {
-    return inst_map_.size();
-  }
+  uint64_t size() const { return inst_map_.size(); }
 
   // Builds instruction map for a function.
   void BuildPerFunctionInstructionMap(const std::string &name,
-                                      uint64 start_addr, uint64 end_addr);
+                                      uint64_t start_addr, uint64_t end_addr);
 
   // Contains information about each instruction.
   struct InstInfo {
@@ -56,7 +55,7 @@ class InstructionMap {
     SourceStack source_stack;
   };
 
-  typedef std::map<uint64, InstInfo *> InstMap;
+  typedef std::map<uint64_t, InstInfo *> InstMap;
   const InstMap &inst_map() const {
     return inst_map_;
   }

@@ -9,13 +9,6 @@
 
 namespace devtools_crosstool_autofdo {
 
-const uint64_t kBackwardJumpDistance = 1500;
-const uint64_t kForwardJumpDistance = 1500;
-const uint64_t kBackwardJumpWeight = 1 * kForwardJumpDistance;
-const uint64_t kForwardJumpWeight = 1 * kBackwardJumpDistance;
-const uint64_t kFallThroughWeight =
-    10 * kBackwardJumpDistance * kForwardJumpDistance;
-
 void NodeChainBuilder::InitNodeChains() {
   for (ControlFlowGraph *cfg : cfgs_) {
     // TODO(rahmanl) Construct bundles as vector of CFGNodes.
@@ -49,12 +42,12 @@ std::vector<std::unique_ptr<NodeChain>>  NodeChainBuilder::BuildChains() {
 uint64_t NodeChainBuilder::ComputeScore(NodeChain *chain) const {
   uint64_t score = 0;
 
-  chain->VisitEachOutEdgeToChain(chain, [&score](const CFGEdge &edge) {
+  chain->VisitEachOutEdgeToChain(chain, [&](const CFGEdge &edge) {
     assert(edge.src_->bundle_ != edge.sink_->bundle_);
     auto src_offset = GetNodeOffset(edge.src_);
     auto sink_offset = GetNodeOffset(edge.sink_);
-    score +=
-        GetEdgeScore(&edge, sink_offset - src_offset - edge.src_->size_);
+    score += code_layout_scorer_.GetEdgeScore(edge,
+                          sink_offset - src_offset - edge.src_->size_);
   });
 
   return score;
@@ -106,7 +99,7 @@ void NodeChainBuilder::UpdateNodeChainAssembly(NodeChain *left_chain,
 
   uint64_t score = 0;
 
-  auto addEdgeScore = [left_chain, &score](CFGEdge &edge) {
+  auto addEdgeScore = [&](const CFGEdge &edge) {
     auto *src_chain = GetNodeChain(edge.src_);
     auto src_offset = GetNodeOffset(edge.src_);
     auto sink_offset = GetNodeOffset(edge.sink_);
@@ -115,7 +108,7 @@ void NodeChainBuilder::UpdateNodeChainAssembly(NodeChain *left_chain,
     else
       src_offset += left_chain->size_;
     int64_t src_sink_offset = sink_offset - src_offset - edge.src_->size_;
-    score += GetEdgeScore(&edge, src_sink_offset);
+    score += code_layout_scorer_.GetEdgeScore(edge, src_sink_offset);
   };
 
   // Add up the score contribution from edges between left_chain and
@@ -220,31 +213,6 @@ void NodeChainBuilder::KeepMergingBestChains() {
       MergeChains(best_assembly->first.first, best_assembly->first.second);
     }
   }
-}
-
-// Return the score for one edge, given its source to sink direction and
-// distance in the layout.
-uint64_t GetEdgeScore(const CFGEdge *edge, int64_t src_sink_distance) {
-  // Approximate callsites to be in the middle of the source basic block.
-  if (edge->IsCall()) src_sink_distance += edge->src_->size_ / 2;
-
-  if (edge->IsReturn()) src_sink_distance += edge->sink_->size_ / 2;
-
-  if (src_sink_distance == 0 && edge->info_ == CFGEdge::DEFAULT)
-    return edge->weight_ * kFallThroughWeight;
-
-  uint64_t absolute_src_sink_distance =
-      static_cast<uint64_t>(std::abs(src_sink_distance));
-  if (src_sink_distance > 0 &&
-      absolute_src_sink_distance < kForwardJumpDistance)
-    return edge->weight_ * kForwardJumpWeight *
-           (kForwardJumpDistance - absolute_src_sink_distance);
-
-  if (src_sink_distance < 0 &&
-      absolute_src_sink_distance < kBackwardJumpDistance)
-    return edge->weight_ * kBackwardJumpWeight *
-           (kBackwardJumpDistance - absolute_src_sink_distance);
-  return 0;
 }
 
 // This function sorts bb chains in decreasing order of their execution density.

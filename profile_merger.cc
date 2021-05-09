@@ -15,15 +15,15 @@
 #include "profile_writer.h"
 #include "symbol_map.h"
 #include "third_party/abseil/absl/base/macros.h"
+#include "third_party/abseil/absl/container/node_hash_set.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/memory/memory.h"
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
-#include "llvm/Config/llvm-config.h"
 
-ABSL_FLAG(string, output_file, "fbdata.afdo", "Output file name");
+ABSL_FLAG(std::string, output_file, "fbdata.afdo", "Output file name");
 ABSL_FLAG(bool, is_llvm, false, "Whether the profile is for LLVM");
-ABSL_FLAG(string, format, "binary",
+ABSL_FLAG(std::string, format, "binary",
           "LLVM profile format to emit. Possible values are 'text', "
           "'binary' or 'extbinary'. The binary format is a more compact "
           "representation, and the 'compactbinary' format is an even more "
@@ -55,6 +55,9 @@ ABSL_FLAG(bool, use_md5, false,
 ABSL_FLAG(bool, partial_profile, false,
           "Specify the output to be a partial profile. The option can "
           "only be enabled when --format=extbinary. ");
+ABSL_FLAG(bool, split_layout, false,
+          "Split the profile to two parts with one part containing context "
+          "sensitive information and another part not. ");
 
 namespace {
 // Some sepcial symbols or symbol patterns we are going to handle.
@@ -68,6 +71,8 @@ static const char* strip_all[] = {
     // for compilation timeout caused by too much inlining happening in the
     // large function.
     "_ZNK16GWSLogEntryProto18_"
+    "InternalSerializeEPhPN6proto22io19EpsCopyOutputStreamE",
+    "_ZNK20GWSLogEntryProtoLite18_"
     "InternalSerializeEPhPN6proto22io19EpsCopyOutputStreamE",
 };
 // keep_sole means for the set of symbols, we are going to keep the copy
@@ -108,6 +113,11 @@ bool verifyProperFlags(bool has_prof_sym_list) {
                  << "extbinary";
       return false;
     }
+    if (absl::GetFlag(FLAGS_split_layout)) {
+      LOG(ERROR) << "--split_layout can only be used if --format is "
+                 << "extbinary";
+      return false;
+    }
   }
   return true;
 }
@@ -132,6 +142,8 @@ int main(int argc, char **argv) {
   devtools_crosstool_autofdo::SpecialSyms special_syms(
       strip_all, ABSL_ARRAYSIZE(strip_all), keep_sole,
       ABSL_ARRAYSIZE(keep_sole), keep_cold, ABSL_ARRAYSIZE(keep_cold));
+
+  absl::node_hash_set<std::string> names;
 
   if (!absl::GetFlag(FLAGS_is_llvm)) {
     using devtools_crosstool_autofdo::AutoFDOProfileReader;
@@ -161,18 +173,19 @@ int main(int argc, char **argv) {
     llvm::sampleprof::ProfileSymbolList prof_sym_list;
 
     for (int i = 1; i < argc; i++) {
-      readers[i - 1] = absl::make_unique<LLVMProfileReader>(
-          &symbol_map,
+      auto reader = absl::make_unique<LLVMProfileReader>(
+          &symbol_map, names,
           absl::GetFlag(FLAGS_merge_special_syms) ? nullptr : &special_syms);
-      readers[i - 1]->ReadFromFile(argv[i]);
+      reader->ReadFromFile(argv[i]);
 
       if (absl::GetFlag(FLAGS_include_symbol_list) &&
           absl::GetFlag(FLAGS_format) == "extbinary") {
         // Merge profile symbol list if it exists.
         llvm::sampleprof::ProfileSymbolList* input_list =
-            readers[i - 1]->GetProfileSymbolList();
+            reader->GetProfileSymbolList();
         if (input_list) prof_sym_list.merge(*input_list);
       }
+      reader.reset(nullptr);
     }
     symbol_map.CalculateThreshold();
     std::unique_ptr<LLVMProfileWriter> writer(nullptr);
@@ -198,9 +211,13 @@ int main(int argc, char **argv) {
     auto sample_profile_writer =
         writer->CreateSampleWriter(absl::GetFlag(FLAGS_output_file));
     if (!sample_profile_writer) return 1;
-
-    writer->setSymbolMap(&symbol_map);
 #if LLVM_VERSION_MAJOR >= 11
+    // If resetSecLayout is needed, it should be called just after the
+    // sample_profile_writer is created because resetSecLayout will reset
+    // all the section flags in the extbinary profile.
+    if (absl::GetFlag(FLAGS_split_layout)) {
+      sample_profile_writer->resetSecLayout(llvm::sampleprof::CtxSplitLayout);
+    }
     if (has_prof_sym_list) {
       sample_profile_writer->setProfileSymbolList(&prof_sym_list);
     }

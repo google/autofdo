@@ -1,8 +1,10 @@
 #include "llvm_profile_writer.h"
+
 #include "addr2line.h"
 #include "profile_creator.h"
 #include "symbol_map.h"
 #include "gmock/gmock.h"
+#include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
 
 #define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())

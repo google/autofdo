@@ -11,9 +11,9 @@
 #include "llvm_propeller_abstract_whole_program_info.h"
 #include "llvm_propeller_code_layout.h"
 #include "llvm_propeller_formatting.h"
+#include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_statistics.h"
 #include "llvm_propeller_whole_program_info.h"
-#include "llvm_propeller_options.pb.h"
 #include "third_party/abseil/absl/status/status.h"
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "llvm/ADT/StringRef.h"
@@ -23,9 +23,9 @@
 
 namespace devtools_crosstool_autofdo {
 
+using ::devtools_crosstool_autofdo::PropellerOptions;
 using ::llvm::Optional;
 using ::llvm::StringRef;
-using ::devtools_crosstool_autofdo::PropellerOptions;
 
 absl::Status GeneratePropellerProfiles(const PropellerOptions &opts) {
   std::unique_ptr<PropellerProfWriter> writer =
@@ -35,7 +35,7 @@ absl::Status GeneratePropellerProfiles(const PropellerOptions &opts) {
 
   const devtools_crosstool_autofdo::CodeLayoutResult layout_per_function =
       devtools_crosstool_autofdo::CodeLayout(
-          writer->whole_program_info()->GetHotCfgs())
+          opts.code_layout_params(), writer->whole_program_info()->GetHotCfgs())
           .OrderAll();
   if (!writer->Write(layout_per_function))
     return absl::InternalError("Failed to compute code layout result");
@@ -143,7 +143,8 @@ bool PropellerProfWriter::Write(const CodeLayoutResult &layout_cluster_info) {
   std::ofstream symorder_stream(options_.symbol_order_out_name());
   for (const auto &[func_name, cluster_id] : symbol_order) {
     symorder_stream << func_name.str();
-    if (cluster_id.hasValue()) symorder_stream << "." << cluster_id.getValue();
+    if (cluster_id.hasValue())
+      symorder_stream << ".__part." << cluster_id.getValue();
     symorder_stream << "\n";
   }
 

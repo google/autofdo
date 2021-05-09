@@ -2,6 +2,7 @@
 #ifndef AUTOFDO_PROFILE_SYMBOL_LIST_H_
 #define AUTOFDO_PROFILE_SYMBOL_LIST_H_
 
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -26,7 +27,7 @@
 namespace devtools_crosstool_autofdo {
 
 // Vector of pairs containing symbol name and size.
-using SymbolList = std::vector<std::pair<llvm::StringRef, uint64>>;
+using SymbolList = std::vector<std::pair<llvm::StringRef, uint64_t>>;
 
 void fillProfileSymbolList(llvm::sampleprof::ProfileSymbolList *prof_sym_list,
                            const NameSizeList &name_size_list,

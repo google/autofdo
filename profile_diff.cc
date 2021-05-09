@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "llvm_profile_reader.h"
 #include "symbol_map.h"
+#include "third_party/abseil/absl/container/node_hash_set.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
@@ -30,8 +31,9 @@ int main(int argc, char **argv) {
     LOG(FATAL) << "Please specify two files to compare";
   }
 
-  devtools_crosstool_autofdo::LLVMProfileReader reader_1(&symbol_map_1);
-  devtools_crosstool_autofdo::LLVMProfileReader reader_2(&symbol_map_2);
+  absl::node_hash_set<std::string> names;
+  devtools_crosstool_autofdo::LLVMProfileReader reader_1(&symbol_map_1, names);
+  devtools_crosstool_autofdo::LLVMProfileReader reader_2(&symbol_map_2, names);
   reader_1.ReadFromFile(argv[1]);
   reader_2.ReadFromFile(argv[2]);
 

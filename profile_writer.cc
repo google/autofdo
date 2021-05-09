@@ -3,20 +3,23 @@
 
 // Write profile to afdo file.
 
+#include "profile_writer.h"
+
 #include <stdio.h>
+
+#include <algorithm>
+#include <cstdint>
 #include <map>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
-#include <algorithm>
 
 #include "base/commandlineflags.h"
 #include "base/integral_types.h"
 #include "base/logging.h"
 #include "gcov.h"
 #include "profile.h"
-#include "profile_writer.h"
 #include "symbol_map.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/str_format.h"
@@ -222,16 +225,16 @@ class ProfileDumper : public SymbolTraverser {
 
  protected:
   void DumpSourceInfo(SourceInfo info, int indent) {
-    printf("%*sDirectory name: %s\n", indent, " ", info.dir_name.str().c_str());
+    printf("%*sDirectory name: %s\n", indent, " ", info.dir_name.c_str());
     printf("%*sFile name:      %s\n", indent, " ",
-           info.file_name.str().c_str());
+           info.file_name.c_str());
     printf("%*sFunction name:  %s\n", indent, " ", info.func_name);
     printf("%*sStart line:     %u\n", indent, " ", info.start_line);
     printf("%*sLine:           %u\n", indent, " ", info.line);
     printf("%*sDiscriminator:  %u\n", indent, " ", info.discriminator);
   }
 
-  void PrintSourceLocation(uint32 start_line, uint32 offset) {
+  void PrintSourceLocation(uint32_t start_line, uint32_t offset) {
     if (offset & 0xffff) {
       printf("%u.%u: ", (offset >> 16) + start_line, offset & 0xffff);
     } else {
@@ -247,9 +250,9 @@ class ProfileDumper : public SymbolTraverser {
     DumpSourceInfo(node->info, 0);
     printf("\n");
     absl::PrintF("Total sampled count:            %u\n",
-                 static_cast<uint64>(node->total_count));
+                 static_cast<uint64_t>(node->total_count));
     absl::PrintF("Total sampled count in head bb: %u\n",
-                 static_cast<uint64>(node->head_count));
+                 static_cast<uint64_t>(node->head_count));
     printf("\n");
     printf("Call sites:\n");
     int i = 0;
@@ -266,10 +269,10 @@ class ProfileDumper : public SymbolTraverser {
     }
 
     absl::PrintF("node->pos_counts.size() = %u\n",
-                 static_cast<uint64>(node->pos_counts.size()));
+                 static_cast<uint64_t>(node->pos_counts.size()));
     absl::PrintF("node->callsites.size() = %u\n",
-                 static_cast<uint64>(node->callsites.size()));
-    std::vector<uint32> positions;
+                 static_cast<uint64_t>(node->callsites.size()));
+    std::vector<uint32_t> positions;
     for (const auto &pos_count : node->pos_counts)
       positions.push_back(pos_count.first);
     std::sort(positions.begin(), positions.end());
@@ -277,7 +280,7 @@ class ProfileDumper : public SymbolTraverser {
     for (const auto &pos : positions) {
       PositionCountMap::const_iterator pos_count = node->pos_counts.find(pos);
       DCHECK(pos_count != node->pos_counts.end());
-      uint32 location = pos_count->first;
+      uint32_t location = pos_count->first;
       ProfileInfo info = pos_count->second;
 
       printf("#%d: location (line[.discriminator]) = ", i);
@@ -289,7 +292,7 @@ class ProfileDumper : public SymbolTraverser {
       TargetCountPairs target_counts;
       GetSortedTargetCountPairs(info.target_map, &target_counts);
       absl::PrintF("#%d: profile info target map size = %u\n", i,
-                   static_cast<uint64>(info.target_map.size()));
+                   static_cast<uint64_t>(info.target_map.size()));
       printf("#%d: info.target_map:\n", i);
       for (const auto &target_count : info.target_map) {
         printf("\tGetStringIndex(target_count.first): %d\n",

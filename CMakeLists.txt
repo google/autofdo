@@ -90,6 +90,8 @@ add_library(sample_reader OBJECT sample_reader.cc)
 target_include_directories(sample_reader PUBLIC util)
 target_link_libraries(sample_reader absl::base quipper_perf LLVMObject)
 
+add_library(perfdata_reader OBJECT perfdata_reader.cc)
+
 add_library(symbol_map OBJECT
   symbol_map.cc
   util/symbolize/elf_reader.cc)
@@ -181,6 +183,7 @@ target_link_libraries(create_llvm_prof
                       llvm_profile_reader
                       llvm_profile_writer
                       llvm_propeller_objects
+                      perfdata_reader
                       profile_creator
                       quipper_perf
                       sample_reader
@@ -229,7 +232,8 @@ add_test(NAME llvm_profile_writer_test COMMAND llvm_profile_writer_test)
 add_library(llvm_propeller_objects OBJECT 
   llvm_propeller_cfg.cc
   llvm_propeller_chain_cluster_builder.cc 
-  llvm_propeller_code_layout.cc 
+  llvm_propeller_code_layout.cc
+  llvm_propeller_code_layout_scorer.cc
   llvm_propeller_formatting.cc
   llvm_propeller_node_chain.cc
   llvm_propeller_node_chain_builder.cc
@@ -289,6 +293,7 @@ target_link_libraries(llvm_propeller_profile_writer_test
 		      llvm_propeller_cfg_proto
 		      llvm_propeller_mock_whole_program_info
                       llvm_propeller_objects
+                      perfdata_reader
                       profile_creator
                       quipper_perf
                       sample_reader
@@ -313,6 +318,7 @@ target_link_libraries(llvm_propeller_whole_program_info_test
 		      llvm_propeller_cfg_proto
 		      llvm_propeller_mock_whole_program_info
                       llvm_propeller_objects
+                      perfdata_reader
                       profile_creator
                       quipper_perf
                       sample_reader
@@ -337,6 +343,7 @@ target_link_libraries(llvm_propeller_code_layout_test
 		      llvm_propeller_cfg_proto
 		      llvm_propeller_mock_whole_program_info
                       llvm_propeller_objects
+                      perfdata_reader
                       profile_creator
                       quipper_perf
                       sample_reader

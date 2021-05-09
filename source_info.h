@@ -3,6 +3,7 @@
 #ifndef AUTOFDO_SOURCE_INFO_H_
 #define AUTOFDO_SOURCE_INFO_H_
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -17,8 +18,8 @@ struct SourceInfo {
   SourceInfo() : func_name(NULL), start_line(0), line(0), discriminator(0) {}
 
   SourceInfo(const char *func_name, llvm::StringRef dir_name,
-             llvm::StringRef file_name, uint32 start_line, uint32 line,
-             uint32 discriminator)
+             llvm::StringRef file_name, uint32_t start_line, uint32_t line,
+             uint32_t discriminator)
       : func_name(func_name),
         dir_name(dir_name),
         file_name(file_name),
@@ -30,12 +31,12 @@ struct SourceInfo {
 
   std::string RelativePath() const {
     if (!dir_name.empty())
-      return std::string(dir_name) + "/" + std::string(file_name);
-    if (!file_name.empty()) return std::string(file_name);
+      return dir_name + "/" + file_name;
+    if (!file_name.empty()) return file_name;
     return std::string();
   }
 
-  uint32 Offset(bool use_discriminator_encoding) const {
+  uint32_t Offset(bool use_discriminator_encoding) const {
     return ((line - start_line) << 16) |
            (use_discriminator_encoding
                 ? llvm::DILocation::getBaseDiscriminatorFromDiscriminator(
@@ -43,7 +44,7 @@ struct SourceInfo {
                 : discriminator);
   }
 
-  uint32 DuplicationFactor() const {
+  uint32_t DuplicationFactor() const {
     return llvm::DILocation::getDuplicationFactorFromDiscriminator(
         discriminator);
   }
@@ -54,11 +55,11 @@ struct SourceInfo {
   }
 
   const char *func_name;
-  llvm::StringRef dir_name;
-  llvm::StringRef file_name;
-  uint32 start_line;
-  uint32 line;
-  uint32 discriminator;
+  std::string dir_name;
+  std::string file_name;
+  uint32_t start_line;
+  uint32_t line;
+  uint32_t discriminator;
 };
 
 typedef std::vector<SourceInfo> SourceStack;

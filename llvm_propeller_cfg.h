@@ -185,9 +185,7 @@ class ControlFlowGraph {
   CFGEdge *CreateEdge(CFGNode *from, CFGNode *to, uint64_t weight,
                       typename CFGEdge::Info inf);
 
-  // TODO(b/162192070): remove "adjust_entry_node_size" after removing bblabels
-  // workflow.
-  void FinishCreatingControlFlowGraph(bool adjust_entry_node_size);
+  void FinishCreatingControlFlowGraph();
 
  private:
   void ResetEntryNodeSize();

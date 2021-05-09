@@ -2,7 +2,6 @@
 
 #include <fcntl.h>  // for "O_RDONLY"
 
-#include "llvm_propeller_options.pb.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"  // for "typename google::protobuf::io::FileInputStream"
 #include "google/protobuf/text_format.h"
 #include "llvm/Support/Allocator.h"

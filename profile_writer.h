@@ -6,6 +6,8 @@
 #ifndef AUTOFDO_PROFILE_WRITER_H_
 #define AUTOFDO_PROFILE_WRITER_H_
 
+#include <cstdint>
+
 #include "symbol_map.h"
 
 namespace devtools_crosstool_autofdo {
@@ -30,9 +32,9 @@ class ProfileWriter {
 class AutoFDOProfileWriter : public ProfileWriter {
  public:
   explicit AutoFDOProfileWriter(const SymbolMap *symbol_map,
-                                uint32 gcov_version)
+                                uint32_t gcov_version)
       : ProfileWriter(symbol_map), gcov_version_(gcov_version) {}
-  explicit AutoFDOProfileWriter(uint32 gcov_version)
+  explicit AutoFDOProfileWriter(uint32_t gcov_version)
       : gcov_version_(gcov_version) {}
 
   bool WriteToFile(const std::string &output_file) override;
@@ -104,7 +106,7 @@ class AutoFDOProfileWriter : public ProfileWriter {
   // Writes working set to gcov file.
   void WriteWorkingSet();
 
-  uint32 gcov_version_;
+  uint32_t gcov_version_;
 };
 
 class SymbolTraverser {

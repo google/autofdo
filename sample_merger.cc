@@ -9,10 +9,10 @@
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
 
-ABSL_FLAG(string, profile, "data.profile", "Profile file name");
-ABSL_FLAG(string, profiler, "perf", "Profile type");
-ABSL_FLAG(string, output_file, "data.txt", "Merged profile file name");
-ABSL_FLAG(string, binary, "data.binary", "Binary file name");
+ABSL_FLAG(std::string, profile, "data.profile", "Profile file name");
+ABSL_FLAG(std::string, profiler, "perf", "Profile type");
+ABSL_FLAG(std::string, output_file, "data.txt", "Merged profile file name");
+ABSL_FLAG(std::string, binary, "data.binary", "Binary file name");
 
 int main(int argc, char **argv) {
   absl::SetProgramUsageMessage(argv[0]);

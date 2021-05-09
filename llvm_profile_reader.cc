@@ -79,6 +79,18 @@ void LLVMProfileReader::ReadFromFunctionSamples(
     for (const auto &name_fs : loc_fsmap.second)
       ReadFromFunctionSamples(new_stack, name_fs.second);
   }
+
+  // The total count for a top-level function can be non-zero but the body
+  // samples may be zero if there is no debug information for the function.
+  // In this case, the total counts are populated but pos_counts is left empty.
+  // Please see b/175733095 for more details.
+  // NB: For inline instances, this can theoritically happen if lines without
+  // debug information receive samples and lines with debug information don't.
+  // It's not something we have seen in practice so it's not being implemented.
+  if (stack.empty() &&
+      symbol_map_->map().at(func_name)->total_count == 0) {
+    symbol_map_->AddSymbolEntryCount(func_name, 0, fs.getTotalSamples());
+  }
 }
 
 // Return whether to read the samples from current profile for the

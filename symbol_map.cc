@@ -5,6 +5,7 @@
 #include <elf.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <map>
 #include <set>
 
@@ -21,15 +22,15 @@
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "util/symbolize/elf_reader.h"
 
-ABSL_FLAG(int32, dump_cutoff_percent, 2,
-             "functions that has total count lower than this percentage of "
-             "the max function count will not show in the dump");
+ABSL_FLAG(int32_t, dump_cutoff_percent, 2,
+          "functions that has total count lower than this percentage of "
+          "the max function count will not show in the dump");
 ABSL_FLAG(double, sample_threshold_frac, 0.0,
               "Sample threshold ratio. The threshold of total function count"
               " is determined by max_sample_count * sample_threshold_frac.");
-ABSL_FLAG(std::string, suffix_elision_policy, "all",
-              "Policy for eliding/merging profile entries for symbols with "
-              "suffixed names: one of 'all' [default], 'selected', 'none'.");
+ABSL_FLAG(std::string, suffix_elision_policy, "selected",
+          "Policy for eliding/merging profile entries for symbols with "
+          "suffixed names: one of 'all' [default], 'selected', 'none'.");
 ABSL_FLAG(bool, demangle_symbol_names, false,
           "Demangle symbol names in function profile diff output");
 
@@ -41,7 +42,7 @@ void Identation(int ident) {
   }
 }
 
-void PrintSourceLocation(uint32 start_line, uint32 offset, int ident) {
+void PrintSourceLocation(uint32_t start_line, uint32_t offset, int ident) {
   Identation(ident);
   if (offset & 0xffff) {
     printf("%u.%u: ", (offset >> 16) + start_line, offset & 0xffff);
@@ -50,9 +51,7 @@ void PrintSourceLocation(uint32 start_line, uint32 offset, int ident) {
   }
 }
 
-static const char *selectedSuffixes[] = {
-  ".llvm.", ".isra.", ".part."
-};
+static const char *selectedSuffixes[] = {".cold", ".llvm."};
 
 std::string getPrintName(const char *name) {
   char tmp_buf[1024];
@@ -142,12 +141,12 @@ void Symbol::EstimateHeadCount() {
     return;
 
   // Get the count of the source location with the lowest offset.
-  uint32 offset = std::numeric_limits<uint32>::max();
-  std::vector<uint32> positions;
+  uint32_t offset = std::numeric_limits<uint32_t>::max();
+  std::vector<uint32_t> positions;
   for (const auto &pos_count : pos_counts)
     positions.push_back(pos_count.first);
   if (!positions.empty()) {
-    uint32 minpos = *std::min_element(positions.begin(), positions.end());
+    uint32_t minpos = *std::min_element(positions.begin(), positions.end());
     PositionCountMap::const_iterator ret = pos_counts.find(minpos);
     DCHECK(ret != pos_counts.end());
     head_count = ret->second.count;
@@ -172,7 +171,7 @@ void Symbol::EstimateHeadCount() {
   }
 }
 
-void Symbol::FlattenCallsite(uint32 offset, const Symbol *callee) {
+void Symbol::FlattenCallsite(uint32_t offset, const Symbol *callee) {
   pos_counts[offset].count = std::max(pos_counts[offset].count,
                                       callee->head_count);
   pos_counts[offset].target_map[callee->info.func_name] +=
@@ -180,7 +179,7 @@ void Symbol::FlattenCallsite(uint32 offset, const Symbol *callee) {
 }
 
 void Symbol::FlatMerge(const Symbol *src) {
-  uint64 src_total_count = 0;
+  uint64_t src_total_count = 0;
   for (const auto &pos_count : src->pos_counts) {
     pos_counts[pos_count.first] += pos_count.second;
     src_total_count += pos_count.second.count;
@@ -228,6 +227,34 @@ void SymbolMap::set_suffix_elision_policy(const std::string &policy) {
     LOG(FATAL) << "suffix elision policy " << policy << " not supported.";
 }
 
+// Strip the suffix literally and keep the parts before and after the
+// suffix unchanged. For example, to strip a suffix like ".cold", what
+// we want is to erase ".cold" from input but keep the rest unchanged.
+static bool StripLastOccurrenceOf(std::string &input,
+                                  const std::string &suffix) {
+  auto it = input.rfind(suffix);
+  if (it == std::string::npos) return false;
+  input.erase(it, suffix.length());
+  return true;
+}
+
+// Strip suffix pattern like ".llvm.283491234". The given suffix only
+// contains ".llvm." so we need to find the appendix "283491234" after ".llvm."
+// in the input string and strip it together with ".llvm.".
+static bool StripSuffixWithTwoDots(std::string &input,
+                                   const std::string &suffix) {
+  auto it = input.rfind(suffix);
+  if (it == std::string::npos) return false;
+  // find the "." belonging to the next suffix after the current suffix
+  // like ".llvm."
+  auto dot_after_suffix_pos = input.find_first_of('.', it + suffix.length());
+  // strip everything in the range of [it, dot_after_suffix_pos)
+  input.erase(it, dot_after_suffix_pos == std::string::npos
+                      ? std::string::npos
+                      : (dot_after_suffix_pos - it));
+  return true;
+}
+
 std::string SymbolMap::GetOriginalName(const char *name) const {
   if (suffix_elision_policy_ == ElideNone) {
     return name;
@@ -245,22 +272,12 @@ std::string SymbolMap::GetOriginalName(const char *name) const {
       return std::string(name);
     }
   } else if (suffix_elision_policy_ == ElideSelected) {
-    // Look for a specific set of canned suffixes: .isra.*, .llvm.*,
-    // and ".part.*". If we find a match here at the very end of the
-    // string, then truncate that portion.
     std::string cand(name);
-    bool changed = true;
-    while (changed) {
-      changed = false;
-      for (auto suffix : selectedSuffixes) {
-        auto it = cand.rfind(suffix);
-        if (it == std::string::npos) continue;
-        auto dit = cand.rfind('.');
-        if (dit == it + strlen(suffix)-1) {
-          changed = true;
-          cand = cand.substr(0, it);
-        }
-      }
+    for (std::string suffix : selectedSuffixes) {
+      if (suffix == ".cold")
+        StripLastOccurrenceOf(cand, suffix);
+      else if (suffix == ".llvm.")
+        StripSuffixWithTwoDots(cand, suffix);
     }
     return cand;
   } else {
@@ -326,7 +343,7 @@ void SymbolMap::AddSymbolMappings(const NameSymbolMap &new_map) {
   }
 }
 
-void SymbolMap::CalculateThresholdFromTotalCount(int64 total_count) {
+void SymbolMap::CalculateThresholdFromTotalCount(int64_t total_count) {
   count_threshold_ = total_count * absl::GetFlag(FLAGS_sample_threshold_frac);
   if (count_threshold_ < kMinSamples) {
     count_threshold_ = kMinSamples;
@@ -336,7 +353,7 @@ void SymbolMap::CalculateThresholdFromTotalCount(int64 total_count) {
 void SymbolMap::CalculateThreshold() {
   // If count_threshold_ is pre-calculated, use pre-caculated value.
   CHECK_EQ(count_threshold_, 0);
-  int64 total_count = 0;
+  int64_t total_count = 0;
   absl::flat_hash_set<std::string> visited;
   for (const auto &name_symbol : map_) {
     if (visited.insert(name_symbol.second->name()).second) {
@@ -349,9 +366,10 @@ void SymbolMap::CalculateThreshold() {
   }
 }
 
-const bool SymbolMap::GetSymbolInfoByAddr(uint64 addr, const std::string **name,
-                                          uint64 *start_addr,
-                                          uint64 *end_addr) const {
+const bool SymbolMap::GetSymbolInfoByAddr(uint64_t addr,
+                                          const std::string **name,
+                                          uint64_t *start_addr,
+                                          uint64_t *end_addr) const {
   AddressSymbolMap::const_iterator ret = address_symbol_map_.upper_bound(addr);
   if (ret == address_symbol_map_.begin()) {
     return false;
@@ -373,7 +391,7 @@ const bool SymbolMap::GetSymbolInfoByAddr(uint64 addr, const std::string **name,
   }
 }
 
-const std::string *SymbolMap::GetSymbolNameByStartAddr(uint64 addr) const {
+const std::string *SymbolMap::GetSymbolNameByStartAddr(uint64_t addr) const {
   AddressSymbolMap::const_iterator ret = address_symbol_map_.find(addr);
   if (ret == address_symbol_map_.end()) {
     return NULL;
@@ -387,7 +405,7 @@ class SymbolReader : public util::ElfReader::SymbolSink {
                         AddressSymbolMap *address_symbol_map)
       : name_alias_map_(name_alias_map),
         address_symbol_map_(address_symbol_map) { }
-  void AddSymbol(const char *name, uint64 address, uint64 size, int binding,
+  void AddSymbol(const char *name, uint64_t address, uint64_t size, int binding,
                  int type, int section) override {
     std::pair<AddressSymbolMap::iterator, bool> ret =
         address_symbol_map_->insert(
@@ -420,7 +438,7 @@ void SymbolMap::BuildSymbolMap() {
 
 void SymbolMap::UpdateSymbolMap(
     const Addr2line *addr2line,
-    const std::map<uint64, uint64> &sampled_functions) {
+    const std::map<uint64_t, uint64_t> &sampled_functions) {
   for (const auto &addr_size : sampled_functions) {
     std::string name = address_symbol_map_.find(addr_size.first)->second.first;
     SourceStack stack;
@@ -450,14 +468,14 @@ std::string Symbol::ModuleName() const {
 }
 
 void SymbolMap::AddSymbolEntryCount(const std::string &symbol_name,
-                                    uint64 head_count, uint64 total_count) {
+                                    uint64_t head_count, uint64_t total_count) {
   Symbol *symbol = map_.find(symbol_name)->second;
   symbol->head_count += head_count;
   symbol->total_count += total_count;
 }
 
 Symbol *SymbolMap::TraverseInlineStack(const std::string &symbol_name,
-                                       const SourceStack &src, uint64 count,
+                                       const SourceStack &src, uint64_t count,
                                        DataSource data_source) {
   if (src.empty()) return nullptr;
   Symbol *symbol = map_.find(symbol_name)->second;
@@ -489,13 +507,13 @@ Symbol *SymbolMap::TraverseInlineStack(const std::string &symbol_name,
 }
 
 void SymbolMap::AddSourceCount(const std::string &symbol_name,
-                               const SourceStack &src, uint64 count,
-                               uint64 num_inst, DataSource data_source) {
+                               const SourceStack &src, uint64_t count,
+                               uint64_t num_inst, DataSource data_source) {
   Symbol *symbol = TraverseInlineStack(symbol_name, src, count, data_source);
   if (!symbol) return;
   bool need_conversion = (data_source == PERFDATA || data_source == AFDOPROTO);
   if (need_conversion && src[0].HasInvalidInfo()) return;
-  uint32 offset = src[0].Offset(use_discriminator_encoding_);
+  uint32_t offset = src[0].Offset(use_discriminator_encoding_);
   // If it is to convert perf data or afdoproto to afdo profile, select the
   // MAX count if there are multiple records mapping to the same offset.
   // If it is just to read afdo profile, merge those counts.
@@ -511,7 +529,7 @@ void SymbolMap::AddSourceCount(const std::string &symbol_name,
 
 bool SymbolMap::AddIndirectCallTarget(const std::string &symbol_name,
                                       const SourceStack &src,
-                                      const std::string &target, uint64 count,
+                                      const std::string &target, uint64_t count,
                                       DataSource data_source) {
   Symbol *symbol = TraverseInlineStack(symbol_name, src, 0, data_source);
   if (!symbol) return false;
@@ -556,7 +574,7 @@ void Symbol::ComputeTotalCountIncl(const NameSymbolMap &nsmap,
 }
 
 void Symbol::DumpBody(int ident, bool for_analysis) const {
-  std::vector<uint32> positions;
+  std::vector<uint32_t> positions;
   for (const auto &pos_count : pos_counts)
     positions.push_back(pos_count.first);
   std::sort(positions.begin(), positions.end());
@@ -631,15 +649,15 @@ void Symbol::UpdateWithRatio(double ratio) {
 // Returns the count of either pos_counts or callsites that has the lowest
 // offset. Searches one with lowest offset as pos_counts and callsites are not
 // ordered.
-uint64 Symbol::EntryCount() const {
+uint64_t Symbol::EntryCount() const {
   // Ignores very large position offsets because it suggests that instructions
   // got moved and may misrepresent the hotnesss of the original code path.
-  const uint32 kMaxValidLine = 10000;
+  const uint32_t kMaxValidLine = 10000;
   SourceInfo max_source;
   max_source.line = kMaxValidLine;
 
-  uint64 entry_count = 0;
-  uint32 min_pos = max_source.Offset(false);
+  uint64_t entry_count = 0;
+  uint32_t min_pos = max_source.Offset(false);
   for (const auto& pos_count : pos_counts) {
     if (pos_count.first < min_pos) {
       min_pos = pos_count.first;
@@ -889,7 +907,7 @@ void SymbolMap::ComputeTotalCountIncl() {
 }
 
 void SymbolMap::Dump(bool dump_for_analysis) const {
-  std::map<uint64, std::set<std::string> > count_names_map;
+  std::map<uint64_t, std::set<std::string> > count_names_map;
   for (const auto &name_symbol : map_) {
     if (name_symbol.second->total_count > 0) {
       count_names_map[~name_symbol.second->total_count].insert(
@@ -908,11 +926,11 @@ void SymbolMap::Dump(bool dump_for_analysis) const {
 }
 
 float SymbolMap::Overlap(const SymbolMap &map) const {
-  std::map<std::string, std::pair<uint64, uint64> > overlap_map;
+  std::map<std::string, std::pair<uint64_t, uint64_t> > overlap_map;
 
   // Prepare for overlap_map
-  uint64 total_1 = 0;
-  uint64 total_2 = 0;
+  uint64_t total_1 = 0;
+  uint64_t total_2 = 0;
   for (const auto &name_symbol : map_) {
     total_1 += name_symbol.second->total_count;
     overlap_map[name_symbol.first].first = name_symbol.second->total_count;
@@ -941,8 +959,8 @@ float SymbolMap::Overlap(const SymbolMap &map) const {
 }
 
 void SymbolMap::DumpFuncLevelProfileCompare(const SymbolMap &map) const {
-  uint64 max_1 = 0;
-  uint64 max_2 = 0;
+  uint64_t max_1 = 0;
+  uint64_t max_2 = 0;
 
   // Calculate the max of the two maps
   for (const auto &name_symbol : map_) {
@@ -953,7 +971,7 @@ void SymbolMap::DumpFuncLevelProfileCompare(const SymbolMap &map) const {
   }
 
   // Sort map_1
-  std::map<uint64, std::vector<std::string> > count_names_map;
+  std::map<uint64_t, std::vector<std::string> > count_names_map;
   for (const auto &name_symbol : map_) {
     if (name_symbol.second->total_count > 0) {
       count_names_map[name_symbol.second->total_count].push_back(
@@ -971,7 +989,7 @@ void SymbolMap::DumpFuncLevelProfileCompare(const SymbolMap &map) const {
       }
 
       const auto &iter = map.map().find(name);
-      uint64 compare_count = 0;
+      uint64_t compare_count = 0;
       if (iter != map.map().end()) {
         compare_count = iter->second->total_count;
       }
@@ -1001,7 +1019,7 @@ void SymbolMap::DumpFuncLevelProfileCompare(const SymbolMap &map) const {
       }
 
       const auto &iter = map_.find(name);
-      uint64 compare_count = 0;
+      uint64_t compare_count = 0;
       if (iter != map.map().end()) {
         compare_count = iter->second->total_count;
         if (compare_count * 100 >=
@@ -1017,11 +1035,11 @@ void SymbolMap::DumpFuncLevelProfileCompare(const SymbolMap &map) const {
   }
 }
 
-typedef std::map<uint64, uint64> Histogram;
+typedef std::map<uint64_t, uint64_t> Histogram;
 
-static uint64 AddSymbolProfileToHistogram(const Symbol *symbol,
-                                          Histogram *histogram) {
-  uint64 total_count = 0;
+static uint64_t AddSymbolProfileToHistogram(const Symbol *symbol,
+                                            Histogram *histogram) {
+  uint64_t total_count = 0;
   for (const auto &pos_count : symbol->pos_counts) {
     std::pair<Histogram::iterator, bool> ret =
         histogram->insert(Histogram::value_type(pos_count.second.count, 0));
@@ -1037,7 +1055,7 @@ static uint64 AddSymbolProfileToHistogram(const Symbol *symbol,
 
 void SymbolMap::ComputeWorkingSets() {
   Histogram histogram;
-  uint64 total_count = 0;
+  uint64_t total_count = 0;
 
   // Step 1. Compute histogram.
   for (const auto &symbol : unique_symbols_) {
@@ -1047,19 +1065,19 @@ void SymbolMap::ComputeWorkingSets() {
     total_count += AddSymbolProfileToHistogram(symbol.get(), &histogram);
   }
   int bucket_num = 0;
-  uint64 accumulated_count = 0;
-  uint64 accumulated_inst = 0;
-  uint64 one_bucket_count = total_count / (NUM_GCOV_WORKING_SETS + 1);
+  uint64_t accumulated_count = 0;
+  uint64_t accumulated_inst = 0;
+  uint64_t one_bucket_count = total_count / (NUM_GCOV_WORKING_SETS + 1);
 
   // Step 2. Traverse the histogram to update the working set.
   for (Histogram::const_reverse_iterator iter = histogram.rbegin();
        iter != histogram.rend() && bucket_num < NUM_GCOV_WORKING_SETS; ++iter) {
-    uint64 count = iter->first;
-    uint64 num_inst = iter->second;
+    uint64_t count = iter->first;
+    uint64_t num_inst = iter->second;
     while (count * num_inst + accumulated_count
            > one_bucket_count * (bucket_num + 1)
            && bucket_num < NUM_GCOV_WORKING_SETS) {
-      int64 offset =
+      int64_t offset =
           (one_bucket_count * (bucket_num + 1) - accumulated_count) / count;
       accumulated_inst += offset;
       accumulated_count += offset * count;
@@ -1073,13 +1091,13 @@ void SymbolMap::ComputeWorkingSets() {
   }
 }
 
-std::map<uint64, uint64> SymbolMap::GetSampledSymbolStartAddressSizeMap(
-    const std::set<uint64> &sampled_addrs) const {
+std::map<uint64_t, uint64_t> SymbolMap::GetSampledSymbolStartAddressSizeMap(
+    const std::set<uint64_t> &sampled_addrs) const {
   // We depend on the fact that sampled_addrs is an ordered set.
-  std::map<uint64, uint64> ret;
-  uint64 next_start_addr = 0;
+  std::map<uint64_t, uint64_t> ret;
+  uint64_t next_start_addr = 0;
   for (const auto &addr : sampled_addrs) {
-    uint64 adjusted_addr = addr + base_addr_;
+    uint64_t adjusted_addr = addr + base_addr_;
     if (adjusted_addr < next_start_addr) {
       continue;
     }
@@ -1108,7 +1126,8 @@ std::map<uint64, uint64> SymbolMap::GetSampledSymbolStartAddressSizeMap(
 
 // SymbolMap has already been read from the old profile. This function traverses
 // symbol map to calculate the functions that have samples.
-std::map<uint64, uint64> SymbolMap::GetLegacySymbolStartAddressSizeMap() const {
+std::map<uint64_t, uint64_t> SymbolMap::GetLegacySymbolStartAddressSizeMap()
+    const {
   std::set<std::string> names;
   // Traverse all top level symbols, including all inlined symbols. If the
   // symbol's total count is non-zero, it has samples and should be included
@@ -1131,7 +1150,7 @@ std::map<uint64, uint64> SymbolMap::GetLegacySymbolStartAddressSizeMap() const {
       }
     }
   }
-  std::map<uint64, uint64> ret;
+  std::map<uint64_t, uint64_t> ret;
   for (const std::string &name : names) {
     const auto &iter = name_addr_map_.find(name);
     if (iter == name_addr_map_.end()) {
@@ -1164,9 +1183,9 @@ bool SymbolMap::Validate() const {
     LOG(ERROR) << "# of symbols (" << size() << ") too small.";
     return false;
   }
-  uint64 total_count = 0;
-  uint64 num_srcs = 0;
-  uint64 num_srcs_non_zero = 0;
+  uint64_t total_count = 0;
+  uint64_t num_srcs = 0;
+  uint64_t num_srcs_non_zero = 0;
   bool has_inline_stack = false;
   bool has_call = false;
   bool has_discriminator = false;
@@ -1238,32 +1257,120 @@ void SymbolMap::UpdateWithRatio(double ratio) {
   }
 }
 
-void SymbolMap::BuildFlatProfile(const SymbolMap *srcmap) {
-  // collect all the symbols from map or from all the callsites.
+// This function traverses the callsites in the 'other' symbol and...
+// * IF the callsite is cold (i.e. total count <= threshold), it flattens the
+// callsite in the 'other' symbol, gets/creates an outline symbol and merges
+// samples from the callsite into this outline symbol.
+// * ELSE copies the callsite (without any flattening or merging) into dest
+// symbol.
+//
+// This function is called on the dest symbol/callsite recursively.
+// Once the copying, flattening and merging of the callees is done, it
+// copies over the pos_counts map that contains the flattened callsites from
+// 'other' to 'this'.
+void Symbol::PopulateSymbolRetainingHotInlineStacks(Symbol &other,
+                                                    const uint64_t threshold,
+                                                    SymbolMap &symMap,
+                                                    uint64_t &total,
+                                                    uint64_t &num_flattened) {
+  total_count += other.total_count;
+  head_count += other.head_count;
+  if (info.file_name.empty()) {
+    info.file_name = other.info.file_name;
+    info.dir_name = other.info.dir_name;
+  }
+  for (const auto &callsite_symbol : other.callsites) {
+    ++total;
+    // Merge cold callsites into outline symbol and recurse.
+    if (callsite_symbol.second->total_count <= threshold) {
+      // Here, flatten this callsite w.r.t src symbol, get/create outline symbol
+      // and merge callsite into outline symbol.
+      ++num_flattened;
+      other.FlattenCallsite(callsite_symbol.first.first,
+                             callsite_symbol.second);
+      symMap.AddSymbolToMap(*callsite_symbol.second);
+      symMap.map()
+          .at(callsite_symbol.second->info.func_name)
+          ->PopulateSymbolRetainingHotInlineStacks(
+              *callsite_symbol.second, threshold, symMap, total, num_flattened);
+    } else {
+      // Copy samples to dest callsite and recurse.
+      std::pair<CallsiteMap::iterator, bool> ret = callsites.insert(
+          CallsiteMap::value_type(callsite_symbol.first, NULL));
+      // If the callsite does not exist in the current symbol, create a new
+      // callee symbol with the clone's function name.
+      if (ret.second) {
+        ret.first->second = new Symbol();
+        ret.first->second->info.func_name = ret.first->first.second;
+      }
+      // This can be a direct call since there is a symbol for this callsite in
+      // this dst symbol's callsites map and any changes will be merged into it.
+      ret.first->second->PopulateSymbolRetainingHotInlineStacks(
+          *callsite_symbol.second, threshold, symMap, total, num_flattened);
+    }
+  }
+
+  // Do it after the above callsite traversal since that can flatten callsites
+  // and those get added into the pos_count. We need to retain those in the dst
+  // symbol.
+  for (const auto &pos_count : other.pos_counts)
+    pos_counts[pos_count.first] += pos_count.second;
+}
+
+void SymbolMap::AddSymbolToMap(const Symbol & symbol) {
+  // Find or create an entry for current symbol in the flatten map.
+  auto map_it = map_.find(symbol.info.func_name);
+  if (map_it == map_.end()) {
+    AddSymbol(symbol.info.func_name);
+  }
+}
+
+void SymbolMap::BuildHybridProfile(const SymbolMap &srcmap,
+                                   const uint64_t threshold,
+                                   uint64_t &num_callsites,
+                                   uint64_t &num_flattened) {
+  for (const auto &name_symbol : srcmap.map_) {
+    AddSymbolToMap(*name_symbol.second);
+    map_.at(name_symbol.second->info.func_name)
+        ->PopulateSymbolRetainingHotInlineStacks(*name_symbol.second, threshold,
+                                                 *this, num_callsites,
+                                                 num_flattened);
+  }
+}
+
+// This function is used to flatten callsites in the srcmap as they
+// are copied over into 'this' symbol map. When selectively_flatten is set to
+// false, all callsites are flattened (merged into a single outline function).
+// When set to true, callsites in cold functions (total count below threshold)
+// are converted to direct calls.
+void SymbolMap::BuildFlatProfile(const SymbolMap & srcmap,
+                                 bool selectively_flatten, uint64_t threshold,
+                                 uint64_t &num_total_functions,
+                                 uint64_t &num_flattened) {
   std::vector<Symbol *> symbols;
-  for (const auto &name_symbol : srcmap->map_) {
-    if (name_symbol.second->total_count > 0) {
+  for (const auto &name_symbol : srcmap.map_) {
+    ++num_total_functions;
+    if (selectively_flatten && name_symbol.second->total_count >= threshold) {
+      AddSymbolToMap(*name_symbol.second);
+      map_.at(name_symbol.second->info.func_name)->Merge(name_symbol.second);
+    } else {
+      ++num_flattened;
       symbols.push_back(name_symbol.second);
     }
   }
-  // Recursively add all the outline symbols and inline instances from srcmap
-  // to the flatten map.
   while (!symbols.empty()) {
     Symbol *symbol = symbols.back();
     symbols.pop_back();
-    // Find or create an entry for current symbol in the flatten map.
-    auto map_it = map_.find(symbol->info.func_name);
-    if (map_it == map_.end()) {
-      AddSymbol(symbol->info.func_name);
-      map_it = map_.find(symbol->info.func_name);
-    }
+    AddSymbolToMap(*symbol);
     for (const auto &pos_callsite : symbol->callsites) {
       pos_callsite.second->EstimateHeadCount();
       symbol->FlattenCallsite(pos_callsite.first.first, pos_callsite.second);
-      // Add the callsite into current working set.
-      symbols.push_back(pos_callsite.second);
+      if (!selectively_flatten) {
+        // Add the callsite into current working set.
+        symbols.push_back(pos_callsite.second);
+      }
     }
-    map_it->second->FlatMerge(symbol);
+    map_.at(symbol->info.func_name)->FlatMerge(symbol);
   }
 }
 

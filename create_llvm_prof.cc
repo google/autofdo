@@ -4,6 +4,7 @@
 // This program creates an LLVM profile from an AutoFDO source.
 
 #include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/strings/match.h"
 #if defined(HAVE_LLVM)
 #include <memory>
 
@@ -20,22 +21,22 @@
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
 
-ABSL_FLAG(string, profile, "perf.data",
+ABSL_FLAG(std::string, profile, "perf.data",
           "Input profile file name. When --format=propeller, this accepts "
           "multiple profile file names concatnated by ';'");
-ABSL_FLAG(string, profiler, "perf",
+ABSL_FLAG(std::string, profiler, "perf",
           "Input profile type. Possible values: perf, text, or prefetch");
-ABSL_FLAG(string, prefetch_hints, "", "Input cache prefetch hints");
-ABSL_FLAG(string, out, "", "Output profile file name");
-ABSL_FLAG(string, gcov, "",
+ABSL_FLAG(std::string, prefetch_hints, "", "Input cache prefetch hints");
+ABSL_FLAG(std::string, out, "", "Output profile file name");
+ABSL_FLAG(std::string, gcov, "",
           "Output profile file name. Alias for --out; used for "
           "flag compatibility with create_gcov");
-ABSL_FLAG(string, binary, "a.out", "Binary file name");
+ABSL_FLAG(std::string, binary, "a.out", "Binary file name");
 // FIXME(dnovillo) - This should default to 'binary'.  However, the binary
 // representation is currently version locked to the latest LLVM upstream
 // sources. This may cause incompatibilities with the currently released version
 // of Crosstool LLVM.  Default to 'binary' once http://b/27336904 is fixed.
-ABSL_FLAG(string, format, "text",
+ABSL_FLAG(std::string, format, "text",
           "LLVM profile format to emit. Possible values are 'text', "
           "'binary', 'extbinary' or 'propeller'. The binary format is a "
           "more compact representation, but the text format is human "
@@ -43,10 +44,10 @@ ABSL_FLAG(string, format, "text",
           "of LLVM. extbinary format is also a binary format but more "
           "easily to be extended. propeller format is used exclusively by "
           "post linker optimizer.");
-ABSL_FLAG(string, propeller_symorder, "",
+ABSL_FLAG(std::string, propeller_symorder, "",
           "Propeller symbol ordering output file name.");
 ABSL_FLAG(
-    string, profiled_binary_name, "",
+    std::string, profiled_binary_name, "",
     "Name specified to compare against perf mmap_events. This value is usually "
     "different from \"--binary=\" option. Each perf mmap event contains an "
     "executable name, use this option to select the mmap events we are "
@@ -119,7 +120,16 @@ int main(int argc, char **argv) {
       return 1;
     }
     return 0;
+  } else {
+    // Make sure "--profile" does not contain multiple perf files when dealing
+    // with non-propeller profiles.
+    if (absl::StrContains(absl::GetFlag(FLAGS_profile), ";")) {
+      LOG(ERROR) << "Multiple profiles are only supported under "
+                    "--format=propeller. (Please check ';' in the filename)";
+      return 1;
+    }
   }
+
 
   std::unique_ptr<devtools_crosstool_autofdo::LLVMProfileWriter> writer(
       nullptr);

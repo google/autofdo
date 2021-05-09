@@ -39,11 +39,7 @@ CFGEdge *ControlFlowGraph::CreateEdge(CFGNode *from, CFGNode *to,
   return edge;
 }
 
-void ControlFlowGraph::FinishCreatingControlFlowGraph(
-    bool adjust_entry_node_size) {
-  // TODO(b/162192070): remove "ResetEntryNodeSize" after removing bblabels
-  // workflow.
-  if (adjust_entry_node_size) ResetEntryNodeSize();
+void ControlFlowGraph::FinishCreatingControlFlowGraph() {
   CalculateNodeFreqs();
   CoalesceColdNodes();
 }
@@ -107,6 +103,9 @@ void ControlFlowGraph::CalculateNodeFreqs() {
 
     this->hot_tag_ |= (node.freq_ != 0);
   });
+  // Make sure entry node has a non-zero frequency if function is hot.
+  if (this->hot_tag_ && GetEntryNode()->freq_ == 0)
+    GetEntryNode()->freq_ = 1;
 }
 
 void ControlFlowGraph::CoalesceColdNodes() {
