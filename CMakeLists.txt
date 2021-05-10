@@ -59,6 +59,7 @@ function (config_without_llvm)
     third_party/perf_data_converter/src/quipper/file_reader.cc
     third_party/perf_data_converter/src/quipper/file_utils.cc
     third_party/perf_data_converter/src/quipper/huge_page_deducer.cc
+    third_party/perf_data_converter/src/quipper/perf_buildid.cc
     third_party/perf_data_converter/src/quipper/perf_data_utils.cc
     third_party/perf_data_converter/src/quipper/perf_serializer.cc
     third_party/perf_data_converter/src/quipper/perf_reader.cc
@@ -474,6 +475,7 @@ function (config_with_llvm)
     third_party/perf_data_converter/src/quipper/file_reader.cc
     third_party/perf_data_converter/src/quipper/file_utils.cc
     third_party/perf_data_converter/src/quipper/huge_page_deducer.cc
+    third_party/perf_data_converter/src/quipper/perf_buildid.cc
     third_party/perf_data_converter/src/quipper/perf_data_utils.cc
     third_party/perf_data_converter/src/quipper/perf_serializer.cc
     third_party/perf_data_converter/src/quipper/perf_reader.cc
