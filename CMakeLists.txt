@@ -43,6 +43,7 @@ function (config_without_llvm)
     util/symbolize/dwarf3ranges.cc
     util/symbolize/elf_reader.cc
   )
+  add_dependencies(create_gcov_lib perf_data_proto)
 
   add_library(quipper_perf OBJECT 
     third_party/perf_data_converter/src/quipper/address_mapper.cc
@@ -192,6 +193,7 @@ function (config_with_llvm)
   add_library(sample_reader OBJECT sample_reader.cc)
   target_include_directories(sample_reader PUBLIC util)
   target_link_libraries(sample_reader absl::base quipper_perf LLVMObject)
+  add_dependencies(sample_reader perf_data_proto)
 
   add_library(perfdata_reader OBJECT perfdata_reader.cc)
 
