@@ -33,7 +33,7 @@
 #include "base/common.h"
 #include "symbolize/dwarf2enums.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 class ElfReader;
 class ByteReader;
 class Dwarf2Handler;
@@ -758,6 +758,6 @@ class DwpReader {
   size_t str_offsets_size_;
 };
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_SYMBOLIZE_DWARF2READER_H__

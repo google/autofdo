@@ -17,7 +17,7 @@
 
 #include "base/common.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 ByteReader::ByteReader(enum Endianness endian)
     :offset_reader_(NULL), address_reader_(NULL), endian_(endian),
@@ -46,4 +46,4 @@ void ByteReader::SetAddressSize(uint8 size) {
   }
 }
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo

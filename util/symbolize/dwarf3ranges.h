@@ -22,7 +22,7 @@
 #include "base/common.h"
 #include "symbolize/bytereader.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 // This class represents a DWARF3 non-contiguous address range.  The
 // contents of an address range section are passed in
@@ -65,6 +65,6 @@ class AddressRangeList {
   DISALLOW_COPY_AND_ASSIGN(AddressRangeList);
 };
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_SYMBOLIZE_DWARF3RANGES_H_

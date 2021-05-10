@@ -15,7 +15,7 @@
 #ifndef AUTOFDO_SYMBOLIZE_DWARF2ENUMS_H__
 #define AUTOFDO_SYMBOLIZE_DWARF2ENUMS_H__
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 // These enums do not follow the google3 style only because they are
 // known universally (specs, other implementations) by the names in
@@ -617,5 +617,5 @@ enum DwarfSectionId {
   DW_SECT_MACRO = 8
 };
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 #endif  // AUTOFDO_SYMBOLIZE_DWARF2ENUMS_H__

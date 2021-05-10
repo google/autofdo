@@ -26,7 +26,7 @@
 #include "symbolize/dwarf3ranges.h"
 #include "symbolize/nonoverlapping_range_map.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 class ByteReader;
 
@@ -167,7 +167,7 @@ class InlineStackHandler: public Dwarf2Handler {
       AddressRangeList *address_ranges,
       const SectionMap& sections,
       ByteReader *reader,
-      const std::map<uint64, uint64> *sampled_functions,
+      const std::map<uint64_t, uint64_t> *sampled_functions,
       uint64 vaddr_of_first_load_segment)
       : directory_names_(NULL), file_names_(NULL), line_handler_(NULL),
         sections_(sections), reader_(reader),
@@ -269,7 +269,7 @@ class InlineStackHandler: public Dwarf2Handler {
   // directories that we've seen, because SubprogramInfo keeps
   // StringPiece objects pointing to these copies.
   std::vector<string*> compilation_unit_comp_dir_;
-  const std::map<uint64, uint64> *sampled_functions_;
+  const std::map<uint64_t, uint64_t> *sampled_functions_;
   int overlap_count_;
   bool have_two_level_line_tables_;
   bool subprogram_added_by_cu_;
@@ -277,6 +277,6 @@ class InlineStackHandler: public Dwarf2Handler {
   DISALLOW_COPY_AND_ASSIGN(InlineStackHandler);
 };
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_SYMBOLIZE_ADDR2LINE_INLINESTACK_H_

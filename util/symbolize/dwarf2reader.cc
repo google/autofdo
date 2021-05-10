@@ -28,7 +28,7 @@
 #include "symbolize/elf_reader.h"
 #include "symbolize/line_state_machine.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 // Read a DWARF2/3 initial length field from START, using READER, and
 // report the length in LEN.  Return the actual initial length.
@@ -1715,4 +1715,4 @@ void LineInfo::ReadLines() {
   after_header_ = lengthstart + header_.total_length;
 }
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo

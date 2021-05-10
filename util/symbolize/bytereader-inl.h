@@ -20,7 +20,7 @@
 #include "base/common.h"
 #include "symbolize/bytereader.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 inline uint8 ByteReader::ReadOneByte(const char* buffer) const {
   return buffer[0];
@@ -124,6 +124,6 @@ inline uint64 ByteReader::ReadAddress(const char* buffer) const {
   return (this->*address_reader_)(buffer);
 }
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_SYMBOLIZE_BYTEREADER_INL_H__

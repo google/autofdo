@@ -29,7 +29,7 @@
 #include "symbolize/bytereader.h"
 #include "symbolize/dwarf2reader.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 typedef pair<const char *, const char *> DirectoryFilePair;
 
@@ -83,7 +83,7 @@ class AddressToLineMap {
   typedef std::vector<struct SubprogInfo> SubprogVector;
 
   // Map an address to a logical row number.
-  typedef std::map<uint64, uint32> AddressToLogical;
+  typedef std::map<uint64_t, uint32_t> AddressToLogical;
   typedef AddressToLogical::const_iterator const_iterator;
 
   AddressToLineMap()
@@ -243,7 +243,7 @@ class CULineInfoHandler: public LineInfoHandler {
   CULineInfoHandler(FileVector* files,
                     DirectoryVector* dirs,
                     AddressToLineMap* linemap,
-                    const map<uint64, uint64> *sampled_functions);
+                    const map<uint64_t, uint64_t> *sampled_functions);
   virtual ~CULineInfoHandler() { }
 
   // Called at the start of each CU.
@@ -291,7 +291,7 @@ class CULineInfoHandler: public LineInfoHandler {
   AddressToLineMap* linemap_;
   FileVector* files_;
   DirectoryVector* dirs_;
-  const map<uint64, uint64> *sampled_functions_;
+  const map<uint64_t, uint64_t> *sampled_functions_;
   DISALLOW_EVIL_CONSTRUCTORS(CULineInfoHandler);
 };
 
@@ -363,5 +363,5 @@ class CUFunctionInfoHandler: public Dwarf2Handler {
   DISALLOW_EVIL_CONSTRUCTORS(CUFunctionInfoHandler);
 };
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 #endif  // AUTOFDO_SYMBOLIZE_FUNCTIONINFO_H__

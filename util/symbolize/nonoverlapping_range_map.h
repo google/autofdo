@@ -27,7 +27,7 @@
 #include "base/common.h"
 #include "symbolize/dwarf3ranges.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 struct RangeStartLt {
   bool operator()(const AddressRangeList::Range& r1,
@@ -240,6 +240,6 @@ void NonOverlappingRangeMap<T>::SplitRange(Iterator split, uint64 low,
   }
 }
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_SYMBOLIZE_NONOVERLAPPING_RANGE_MAP_H_

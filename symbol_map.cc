@@ -399,7 +399,7 @@ const std::string *SymbolMap::GetSymbolNameByStartAddr(uint64_t addr) const {
   return &ret->second.first;
 }
 
-class SymbolReader : public util::ElfReader::SymbolSink {
+class SymbolReader : public ElfReader::SymbolSink {
  public:
   explicit SymbolReader(NameAliasMap *name_alias_map,
                         AddressSymbolMap *address_symbol_map)
@@ -425,7 +425,7 @@ class SymbolReader : public util::ElfReader::SymbolSink {
 
 
 void SymbolMap::BuildSymbolMap() {
-  util::ElfReader elf_reader(binary_);
+  ElfReader elf_reader(binary_);
   base_addr_ = elf_reader.VaddrOfFirstLoadSegment();
   SymbolReader symbol_reader(&name_alias_map_, &address_symbol_map_);
   symbol_reader.filter = [](const char *name, uint64 address, uint64 size,
@@ -1398,6 +1398,7 @@ void SymbolMap::RemoveSymbol(const std::string &name) {
   }
 }
 
+#if defined(HAVE_LLVM)
 NameSizeList SymbolMap::collectNamesForProfSymList() {
   llvm::StringSet<> names_in_profile = collectNamesInProfile();
   NameSizeList name_size_list;
@@ -1442,5 +1443,6 @@ llvm::StringSet<> SymbolMap::collectNamesInProfile() {
   }
   return names;
 }
+#endif
 
 }  // namespace devtools_crosstool_autofdo

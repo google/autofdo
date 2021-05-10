@@ -9,7 +9,9 @@
 
 #include "base/integral_types.h"
 #include "base/macros.h"
+#if defined(HAVE_LLVM)
 #include "llvm/IR/DebugInfoMetadata.h"
+#endif
 
 namespace devtools_crosstool_autofdo {
 
@@ -17,8 +19,8 @@ namespace devtools_crosstool_autofdo {
 struct SourceInfo {
   SourceInfo() : func_name(NULL), start_line(0), line(0), discriminator(0) {}
 
-  SourceInfo(const char *func_name, llvm::StringRef dir_name,
-             llvm::StringRef file_name, uint32_t start_line, uint32_t line,
+  SourceInfo(const char *func_name, std::string dir_name,
+             std::string file_name, uint32_t start_line, uint32_t line,
              uint32_t discriminator)
       : func_name(func_name),
         dir_name(dir_name),
@@ -37,16 +39,24 @@ struct SourceInfo {
   }
 
   uint32_t Offset(bool use_discriminator_encoding) const {
+#if defined(HAVE_LLVM)
     return ((line - start_line) << 16) |
            (use_discriminator_encoding
                 ? llvm::DILocation::getBaseDiscriminatorFromDiscriminator(
                       discriminator)
                 : discriminator);
+#else
+    return ((line - start_line) << 16) | discriminator;
+#endif
   }
 
   uint32_t DuplicationFactor() const {
+#if defined(HAVE_LLVM)
     return llvm::DILocation::getDuplicationFactorFromDiscriminator(
         discriminator);
+#else
+    return 1;
+#endif
   }
 
   bool HasInvalidInfo() const {

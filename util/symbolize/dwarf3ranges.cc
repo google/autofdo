@@ -18,7 +18,7 @@
 #include "symbolize/bytereader.h"
 #include "symbolize/bytereader-inl.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 void AddressRangeList::ReadRangeList(uint64 offset, uint64 base,
                                      AddressRangeList::RangeList* ranges) {
@@ -47,4 +47,4 @@ void AddressRangeList::ReadRangeList(uint64 offset, uint64 base,
   } while (true);
 }
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo

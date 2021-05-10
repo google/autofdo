@@ -20,7 +20,9 @@
 #include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/container/flat_hash_set.h"
 #include "third_party/abseil/absl/container/node_hash_map.h"
+#if defined(HAVE_LLVM)
 #include "llvm/ProfileData/SampleProf.h"
+#endif
 // Macros from gcc (profile.c)
 #define NUM_GCOV_WORKING_SETS 128
 #define WORKING_SET_INSN_PER_BB 10
@@ -111,7 +113,7 @@ class CallGraph;
 class Symbol {
  public:
   // This constructor is used to create inlined symbol.
-  Symbol(const char *name, llvm::StringRef dir, llvm::StringRef file,
+  Symbol(const char *name, std::string dir, std::string file,
          uint32_t start)
       : info(SourceInfo(name, dir, file, start, 0, 0)),
         total_count(0),
@@ -215,8 +217,10 @@ typedef std::map<std::string, uint64_t> NameAddressMap;
 // Maps function name to alias names.
 typedef absl::node_hash_map<std::string, absl::flat_hash_set<std::string>>
     NameAliasMap;
+#if defined(HAVE_LLVM)
 // List of pairs containing function name and size.
 using NameSizeList = std::vector<std::pair<llvm::StringRef, uint64_t>>;
+#endif
 
 // SymbolMap stores the symbols in the binary, and maintains
 // a map from symbol name to its related information.
@@ -481,6 +485,7 @@ class SymbolMap {
   // That data is ignored by readers.
   bool EnsureEntryInFuncForSymbol(const std::string& func_name, uint64_t pc);
 
+#if defined(HAVE_LLVM)
   // Collect all function symbols and size in address_symbol_map_, but remove
   // the names showing up in the profile.
   NameSizeList collectNamesForProfSymList();
@@ -488,6 +493,7 @@ class SymbolMap {
   // Collect all names including names of outline instances, inline instances
   // and call targets in current map.
   llvm::StringSet<> collectNamesInProfile();
+#endif
 
  private:
   // Reads from the binary's elf section to build the symbol map.

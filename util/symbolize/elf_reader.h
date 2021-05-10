@@ -25,10 +25,11 @@
 #ifndef AUTOFDO_SYMBOLIZE_ELF_READER_H__
 #define AUTOFDO_SYMBOLIZE_ELF_READER_H__
 
+#include <functional>
 #include <string>
 #include "base/common.h"
 
-namespace util {
+namespace devtools_crosstool_autofdo {
 
 class Elf32;
 class Elf64;
@@ -161,6 +162,6 @@ class ElfReader {
   DISALLOW_COPY_AND_ASSIGN(ElfReader);
 };
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_SYMBOLIZE_ELF_READER_H__

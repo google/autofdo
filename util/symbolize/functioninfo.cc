@@ -31,7 +31,7 @@
 #include "symbolize/dwarf2enums.h"
 #include "symbolize/line_state_machine.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 CULineInfoHandler::CULineInfoHandler(FileVector* files,
                                      DirectoryVector* dirs,
@@ -45,7 +45,7 @@ CULineInfoHandler::CULineInfoHandler(
     FileVector* files,
     DirectoryVector* dirs,
     AddressToLineMap* linemap,
-    const std::map<uint64, uint64> *sampled_functions)
+    const std::map<uint64_t, uint64_t> *sampled_functions)
     : linemap_(linemap), files_(files), dirs_(dirs),
       sampled_functions_(sampled_functions) {
   Init();
@@ -75,7 +75,7 @@ bool CULineInfoHandler::ShouldAddAddress(uint64 address) const {
   if (sampled_functions_ == NULL) {
     return true;
   }
-  std::map<uint64, uint64>::const_iterator iter =
+  std::map<uint64_t, uint64_t>::const_iterator iter =
       sampled_functions_->upper_bound(address);
   if (iter == sampled_functions_->begin()) {
     return false;
@@ -293,4 +293,4 @@ void CUFunctionInfoHandler::EndDIE(uint64 offset) {
                                            current_function_info_));
 }
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo

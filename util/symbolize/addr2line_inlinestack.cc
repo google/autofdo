@@ -23,8 +23,8 @@ namespace {
 
 // Returns true if b's address range set is a subset of a's.
 bool SubprogramContains(
-    const autofdo::SubprogramInfo *a,
-    const autofdo::SubprogramInfo *b) {
+    const devtools_crosstool_autofdo::SubprogramInfo *a,
+    const devtools_crosstool_autofdo::SubprogramInfo *b) {
   // For each range in b, we try to find a range in a that contains it.
   for (const auto &b_range : *b->address_ranges()) {
     bool found = false;
@@ -43,7 +43,7 @@ bool SubprogramContains(
 }
 }  // namespace
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 void SubprogramInfo::SwapAddressRanges(AddressRangeList::RangeList *ranges) {
   address_ranges_.swap(*ranges);
@@ -671,4 +671,4 @@ InlineStackHandler::~InlineStackHandler() {
     delete comp_dir;
 }
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo

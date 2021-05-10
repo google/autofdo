@@ -15,9 +15,11 @@
 #include "base/logging.h"
 #include "addr2line.h"
 #include "gcov.h"
-#include "llvm_profile_writer.h"
 #include "profile.h"
+#if defined(HAVE_LLVM)
+#include "llvm_profile_writer.h"
 #include "profile_symbol_list.h"
+#endif
 #include "profile_writer.h"
 #include "sample_reader.h"
 #include "symbol_map.h"
@@ -28,7 +30,9 @@
 ABSL_FLAG(std::string, focus_binary_re, "",
               "RE for the focused binary file name");
 
+#if defined(HAVE_LLVM)
 AUTOFDO_PROFILE_SYMBOL_LIST_FLAGS;
+#endif
 
 namespace {
 struct PrefetchHint {
@@ -113,6 +117,7 @@ bool ProfileCreator::CreateProfile(const std::string &input_profile_name,
     if (!ComputeProfile(&symbol_map)) return false;
   }
 
+#if defined(HAVE_LLVM)
   // Create prof_sym_list after symbol_map is populated because prof_sym_list
   // is expected not to contain any symbol showing up in the profile in
   // symbol_map.
@@ -130,6 +135,7 @@ bool ProfileCreator::CreateProfile(const std::string &input_profile_name,
     if (!sample_profile_writer) return false;
     sample_profile_writer->setProfileSymbolList(prof_sym_list.get());
   }
+#endif
 
   bool ret = writer->WriteToFile(output_profile_name);
   return ret;
@@ -154,7 +160,7 @@ bool ProfileCreator::ReadSample(const std::string &input_profile_name,
       focus_binary_re = std::string(".*/") + file_base_name + "$";
       free(dup_name);
 
-      util::ElfReader reader(binary_);
+      ElfReader reader(binary_);
       // Quipper (and other parts of google3's perf infrastructure) pads build
       // ids--if present--to 40 characters hex. Match that behavior here. See
       // quipper/perf_data_utils.h and b/21597512 for more info.

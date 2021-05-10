@@ -68,7 +68,7 @@ T AdjustARMThumbSymbolValue(const T& symbol_table_value) {
 }
 }  // namespace
 
-namespace util {
+namespace devtools_crosstool_autofdo {
 
 template <class ElfArch> class ElfReaderImpl;
 
@@ -943,4 +943,4 @@ bool ElfReader::IsNonStrippedELFBinary(const string &path) {
 bool ElfReader::IsNonDebugStrippedELFBinary(const string &path) {
   return IsNonStrippedELFBinaryHelper(path, true);
 }
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo

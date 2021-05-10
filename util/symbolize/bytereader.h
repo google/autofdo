@@ -19,7 +19,7 @@
 
 #include "base/common.h"
 
-namespace autofdo {
+namespace devtools_crosstool_autofdo {
 
 // We can't use the obvious name of LITTLE_ENDIAN and BIG_ENDIAN
 // because it conflicts with a macro
@@ -116,6 +116,6 @@ class ByteReader {
   DISALLOW_EVIL_CONSTRUCTORS(ByteReader);
 };
 
-}  // namespace autofdo
+}  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_SYMBOLIZE_BYTEREADER_H__
