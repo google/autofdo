@@ -92,8 +92,8 @@ void LLVMAddr2line::GetInlineStack(uint64_t address, SourceStack *stack) const {
     const char *function_name =
         FunctionDIE.getSubroutineName(llvm::DINameKind::LinkageName);
     uint32_t start_line = FunctionDIE.getDeclLine();
-    llvm::StringRef file_name;
-    llvm::StringRef dir_name;
+    std::string file_name;
+    std::string dir_name;
     if (line_table->hasFileAtIndex(file)) {
       const auto &entry = line_table->Prologue.getFileNameEntry(file);
       file_name = entry.Name.getAsCString().getValue();
