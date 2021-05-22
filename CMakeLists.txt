@@ -25,6 +25,8 @@ function (config_without_llvm)
   protobuf_generate_cpp(PERF_PARSER_OPTIONS_CC PERF_PARSER_OPTIONS_HDR third_party/perf_data_converter/src/quipper/perf_parser_options.proto)
   protobuf_generate_cpp(PERF_STAT_CC PERF_STAT_HDR third_party/perf_data_converter/src/quipper/perf_stat.proto)
   add_library(perf_data_proto OBJECT ${PERF_DATA_PROTO_CC})
+  add_library(perf_parser_options_proto OBJECT ${PERF_PARSER_OPTIONS_CC})
+  add_library(perf_stat_proto OBJECT ${PERF_STAT_CC})
 
   add_library(create_gcov_lib OBJECT
     create_gcov.cc
@@ -44,6 +46,8 @@ function (config_without_llvm)
     util/symbolize/elf_reader.cc
   )
   add_dependencies(create_gcov_lib perf_data_proto)
+  add_dependencies(create_gcov_lib perf_parser_options_proto)
+  add_dependencies(create_gcov_lib perf_stat_proto)
 
   add_library(quipper_perf OBJECT 
     third_party/perf_data_converter/src/quipper/address_mapper.cc
