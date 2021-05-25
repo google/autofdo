@@ -101,6 +101,9 @@ function (config_without_llvm)
     symbol_map.cc
     util/symbolize/elf_reader.cc
   )
+  add_dependencies(dump_gcov_lib perf_data_proto)
+  add_dependencies(dump_gcov_lib perf_parser_options_proto)
+  add_dependencies(dump_gcov_lib perf_stat_proto)
 
   add_executable(dump_gcov)
   target_link_libraries(dump_gcov
