@@ -35,7 +35,8 @@ $ mkdir -p ${PATH_TO_LLVM_SOURCES} && cd ${PATH_TO_LLVM_SOURCES}
 $ git clone git@github.com:llvm/llvm-project.git
 $ mkdir -p ${PATH_TO_TRUNK_LLVM_BUILD} && cd ${PATH_TO_TRUNK_LLVM_BUILD}
 $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${PATH_TO_TRUNK_LLVM_INSTALL}" \
-    -DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_ENABLE_RTTI=On -DLLVM_ENABLE_PROJECTS="clang;lld" \
+    -DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_ENABLE_RTTI=On -DLLVM_INCLUDE_TESTS=Off \
+    -DLLVM_ENABLE_PROJECTS="clang;lld" \
     ${PATH_TO_LLVM_SOURCES}/llvm-project/llvm
 $ ninja install
 ```
@@ -54,6 +55,8 @@ $ mkdir -p ${PATH_TO_CREATE_LLVM_PROF} && cd ${PATH_TO_CREATE_LLVM_PROF}
 $ git clone --recursive git@github.com:google/autofdo.git
 $ mkdir build && cd build
 $ cmake -G Ninja -DCMAKE_INSTALL_PREFIX="." \
+    -DCMAKE_C_COMPILER="${PATH_TO_TRUNK_LLVM_INSTALL}/bin/clang" \
+    -DCMAKE_CXX_COMPILER="${PATH_TO_TRUNK_LLVM_INSTALL}/bin/clang++" \
     -DLLVM_PATH="${PATH_TO_TRUNK_LLVM_INSTALL}" ../autofdo/
 $ ninja
 ```
