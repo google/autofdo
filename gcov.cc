@@ -36,35 +36,30 @@ const uint32 GCOV_TAG_AFDO_WORKING_SET = 0xaf000000;
 const uint32 GCOV_DATA_MAGIC = 0x67636461; /* "gcda" */
 const char *GCOV_ELF_SECTION_NAME = ".gnu.switches.text";
 
-#define GCOV_BLOCK_SIZE (1 << 10)
+#define GCOV_BLOCK_BYTE_SIZE (1 << 12)
 
 struct gcov_var {
   FILE *file;
-  uint32 start;
-  uint32 offset;
-  uint32 length;
-  uint32 overread;
+  uint32 byte_offset;
+  uint32 byte_length;
   int32 error;
   int32 mode;
-  uint64 alloc;
-  uint32 *buffer;
+  uint64 byte_alloc;
+  char *buffer;
 };
 
 static struct gcov_var gcov_var;
 
-static void gcov_write_block(unsigned size) {
-  if (fwrite(gcov_var.buffer, size << 2, 1, gcov_var.file) != 1) {
+static void gcov_write_block(unsigned byte_size) {
+  if (fwrite(gcov_var.buffer, byte_size, 1, gcov_var.file) != 1) {
     gcov_var.error = 1;
   }
-  gcov_var.start += size;
-  gcov_var.offset -= size;
+  gcov_var.byte_offset -= byte_size;
 }
 
 int gcov_open(const char *name, int mode) {
   CHECK(!gcov_var.file);
-  gcov_var.start = 0;
-  gcov_var.offset = gcov_var.length = 0;
-  gcov_var.overread = -1u;
+  gcov_var.byte_offset = gcov_var.byte_length = 0;
   gcov_var.error = 0;
   if (mode >= 0)
     gcov_var.file = fopen(name, (mode > 0) ? "rb" : "r+b");
@@ -88,44 +83,52 @@ int gcov_open(const char *name, int mode) {
 
 int gcov_close(void) {
   if (gcov_var.file) {
-    if (gcov_var.offset && gcov_var.mode < 0) {
-      gcov_write_block(gcov_var.offset);
+    if (gcov_var.byte_offset && gcov_var.mode < 0) {
+      gcov_write_block(gcov_var.byte_offset);
     }
     fclose(gcov_var.file);
     gcov_var.file = 0;
-    gcov_var.length = 0;
+    gcov_var.byte_length = 0;
   }
   gcov_var.mode = 0;
   int err = gcov_var.error;
   return err;
 }
 
-static inline void gcov_allocate(unsigned length) {
-  uint64 new_size = gcov_var.alloc;
+static inline void gcov_allocate(unsigned byte_length) {
+  uint64 new_byte_size = gcov_var.byte_alloc;
 
-  if (!new_size) {
-    new_size = GCOV_BLOCK_SIZE;
+  if (!new_byte_size) {
+    new_byte_size = GCOV_BLOCK_BYTE_SIZE;
   }
-  new_size += length;
-  new_size *= 2;
+  new_byte_size += byte_length;
+  new_byte_size *= 2;
 
-  gcov_var.alloc = new_size;
+  gcov_var.byte_alloc = new_byte_size;
   gcov_var.buffer =
-      static_cast<uint32 *>(realloc(gcov_var.buffer, new_size << 2));
+      static_cast<char *>(realloc(gcov_var.buffer, new_byte_size));
+}
+
+static inline char *gcov_write_bytes(unsigned bytes) {
+  char *result;
+
+  CHECK_LT(gcov_var.mode, 0);
+  if (gcov_var.byte_offset + bytes > gcov_var.byte_alloc) {
+    gcov_allocate(gcov_var.byte_offset + bytes);
+  }
+  result = &gcov_var.buffer[gcov_var.byte_offset];
+  gcov_var.byte_offset += bytes;
+
+  return result;
 }
 
 static inline uint32 *gcov_write_words(unsigned words) {
   uint32 *result;
+  unsigned bytes = words << 2;
 
-  CHECK_LT(gcov_var.mode, 0);
-  if (gcov_var.offset + words > gcov_var.alloc) {
-    gcov_allocate(gcov_var.offset + words);
-  }
-  result = &gcov_var.buffer[gcov_var.offset];
-  gcov_var.offset += words;
-
-  return result;
+  return reinterpret_cast<uint32 *>(gcov_write_bytes(bytes));
 }
+
 
 void gcov_write_unsigned(uint32 value) {
   uint32 *buffer = gcov_write_words(1);
@@ -146,42 +149,55 @@ void gcov_write_string(const char *string) {
 
   if (string) {
     length = strlen(string);
-    alloc = (length + 4) >> 2;
+    if (absl::GetFlag(FLAGS_gcov_version) == 2) {
+      // Length includes the terminating 0 and is saved in bytes.
+      alloc = length + 1;
+      char *byte_buffer = gcov_write_bytes(4 + alloc);
+      byte_buffer[3 + alloc] = 0;
+      buffer = reinterpret_cast<uint32 *>(byte_buffer);
+    }
+    else {
+      // Length is saved in words and padding is added.
+      alloc = (length + 4) >> 2;
+      buffer = gcov_write_words(1 + alloc);
+      buffer[alloc] = 0;
+    }
   }
 
-  buffer = gcov_write_words(1 + alloc);
   buffer[0] = alloc;
-  buffer[alloc] = 0;
   memcpy(&buffer[1], string, length);
 }
 
-static inline const uint32 *gcov_read_words(unsigned words) {
-  const uint32 *result;
-  unsigned excess = gcov_var.length - gcov_var.offset;
+static inline const char *gcov_read_bytes(unsigned bytes) {
+  const char *result;
+  unsigned excess_bytes = gcov_var.byte_length - gcov_var.byte_offset;
 
   CHECK_GT(gcov_var.mode, 0);
-  CHECK(words < GCOV_BLOCK_SIZE);
-  if (excess < words) {
-    gcov_var.start += gcov_var.offset;
-    memmove(gcov_var.buffer, gcov_var.buffer + gcov_var.offset, excess * 4);
-    gcov_var.offset = 0;
-    gcov_var.length = excess;
-    if (gcov_var.length + words > gcov_var.alloc) {
-      gcov_allocate(gcov_var.length + words);
+  CHECK(bytes < GCOV_BLOCK_BYTE_SIZE);
+  if (excess_bytes < bytes) {
+    memmove(gcov_var.buffer, gcov_var.buffer + gcov_var.byte_offset, excess_bytes);
+    gcov_var.byte_offset = 0;
+    gcov_var.byte_length = excess_bytes;
+    if (gcov_var.byte_length + bytes > gcov_var.byte_alloc) {
+      gcov_allocate(gcov_var.byte_length + bytes);
     }
-    excess = gcov_var.alloc - gcov_var.length;
-    excess = fread(gcov_var.buffer + gcov_var.length,
-                   1, excess << 2, gcov_var.file) >> 2;
-    gcov_var.length += excess;
-    if (gcov_var.length < words) {
-      gcov_var.overread += words - gcov_var.length;
-      gcov_var.length = 0;
+    excess_bytes = gcov_var.byte_alloc - gcov_var.byte_length;
+    excess_bytes = fread(gcov_var.buffer + gcov_var.byte_length,
+                   1, excess_bytes, gcov_var.file);
+    gcov_var.byte_length += excess_bytes;
+    if (gcov_var.byte_length < bytes) {
+      gcov_var.byte_length = 0;
       return 0;
     }
   }
-  result = &gcov_var.buffer[gcov_var.offset];
-  gcov_var.offset += words;
+  result = &gcov_var.buffer[gcov_var.byte_offset];
+  gcov_var.byte_offset += bytes;
   return result;
+}
+
+static inline const uint32 *gcov_read_words(unsigned words) {
+  unsigned bytes = words << 2;
+  return reinterpret_cast<const uint32 *>(gcov_read_bytes(bytes));
 }
 
 uint32 gcov_read_unsigned(void) {
@@ -213,5 +229,10 @@ const char * gcov_read_string(void) {
     return 0;
   }
 
-  return (const char *) gcov_read_words (length);
+  if (absl::GetFlag(FLAGS_gcov_version) == 2) {
+    return gcov_read_bytes (length);
+  }
+  else {
+    return (const char *) gcov_read_words (length);
+  }
 }
