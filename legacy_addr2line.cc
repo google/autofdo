@@ -184,6 +184,9 @@ void Google3Addr2line::GetInlineStack(uint64_t address,
   if (iter == line_map_->begin())
     return;
   --iter;
+  if (iter->second == 0)
+    return;
+
   const LineIdentifier &LI = line_map_->GetLogical(iter->second);
   if (LI.line == 0)
     return;
