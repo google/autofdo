@@ -87,8 +87,8 @@ llvm::Optional<llvm::object::SectionRef> FindBbAddrMapSection(
     Expected<llvm::StringRef> sn = sec.getName();
     llvm::object::ELFSectionRef esec(sec);
 #if LLVM_VERSION_MAJOR >= 12
-    if (esec.getType() == llvm::ELF::SHT_LLVM_BB_ADDR_MAP &&
-        sn && (*sn) == PropellerWholeProgramInfo::kBbAddrMapSectionName)
+    if (sn && esec.getType() == llvm::ELF::SHT_LLVM_BB_ADDR_MAP &&
+	(*sn) == PropellerWholeProgramInfo::kBbAddrMapSectionName)
 #else
     if (sn && (*sn) == PropellerWholeProgramInfo::kBbAddrMapSectionName)
 #endif

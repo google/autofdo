@@ -68,7 +68,7 @@ class ELFFileUtil : public ELFFileUtilBase {
 #else
           elf_file_->getSectionName(&shdr);
 #endif
-      if (shdr.sh_type != llvm::ELF::SHT_NOTE || !section_name ||
+      if (!section_name || shdr.sh_type != llvm::ELF::SHT_NOTE ||
           *section_name != kBuildIDSectionName)
         continue;
       llvm::Error err = llvm::Error::success();
