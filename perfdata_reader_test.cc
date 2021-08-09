@@ -112,4 +112,25 @@ TEST(PerfdataReaderTest, TestSharedLibrary) {
                                                        binary_perf_info);
   EXPECT_EQ(addr, foo_sym_addr + 0x60);
 }
+
+TEST(PerfdataReaderTest, FirstLoadableSegmentNoneExecutable) {
+  const std::string binary =
+      absl::StrCat(absl::GetFlag(FLAGS_test_srcdir),
+                   "/google3/devtools/crosstool/autofdo/testdata/"
+                   "binary_with_none_executable_first_loadable_segment.bin");
+  llvm::Optional<bool> v =
+      devtools_crosstool_autofdo::CheckFirstLoadableSegmentIsExecutable(binary);
+  EXPECT_TRUE(v.hasValue() && !v.getValue());
+}
+
+TEST(PerfdataReaderTest, FirstLoadableSegmentExecutable) {
+  const std::string binary =
+      absl::StrCat(absl::GetFlag(FLAGS_test_srcdir),
+                   "/google3/devtools/crosstool/autofdo/testdata/"
+                   "binary_with_executable_first_loadable_segment.bin");
+  llvm::Optional<bool> v =
+      devtools_crosstool_autofdo::CheckFirstLoadableSegmentIsExecutable(binary);
+  EXPECT_TRUE(v.hasValue() && v.getValue());
+}
+
 }  // namespace

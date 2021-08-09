@@ -5,8 +5,11 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "llvm/BinaryFormat/ELF.h"
+#include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ObjectFile.h"
 #include "quipper/perf_parser.h"
 
@@ -182,6 +185,70 @@ class PerfDataReader {
   bool SelectMMaps(BinaryPerfInfo *info,
                    const std::string &match_mmap_name) const;
 };
+
+// Utility class that wraps utility functions that need templated
+// ELFFile<ELFT> support.
+class ELFFileUtilBase {
+ protected:
+  ELFFileUtilBase() {}
+
+ public:
+  virtual ~ELFFileUtilBase() {}
+
+  virtual std::string GetBuildId() = 0;
+
+  virtual bool ReadLoadableSegments(
+      devtools_crosstool_autofdo::BinaryInfo *binary_info) = 0;
+
+  virtual llvm::Optional<bool> IsFirstLoadableSegmentExecutable() const = 0;
+
+ protected:
+  static constexpr llvm::StringRef kBuildIDSectionName = ".note.gnu.build-id";
+  static constexpr llvm::StringRef kBuildIdNoteName = "GNU";
+
+  friend std::unique_ptr<ELFFileUtilBase> CreateELFFileUtil(
+      llvm::object::ObjectFile *object_file);
+};
+
+template <class ELFT>
+class ELFFileUtil : public ELFFileUtilBase {
+ public:
+  explicit ELFFileUtil(llvm::object::ObjectFile *object) {
+    llvm::object::ELFObjectFile<ELFT> *elf_object =
+        llvm::dyn_cast<llvm::object::ELFObjectFile<ELFT>,
+                       llvm::object::ObjectFile>(object);
+    if (elf_object)
+#ifdef LLVM_GETELFFILE_RET_REFERENCE
+      elf_file_ = &elf_object->getELFFile();
+#else
+      elf_file_ = elf_object->getELFFile();
+#endif
+  }
+
+  // Get binary build id.
+  std::string GetBuildId() override;
+
+  // Read loadable and executable segment information into BinaryInfo::segments.
+  bool ReadLoadableSegments(
+      devtools_crosstool_autofdo::BinaryInfo *binary_info) override;
+
+  // Return whether the first loadable segment is executable or llvm:None if
+  // such cannot be determined.
+  llvm::Optional<bool> IsFirstLoadableSegmentExecutable() const override;
+
+ private:
+  const llvm::object::ELFFile<ELFT> *elf_file_ = nullptr;
+};
+
+std::unique_ptr<ELFFileUtilBase> CreateELFFileUtil(
+    llvm::object::ObjectFile *object_file);
+
+// Return whether the first loadable segment is executable or llvm:None if
+// such cannot be determined. This is a convenient wrapper around the
+// ELFFileUtil::IsFirstLoadableSegmentExecutable() which explicitly requires a
+// llvm::object::ObjectFile instance.
+llvm::Optional<bool> CheckFirstLoadableSegmentIsExecutable(
+    const std::string &binary);
 
 std::ostream &operator<<(std::ostream &os, const MMapEntry &me);
 

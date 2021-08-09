@@ -15,6 +15,7 @@
 #include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_options_builder.h"
 #include "llvm_propeller_profile_writer.h"
+#include "perfdata_reader.h"
 #include "profile_creator.h"
 #include "third_party/abseil/absl/status/status.h"
 #include "third_party/abseil/absl/strings/str_split.h"
@@ -120,16 +121,19 @@ int main(int argc, char **argv) {
       return 1;
     }
     return 0;
-  } else {
-    // Make sure "--profile" does not contain multiple perf files when dealing
-    // with non-propeller profiles.
-    if (absl::StrContains(absl::GetFlag(FLAGS_profile), ";")) {
-      LOG(ERROR) << "Multiple profiles are only supported under "
-                    "--format=propeller. (Please check ';' in the filename)";
-      return 1;
-    }
   }
 
+  const std::string binary = absl::GetFlag(FLAGS_binary);
+  llvm::Optional<bool> seg_exec =
+      devtools_crosstool_autofdo::CheckFirstLoadableSegmentIsExecutable(binary);
+  if (seg_exec.hasValue() && !seg_exec.getValue()) {
+    LOG(ERROR) << "autofdo tool requires the first loadable segment to be "
+                  "executable. \""
+               << binary
+               << "\" does not meet this requirement. Try rebuild with link "
+                  "option \"-Wl,--no-rosegment\".";
+    return 1;
+  }
 
   std::unique_ptr<devtools_crosstool_autofdo::LLVMProfileWriter> writer(
       nullptr);
@@ -155,8 +159,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  devtools_crosstool_autofdo::ProfileCreator creator(
-      absl::GetFlag(FLAGS_binary));
+  devtools_crosstool_autofdo::ProfileCreator creator(binary);
   creator.set_use_discriminator_encoding(true);
   if (creator.CreateProfile(absl::GetFlag(FLAGS_profile),
                             absl::GetFlag(FLAGS_profiler), writer.get(),

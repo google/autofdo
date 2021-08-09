@@ -1,9 +1,12 @@
 #include "perfdata_reader.h"
 
+#include <functional>
+#include <string>
+#include <utility>
+
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/BinaryFormat/ELF.h"
-#include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/Path.h"
@@ -13,125 +16,136 @@
 #include <list>
 
 namespace {
-// Internal class that wraps utility functions that need templated
-// ELFFile<ELFT> support.
-class ELFFileUtilBase {
- protected:
-  ELFFileUtilBase() {}
-
- public:
-  virtual ~ELFFileUtilBase() {}
-
-  virtual std::string GetBuildId() = 0;
-
-  virtual bool ReadLoadableSegments(
-      devtools_crosstool_autofdo::BinaryInfo *binary_info) = 0;
-
- protected:
-  static constexpr llvm::StringRef kBuildIDSectionName = ".note.gnu.build-id";
-  static constexpr llvm::StringRef kBuildIdNoteName = "GNU";
-
-  friend std::unique_ptr<ELFFileUtilBase> CreateELFFileUtil(
-      llvm::object::ObjectFile *object_file);
-};
-
-template <class ELFT>
-class ELFFileUtil : public ELFFileUtilBase {
- public:
-  explicit ELFFileUtil(llvm::object::ObjectFile *object) {
-    llvm::object::ELFObjectFile<ELFT> *elf_object =
-        llvm::dyn_cast<llvm::object::ELFObjectFile<ELFT>,
-                       llvm::object::ObjectFile>(object);
-    if (elf_object)
-#ifdef LLVM_GETELFFILE_RET_REFERENCE
-      elf_file_ = &elf_object->getELFFile();
-#else
-      elf_file_ = elf_object->getELFFile();
-#endif
+// Convert binary data stored in data[...] into text representation.
+std::string BinaryDataToAscii(const std::string &data) {
+  std::string ascii(data.size() * 2, 0);
+  const char heximal[] = "0123456789abcdef";
+  for (int i = 0; i < data.size(); ++i) {
+    uint8_t d(data[i]);
+    ascii[i * 2] = heximal[((d >> 4) & 0xf)];
+    ascii[i * 2 + 1] = heximal[(d & 0xf)];
   }
+  return ascii;
+}
+}  // namespace
 
-  // TODO(shenhan): remove the following code once it is upstreamed.
-  // Get binary build id.
-  std::string GetBuildId() override {
-    if (!elf_file_) return "";
-    auto hex_to_char = [](uint8_t v) -> char {
-      if (v < 10)
-        return '0' + v;
-      return 'a' + (v - 10);
-    };
-    std::vector<std::string> build_ids;
-    for (const typename ELFT::Shdr &shdr :
-         llvm::cantFail(elf_file_->sections())) {
-      llvm::Expected<llvm::StringRef> section_name =
+namespace devtools_crosstool_autofdo {
+
+// TODO(shenhan): remove the following code once it is upstreamed.
+template <class ELFT>
+std::string ELFFileUtil<ELFT>::GetBuildId() {
+  if (!elf_file_) return "";
+  auto hex_to_char = [](uint8_t v) -> char {
+    if (v < 10) return '0' + v;
+    return 'a' + (v - 10);
+  };
+  std::vector<std::string> build_ids;
+  for (const typename ELFT::Shdr &shdr :
+       llvm::cantFail(elf_file_->sections())) {
+    llvm::Expected<llvm::StringRef> section_name =
 #ifdef LLVM_GETELFFILE_RET_REFERENCE
           elf_file_->getSectionName(shdr);
 #else
           elf_file_->getSectionName(&shdr);
 #endif
-      if (!section_name || shdr.sh_type != llvm::ELF::SHT_NOTE ||
-          *section_name != kBuildIDSectionName)
-        continue;
-      llvm::Error err = llvm::Error::success();
-      for (const typename ELFT::Note &note : elf_file_->notes(shdr, err)) {
-        llvm::StringRef r = note.getName();
-        if (r == kBuildIdNoteName) {
-          llvm::ArrayRef<uint8_t> build_id = note.getDesc();
-          std::string build_id_str(build_id.size() * 2, '0');
-          int k = 0;
-          for (uint8_t t : build_id) {
-            build_id_str[k++] = hex_to_char((t >> 4) & 0xf);
-            build_id_str[k++] = hex_to_char(t & 0xf);
-          }
-          build_ids.push_back(std::move(build_id_str));
+    if (!section_name || shdr.sh_type != llvm::ELF::SHT_NOTE ||
+        *section_name != kBuildIDSectionName)
+      continue;
+    llvm::Error err = llvm::Error::success();
+    for (const typename ELFT::Note &note : elf_file_->notes(shdr, err)) {
+      llvm::StringRef r = note.getName();
+      if (r == kBuildIdNoteName) {
+        llvm::ArrayRef<uint8_t> build_id = note.getDesc();
+        std::string build_id_str(build_id.size() * 2, '0');
+        int k = 0;
+        for (uint8_t t : build_id) {
+          build_id_str[k++] = hex_to_char((t >> 4) & 0xf);
+          build_id_str[k++] = hex_to_char(t & 0xf);
         }
+        build_ids.push_back(std::move(build_id_str));
       }
-      if (errorToBool(std::move(err)))
-        LOG(WARNING) << "error happened iterating note entries in '"
-                     << section_name->str() << "'";
     }
-    if (build_ids.empty())
-      return "";
-    if (build_ids.size() > 1) {
-      LOG(WARNING) << "more than 1 build id entries found in the binary, only "
-                      "the first one will be returned";
-    }
-    return build_ids.front();
+    if (errorToBool(std::move(err)))
+      LOG(WARNING) << "error happened iterating note entries in '"
+                   << section_name->str() << "'";
   }
+  if (build_ids.empty()) return "";
+  if (build_ids.size() > 1) {
+    LOG(WARNING) << "more than 1 build id entries found in the binary, only "
+                    "the first one will be returned";
+  }
+  return build_ids.front();
+}
 
-  // Read loadable and executable segment information into BinaryInfo::segments.
-  bool ReadLoadableSegments(
-      devtools_crosstool_autofdo::BinaryInfo *binary_info) override {
-    if (!elf_file_) return false;
-    auto program_headers = elf_file_->program_headers();
-    if (!program_headers) return false;
+template <class ELFT>
+bool ELFFileUtil<ELFT>::ReadLoadableSegments(
+    devtools_crosstool_autofdo::BinaryInfo *binary_info) {
+  if (!elf_file_) return false;
+  auto program_headers = elf_file_->program_headers();
+  if (!program_headers) return false;
 
-    for (const typename ELFT::Phdr &phdr : *program_headers) {
-      if (phdr.p_type != llvm::ELF::PT_LOAD ||
-          ((phdr.p_flags & llvm::ELF::PF_X) == 0))
-        continue;
-      if (phdr.p_paddr != phdr.p_vaddr) {
-        LOG(ERROR) << "ELF type not supported: segment load vaddr != paddr.";
-        return false;
-      }
-      if (phdr.p_memsz != phdr.p_filesz) {
-        LOG(ERROR) << "ELF type not supported: text segment filesz != memsz.";
-        return false;
-      }
-
-      binary_info->segments.push_back(
-          {phdr.p_offset, phdr.p_vaddr, phdr.p_memsz});
-    }
-    if (binary_info->segments.empty()) {
-      LOG(ERROR) << "No loadable and executable segments found in '"
-                 << binary_info->file_name << "'.";
+  for (const typename ELFT::Phdr &phdr : *program_headers) {
+    if (phdr.p_type != llvm::ELF::PT_LOAD ||
+        ((phdr.p_flags & llvm::ELF::PF_X) == 0))
+      continue;
+    if (phdr.p_paddr != phdr.p_vaddr) {
+      LOG(ERROR) << "ELF type not supported: segment load vaddr != paddr.";
       return false;
     }
-    return true;
-  }
+    if (phdr.p_memsz != phdr.p_filesz) {
+      LOG(ERROR) << "ELF type not supported: text segment filesz != memsz.";
+      return false;
+    }
 
- private:
-  const llvm::object::ELFFile<ELFT> *elf_file_ = nullptr;
-};
+    binary_info->segments.push_back(
+        {phdr.p_offset, phdr.p_vaddr, phdr.p_memsz});
+  }
+  if (binary_info->segments.empty()) {
+    LOG(ERROR) << "No loadable and executable segments found in '"
+               << binary_info->file_name << "'.";
+    return false;
+  }
+  return true;
+}
+
+template <class ELFT>
+llvm::Optional<bool> ELFFileUtil<ELFT>::IsFirstLoadableSegmentExecutable()
+    const {
+  if (!elf_file_) return false;
+  auto program_headers = elf_file_->program_headers();
+  if (!program_headers) return llvm::None;
+
+  for (const typename ELFT::Phdr &phdr : *program_headers)
+    if (phdr.p_type == llvm::ELF::PT_LOAD)
+      return (phdr.p_flags & llvm::ELF::PF_X);
+
+  // None loadable segment found, so return true;
+  LOG(ERROR) << "No loadable segments found in elf";
+  return llvm::None;
+}
+
+llvm::Optional<bool> CheckFirstLoadableSegmentIsExecutable(
+    const std::string &binary) {
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> file =
+      llvm::MemoryBuffer::getFile(binary);
+  if (!file) {
+    LOG(ERROR) << "Failed to read file '" << binary << "'.";
+    return llvm::None;
+  }
+  llvm::Expected<std::unique_ptr<llvm::object::ObjectFile>> obj =
+      llvm::object::ObjectFile::createELFObjectFile(
+          llvm::MemoryBufferRef(*(*file)));
+  if (!obj) {
+    LOG(ERROR) << "Not a valid ELF file '" << binary << "'.";
+    return llvm::None;
+  }
+  auto elf_util = devtools_crosstool_autofdo::CreateELFFileUtil(obj->get());
+  if (!elf_util) {
+    LOG(ERROR) << "Cannot create ELFFileUtil for '" << binary << "'.";
+    return llvm::None;
+  }
+  return elf_util->IsFirstLoadableSegmentExecutable();
+}
 
 std::unique_ptr<ELFFileUtilBase> CreateELFFileUtil(
     llvm::object::ObjectFile *object_file) {
@@ -162,21 +176,6 @@ std::unique_ptr<ELFFileUtilBase> CreateELFFileUtil(
   LOG(ERROR) << "Unrecognized ELF file data.";
   return nullptr;
 }
-
-// Convert binary data stored in data[...] into text representation.
-std::string BinaryDataToAscii(const std::string &data) {
-  std::string ascii(data.size() * 2, 0);
-  const char heximal[] = "0123456789abcdef";
-  for (int i = 0; i < data.size(); ++i) {
-    uint8_t d(data[i]);
-    ascii[i * 2] = heximal[((d >> 4) & 0xf)];
-    ascii[i * 2 + 1] = heximal[(d & 0xf)];
-  }
-  return ascii;
-}
-}  // namespace
-
-namespace devtools_crosstool_autofdo {
 
 // Given "n", compare it to each of mmap_event.filename. If "n" is absolute,
 // then we compare "n" w/ mmap_event.filename. Otherwise we compare n's name
