@@ -183,6 +183,8 @@ function (config_with_llvm)
   protobuf_generate_cpp(PERF_PARSER_OPTIONS_CC PERF_PARSER_OPTIONS_HDR third_party/perf_data_converter/src/quipper/perf_parser_options.proto)
   protobuf_generate_cpp(PERF_STAT_CC PERF_STAT_HDR third_party/perf_data_converter/src/quipper/perf_stat.proto)
   add_library(perf_data_proto OBJECT ${PERF_DATA_PROTO_CC})
+  add_library(perf_parser_options_proto OBJECT ${PERF_PARSER_OPTIONS_CC})
+  add_library(perf_stat_proto OBJECT ${PERF_STAT_CC})
 
   protobuf_generate_cpp(LLVM_PROPELLER_CFG_PROTO_CC LLVM_PROPELLER_CFG_PROTO_HDR llvm_propeller_cfg.proto)
   add_library(llvm_propeller_cfg_proto OBJECT ${LLVM_PROPELLER_CFG_PROTO_CC})
@@ -204,6 +206,9 @@ function (config_with_llvm)
   add_dependencies(sample_reader perf_data_proto)
 
   add_library(perfdata_reader OBJECT perfdata_reader.cc)
+  add_dependencies(perfdata_reader perf_data_proto)
+  add_dependencies(perfdata_reader perf_parser_options_proto)
+  add_dependencies(perfdata_reader perf_stat_proto)
 
   add_library(symbol_map OBJECT
     symbol_map.cc
