@@ -3,6 +3,7 @@
 
 #if defined(HAVE_LLVM)
 #include "profile_writer.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/ProfileData/SampleProf.h"
 #include "llvm/ProfileData/SampleProfWriter.h"
 
@@ -46,6 +47,14 @@ class LLVMProfileBuilder : public SymbolTraverser {
       const StringIndexMap &name_table,
       llvm::sampleprof::SampleProfileWriter *sample_profile_writer);
 
+#ifndef LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT
+  const llvm::sampleprof::SampleProfileMap &ConvertProfiles(
+      const SymbolMap &symbol_map);
+
+  const llvm::sampleprof::SampleProfileMap &GetProfiles() const {
+    return profiles_;
+  }
+#else
   const llvm::StringMap<llvm::sampleprof::FunctionSamples> &ConvertProfiles(
       const SymbolMap &symbol_map);
 
@@ -53,6 +62,7 @@ class LLVMProfileBuilder : public SymbolTraverser {
       const {
     return profiles_;
   }
+#endif
 
  protected:
   void VisitTopSymbol(const std::string &name, const Symbol *node) override;
@@ -61,7 +71,11 @@ class LLVMProfileBuilder : public SymbolTraverser {
   llvm::StringRef GetNameRef(const std::string &str);
 
  private:
+#ifndef LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT
+  llvm::sampleprof::SampleProfileMap profiles_;
+#else
   llvm::StringMap<llvm::sampleprof::FunctionSamples> profiles_;
+#endif
   llvm::sampleprof_error result_;
   std::vector<llvm::sampleprof::FunctionSamples *> inline_stack_;
   const StringIndexMap &name_table_;

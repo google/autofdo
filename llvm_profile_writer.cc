@@ -6,6 +6,7 @@
 #include <cstdint>
 #if defined(HAVE_LLVM)
 #include <stdio.h>
+
 #include <algorithm>
 #include <map>
 #include <set>
@@ -19,6 +20,8 @@
 #include "profile_writer.h"
 #include "third_party/abseil/absl/flags/declare.h"
 #include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/strings/match.h"
+#include "llvm/Config/llvm-config.h"
 
 ABSL_DECLARE_FLAG(bool, debug_dump);
 
@@ -33,6 +36,12 @@ bool LLVMProfileBuilder::Write(
   LLVMProfileBuilder builder(name_table);
   const auto &profiles = builder.ConvertProfiles(symbol_map);
 
+#if LLVM_VERSION_MAJOR >= 12
+  // Tell the profile writer if FS Discriminators are used.
+  llvm::sampleprof::FunctionSamples::ProfileIsFS =
+      SourceInfo::use_fs_discriminator;
+#endif
+
   // Write all the gathered profiles to the output file.
   if (std::error_code EC = sample_profile_writer->write(profiles)) {
     LOG(ERROR) << "Error writing profile output to '" << output_filename
@@ -44,8 +53,13 @@ bool LLVMProfileBuilder::Write(
   return true;
 }
 
+#ifndef LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT
+const llvm::sampleprof::SampleProfileMap &LLVMProfileBuilder::ConvertProfiles(
+    const SymbolMap &symbol_map) {
+#else
 const llvm::StringMap<llvm::sampleprof::FunctionSamples>
     &LLVMProfileBuilder::ConvertProfiles(const SymbolMap &symbol_map) {
+#endif
   Start(symbol_map);
   return GetProfiles();
 }
@@ -71,9 +85,9 @@ void LLVMProfileBuilder::VisitTopSymbol(const std::string &name,
 
 void LLVMProfileBuilder::VisitCallsite(const Callsite &callsite) {
   DCHECK_GE(inline_stack_.size(), 1);
-  uint32_t offset = callsite.first;
-  uint32_t line = offset >> 16;
-  uint32_t discriminator = offset & 0xffff;
+  uint64_t offset = callsite.first;
+  uint32_t line = SourceInfo::GetLineNumberFromOffset(offset);
+  uint32_t discriminator = SourceInfo::GetDiscriminatorFromOffset(offset);
   while (inline_stack_.size() > level_) {
     inline_stack_.pop_back();
   }
@@ -100,9 +114,9 @@ void LLVMProfileBuilder::Visit(const Symbol *node) {
 
   // Emit all the locations and their sample counts.
   for (const auto &pos_count : node->pos_counts) {
-    uint32_t offset = pos_count.first;
-    uint32_t line = offset >> 16;
-    uint32_t discriminator = offset & 0xffff;
+    uint64_t offset = pos_count.first;
+    uint32_t line = SourceInfo::GetLineNumberFromOffset(offset);
+    uint32_t discriminator = SourceInfo::GetDiscriminatorFromOffset(offset);
     const auto &num_samples = pos_count.second.count;
     if (std::error_code EC = llvm::MergeResult(
             result_, profile.addBodySamples(line, discriminator, num_samples)))
@@ -132,7 +146,7 @@ llvm::StringRef LLVMProfileBuilder::GetNameRef(const std::string &str) {
       name_table_.find(Symbol::Name(str.c_str()));
   CHECK(ret != name_table_.end());
   // Suffixes should have been elided by SymbolMap::ElideSuffixesAndMerge()
-  if (ret->first.find(".llvm.") != std::string::npos) {
+  if (absl::StrContains(ret->first, ".llvm.")) {
     LOG(WARNING) << "Unexpected character '.' in function name: " << ret->first
                << ". Likely thin LTO .llvm.<hash> suffix has not been cleared.";
   }

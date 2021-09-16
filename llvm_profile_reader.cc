@@ -1,6 +1,7 @@
 #include "llvm_profile_reader.h"
 
 #include "symbol_map.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/ProfileData/SampleProfReader.h"
 
 namespace devtools_crosstool_autofdo {
@@ -9,10 +10,21 @@ const char *LLVMProfileReader::GetName(const llvm::StringRef &N) {
   return names_.insert(N.str()).first->c_str();
 }
 
+#if LLVM_VERSION_MAJOR >= 12
+bool LLVMProfileReader::ReadFromFile(
+    const std::string &filename,
+    llvm::sampleprof::FSDiscriminatorPass discriminator_pass) {
+#else
 bool LLVMProfileReader::ReadFromFile(const std::string &filename) {
+#endif
   llvm::LLVMContext C;
+#if LLVM_VERSION_MAJOR >= 12
+  auto reader_or_err = llvm::sampleprof::SampleProfileReader::create(
+      filename, C, discriminator_pass);
+#else
   auto reader_or_err =
       llvm::sampleprof::SampleProfileReader::create(filename, C);
+#endif
   if (reader_or_err.getError()) {
     return false;
   }

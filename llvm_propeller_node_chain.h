@@ -59,10 +59,9 @@ class CFGNodeBundle {
       : nodes_(1, n),
         chain_(c),
         chain_offset_(chain_offset),
-        size_(n->size_),
-        freq_(n->freq_) {
-    n->bundle_ = this;
-    n->bundle_offset_ = 0;
+        size_(n->size()),
+        freq_(n->freq()) {
+    n->set_bundle(this);
   }
 };
 
@@ -106,7 +105,7 @@ class NodeChain {
   // undeterministic), we only search it.
   absl::flat_hash_set<NodeChain *> in_edges_;
 
-  uint64_t id() const { return delegate_node_->symbol_ordinal_; }
+  uint64_t id() const { return delegate_node_->symbol_ordinal(); }
 
   // Gives the execution density for this chain.
   double exec_density() const {
@@ -119,9 +118,9 @@ class NodeChain {
   explicit NodeChain(CFGNode *node) {
     node_bundles_.emplace_back(new CFGNodeBundle(node, this, 0));
     delegate_node_ = node;
-    cfg_ = node->cfg_;
-    size_ = node->size_;
-    freq_ = node->freq_;
+    cfg_ = node->cfg();
+    size_ = node->size();
+    freq_ = node->freq();
   }
 
   // This moves the bundles from another chain into this chain and updates the

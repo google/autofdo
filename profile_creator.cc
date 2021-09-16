@@ -15,11 +15,11 @@
 #include "base/logging.h"
 #include "addr2line.h"
 #include "gcov.h"
-#include "profile.h"
 #if defined(HAVE_LLVM)
 #include "llvm_profile_writer.h"
 #include "profile_symbol_list.h"
 #endif
+#include "profile.h"
 #include "profile_writer.h"
 #include "sample_reader.h"
 #include "symbol_map.h"
@@ -106,7 +106,6 @@ bool ProfileCreator::CreateProfile(const std::string &input_profile_name,
                                    const std::string &output_profile_name,
                                    bool store_sym_list_in_profile) {
   SymbolMap symbol_map(binary_);
-  symbol_map.set_use_discriminator_encoding(use_discriminator_encoding_);
 
   writer->setSymbolMap(&symbol_map);
   if (profiler == "prefetch") {

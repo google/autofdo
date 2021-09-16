@@ -2,6 +2,11 @@
 
 #include <fcntl.h>  // for "O_RDONLY"
 
+#include <string>
+#include <utility>
+
+#include "llvm_propeller_cfg.pb.h"
+#include "llvm_propeller_options.pb.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"  // for "typename google::protobuf::io::FileInputStream"
 #include "google/protobuf/text_format.h"
 #include "llvm/Support/Allocator.h"
@@ -9,11 +14,11 @@
 
 namespace devtools_crosstool_autofdo {
 
-static void PopulateNodeFromNodePb(CFGNode *node, const CFGNodePb &nodepb) {
-  node->freq_ = nodepb.freq();
-  node->size_ = nodepb.size();
-  node->symbol_ordinal_ = nodepb.symbol_ordinal();
-  node->bb_index_ = nodepb.bb_index();
+static std::unique_ptr<CFGNode> CreateNodeFromNodePb(const CFGNodePb &nodepb,
+                                                     ControlFlowGraph *cfg) {
+  return std::make_unique<CFGNode>(nodepb.symbol_ordinal(), 0,
+                                   nodepb.bb_index(), nodepb.size(), cfg,
+                                   nodepb.freq());
 }
 
 bool MockPropellerWholeProgramInfo::CreateCfgs() {
@@ -31,6 +36,16 @@ bool MockPropellerWholeProgramInfo::CreateCfgs() {
   return true;
 }
 
+static CFGEdge::Kind convertFromPBKind(CFGEdgePb::Kind kindpb) {
+  switch (kindpb) {
+    case CFGEdgePb::BRANCH_OR_FALLTHROUGH:
+      return CFGEdge::Kind::kBranchOrFallthough;
+    case CFGEdgePb::CALL:
+      return CFGEdge::Kind::kCall;
+    case CFGEdgePb::RETURN:
+      return CFGEdge::Kind::kRet;
+  }
+}
 // Create control flow graph from protobuf and delete protobuf afterwards.
 void MockPropellerWholeProgramInfo::CreateCfgsFromProtobuf() {
   bump_ptr_allocator_ = std::make_unique<llvm::BumpPtrAllocator>();
@@ -38,20 +53,21 @@ void MockPropellerWholeProgramInfo::CreateCfgsFromProtobuf() {
   std::map<uint64_t, CFGNode *> ordinal_to_node_map;
   // Now construct the CFG.
   for (const auto &cfgpb : propeller_pb_.cfg()) {
-    ControlFlowGraph *cfg = new ControlFlowGraph();
+    llvm::SmallVector<llvm::StringRef, 3> names;
+    names.reserve(cfgpb.name().size());
     for (const auto &name : cfgpb.name())
-      cfg->names_.emplace_back(string_saver_->save(name));
+      names.emplace_back(string_saver_->save(name));
+    auto cfg = std::make_unique<ControlFlowGraph>(std::move(names));
     ++stats_.cfgs_created;
     std::vector<SymbolEntry *> symbols;
     for (const auto &nodepb : cfgpb.node()) {
-      CFGNode *node = new CFGNode(cfg);
-      PopulateNodeFromNodePb(node, nodepb);
-      ordinal_to_node_map.try_emplace(node->symbol_ordinal_, node);
-      cfg->nodes_.emplace(node);
-      if (node->freq_) cfg->hot_tag_ = true;
+      std::unique_ptr<CFGNode> node = CreateNodeFromNodePb(nodepb, cfg.get());
+      ordinal_to_node_map.try_emplace(node->symbol_ordinal(), node.get());
+      if (node->freq()) cfg->hot_tag_ = true;
+      cfg->nodes_.emplace(std::move(node));
     }
     stats_.nodes_created += cfg->nodes_.size();
-    cfgs_.emplace(cfg->names_.front(), cfg);
+    cfgs_.emplace(cfg->names().front(), std::move(cfg));
   }
 
   // Now construct the edges
@@ -61,10 +77,10 @@ void MockPropellerWholeProgramInfo::CreateCfgsFromProtobuf() {
       auto *to_n = ordinal_to_node_map[edgepb.sink()];
       CHECK(from_n);
       CHECK(to_n);
-      auto *cfg = from_n->cfg_;
+      auto *cfg = from_n->cfg();
       CHECK(cfg);
       cfg->CreateEdge(from_n, to_n, edgepb.weight(),
-                      static_cast<CFGEdge::Info>(edgepb.info()));
+                      convertFromPBKind(edgepb.kind()));
       ++stats_.edges_created;
     }
   };

@@ -178,6 +178,26 @@ function (config_with_llvm)
     add_definitions(-DLLVM_GETELFFILE_RET_REFERENCE=${LLVM_GETELFFILE_RET_REFERENCE})
   endif()
 
+  set (CMAKE_REQUIRED_LIBRARIES LLVMProfileData)
+  check_cxx_source_compiles(
+    "
+    #include \"llvm/ProfileData/SampleProfWriter.h\"
+  
+    void foo(llvm::sampleprof::SampleProfileWriter *sample_profile_writer) {
+      llvm::sampleprof::SampleProfileMap ProfileMap;
+      sample_profile_writer->write(ProfileMap);
+    }
+    int main() {
+      foo(nullptr);
+      return 0;
+    }
+    "
+    LLVM_SAMPLEFDO_SPLIT_CONTEXT
+  )
+  if (NOT LLVM_SAMPLEFDO_SPLIT_CONTEXT)
+    add_definitions(-DLLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT)
+  endif()
+
   find_package(Protobuf REQUIRED)
   protobuf_generate_cpp(PERF_DATA_PROTO_CC PERF_DATA_PROTO_HDR third_party/perf_data_converter/src/quipper/perf_data.proto)
   protobuf_generate_cpp(PERF_PARSER_OPTIONS_CC PERF_PARSER_OPTIONS_HDR third_party/perf_data_converter/src/quipper/perf_parser_options.proto)
@@ -211,6 +231,7 @@ function (config_with_llvm)
   add_dependencies(perfdata_reader perf_stat_proto)
 
   add_library(symbol_map OBJECT
+    source_info.cc
     symbol_map.cc
     util/symbolize/elf_reader.cc)
   target_include_directories(symbol_map PUBLIC util)
@@ -220,10 +241,9 @@ function (config_with_llvm)
     absl::memory
     absl::flags
     glog
+    LLVMCore
     LLVMProfileData)
 
-  add_library(source_info OBJECT source_info.cc)
-  target_link_libraries(source_info LLVMCore)
   add_library(llvm_profile_writer OBJECT
     gcov.cc
     llvm_profile_writer.cc
@@ -237,12 +257,10 @@ function (config_with_llvm)
   target_link_libraries(llvm_profile_writer
     absl::container
     absl::flags
-    source_info
     symbol_map)
   add_library(llvm_profile_reader OBJECT llvm_profile_reader.cc)
   target_link_libraries(llvm_profile_reader
     absl::container
-    source_info
     symbol_map)
   add_library(profile_reader OBJECT profile_reader.cc)
 

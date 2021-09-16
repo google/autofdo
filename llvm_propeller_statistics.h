@@ -18,6 +18,8 @@ struct PropellerStats {
   uint64_t bbaddrmap_function_does_not_have_symtab_entry = 0;
   uint64_t original_intra_score = 0;
   uint64_t optimized_intra_score = 0;
+  uint64_t original_inter_score = 0;
+  uint64_t optimized_inter_score = 0;
 
   // Merge two copies of stats.
   PropellerStats & operator += (const PropellerStats &s) {

@@ -18,6 +18,11 @@ int StrcmpMaybeNull(const char *a, const char *b) {
 }  // namespace
 
 namespace devtools_crosstool_autofdo {
+
+#if defined(HAVE_LLVM)
+bool SourceInfo::use_fs_discriminator = false;
+#endif
+
 bool SourceInfo::operator<(const SourceInfo &p) const {
   if (line != p.line) {
     return line < p.line;

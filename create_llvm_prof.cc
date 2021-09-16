@@ -6,7 +6,9 @@
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/match.h"
 #if defined(HAVE_LLVM)
+#include <fstream>
 #include <memory>
+#include <string>
 
 #include "base/commandlineflags.h"
 #include "base/logging.h"
@@ -24,7 +26,9 @@
 
 ABSL_FLAG(std::string, profile, "perf.data",
           "Input profile file name. When --format=propeller, this accepts "
-          "multiple profile file names concatnated by ';'");
+          "multiple profile file names concatnated by ';' and if the file name "
+          "has prefix \"@\", then the profile is treated as a list file whose "
+          "lines are interpreted as input profile paths.");
 ABSL_FLAG(std::string, profiler, "perf",
           "Input profile type. Possible values: perf, text, or prefetch");
 ABSL_FLAG(std::string, prefetch_hints, "", "Input cache prefetch hints");
@@ -68,12 +72,22 @@ ABSL_FLAG(bool, prof_sym_list, false,
 ABSL_FLAG(bool, ignore_build_id, false,
           "Ignore build id, use file name to match data in perfdata file.");
 
-devtools_crosstool_autofdo::PropellerOptions PropellerOptionsFromFlags() {
-  std::vector<std::string> perf_files =
-      absl::StrSplit(absl::GetFlag(FLAGS_profile), ';');
+devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
   devtools_crosstool_autofdo::PropellerOptionsBuilder option_builder;
-  for (const std::string &pf : perf_files)
-    if (!pf.empty()) option_builder.AddPerfNames(pf);
+  std::string pstr = absl::GetFlag(FLAGS_profile);
+  if (!pstr.empty() && pstr[0] == '@') {
+    std::ifstream fin(pstr.substr(1));
+    std::string pf;
+    while (std::getline(fin, pf)) {
+      if (!pf.empty() && pf[0] != '#') {
+        option_builder.AddPerfNames(pf);
+      }
+    }
+  } else {
+    std::vector<std::string> perf_files = absl::StrSplit(pstr, ';');
+    for (const std::string &pf : perf_files)
+      if (!pf.empty()) option_builder.AddPerfNames(pf);
+  }
   return devtools_crosstool_autofdo::PropellerOptions(
       option_builder.SetBinaryName(absl::GetFlag(FLAGS_binary))
           .SetClusterOutName(absl::GetFlag(FLAGS_out))
@@ -115,12 +129,27 @@ int main(int argc, char **argv) {
   // before checking for other formats.
   if (absl::GetFlag(FLAGS_format) == "propeller") {
     absl::Status status = devtools_crosstool_autofdo::GeneratePropellerProfiles(
-        PropellerOptionsFromFlags());
+        CreatePropellerOptionsFromFlags());
     if (!status.ok()) {
       LOG(ERROR) << status;
       return 1;
     }
     return 0;
+  }
+
+  // Make sure "--profile" does not contain multiple perf files when dealing
+  // with non-propeller profiles.
+  if (absl::StrContains(absl::GetFlag(FLAGS_profile), ";")) {
+    LOG(ERROR) << "Multiple profiles are only supported under "
+                  "--format=propeller. (Please check ';' in the filename)";
+    return 1;
+  }
+  // "--profile=@list_file" is only supported when --format=propeller.
+  if (!absl::GetFlag(FLAGS_profile).empty() &&
+      absl::GetFlag(FLAGS_profile)[0] == '@') {
+    LOG(ERROR) << "Profile list file is only supported under "
+                  "--format=propeller. (Please check '@' in the filename)";
+    return 1;
   }
 
   const std::string binary = absl::GetFlag(FLAGS_binary);
@@ -160,7 +189,7 @@ int main(int argc, char **argv) {
   }
 
   devtools_crosstool_autofdo::ProfileCreator creator(binary);
-  creator.set_use_discriminator_encoding(true);
+  absl::SetFlag(&FLAGS_use_discriminator_encoding, true);
   if (creator.CreateProfile(absl::GetFlag(FLAGS_profile),
                             absl::GetFlag(FLAGS_profiler), writer.get(),
                             absl::GetFlag(FLAGS_out),

@@ -73,19 +73,19 @@ cfg {
       source: 8
       sink: 10
       weight: 2273
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_outs {
       source: 8
       sink: 9
       weight: 1128
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     inter_ins {
       source: 15
       sink: 8
       weight: 3656
-      info: CALL
+      kind: CALL
     }
   }
   node {
@@ -97,13 +97,13 @@ cfg {
       source: 9
       sink: 11
       weight: 1170
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 8
       sink: 9
       weight: 1128
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -115,13 +115,13 @@ cfg {
       source: 10
       sink: 11
       weight: 2212
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 8
       sink: 10
       weight: 2273
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -133,19 +133,19 @@ cfg {
       source: 9
       sink: 11
       weight: 1170
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 10
       sink: 11
       weight: 2212
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     inter_outs {
       source: 11
       sink: 15
       weight: 3449
-      info: RETURN
+      kind: RETURN
     }
   }
 }
@@ -175,13 +175,13 @@ cfg {
       source: 14
       sink: 15
       weight: 3565
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 20
       sink: 14
       weight: 3582
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -193,31 +193,31 @@ cfg {
       source: 15
       sink: 17
       weight: 2345
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_outs {
       source: 15
       sink: 16
       weight: 1007
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 14
       sink: 15
       weight: 3565
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     inter_outs {
       source: 15
       sink: 8
       weight: 3656
-      info: CALL
+      kind: CALL
     }
     inter_ins {
       source: 11
       sink: 15
       weight: 3449
-      info: RETURN
+      kind: RETURN
     }
   }
   node {
@@ -229,13 +229,13 @@ cfg {
       source: 16
       sink: 17
       weight: 1007
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 15
       sink: 16
       weight: 1007
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -247,25 +247,25 @@ cfg {
       source: 17
       sink: 19
       weight: 3438
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_outs {
       source: 17
       sink: 18
       weight: 17
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 15
       sink: 17
       weight: 2345
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 16
       sink: 17
       weight: 1007
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -277,13 +277,13 @@ cfg {
       source: 18
       sink: 19
       weight: 17
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 17
       sink: 18
       weight: 17
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -295,19 +295,19 @@ cfg {
       source: 19
       sink: 20
       weight: 3528
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 17
       sink: 19
       weight: 3438
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 18
       sink: 19
       weight: 17
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -319,13 +319,13 @@ cfg {
       source: 20
       sink: 14
       weight: 3582
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 19
       sink: 20
       weight: 3528
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
 }
@@ -358,13 +358,13 @@ cfg {
       source: 24
       sink: 24
       weight: 672
-      info: RETURN
+      kind: RETURN
     }
     intra_ins {
       source: 24
       sink: 24
       weight: 672
-      info: RETURN
+      kind: RETURN
     }
   }
 }

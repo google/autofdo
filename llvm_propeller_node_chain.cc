@@ -3,12 +3,12 @@
 namespace devtools_crosstool_autofdo {
 
 NodeChain *GetNodeChain(const CFGNode *n) {
-  return n->bundle_ ? n->bundle_->chain_ : nullptr;
+  return n->bundle() ? n->bundle()->chain_ : nullptr;
 }
 
 int64_t GetNodeOffset(const CFGNode *n) {
-  CHECK(n->bundle_) << "Chain not initialized for node.";
-  return n->bundle_->chain_offset_ + n->bundle_offset_;
+  CHECK(n->bundle()) << "Chain not initialized for node.";
+  return n->bundle()->chain_offset_;
 }
 
 }  // namespace devtools_crosstool_autofdo

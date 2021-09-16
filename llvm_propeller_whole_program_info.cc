@@ -2,14 +2,18 @@
 
 #include <fcntl.h>  // for "O_RDONLY"
 
+#include <algorithm>
 #include <cstdint>
 #include <future>  // NOLINT(build/c++11)
+#include <numeric>
+#include <string>
 #include <thread>  // NOLINT(build/c++11)
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 #include "llvm_propeller_formatting.h"
+#include "llvm_propeller_options.pb.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "third_party/abseil/absl/strings/string_view.h"
@@ -88,7 +92,7 @@ llvm::Optional<llvm::object::SectionRef> FindBbAddrMapSection(
     llvm::object::ELFSectionRef esec(sec);
 #if LLVM_VERSION_MAJOR >= 12
     if (sn && esec.getType() == llvm::ELF::SHT_LLVM_BB_ADDR_MAP &&
-	(*sn) == PropellerWholeProgramInfo::kBbAddrMapSectionName)
+        (*sn) == PropellerWholeProgramInfo::kBbAddrMapSectionName)
 #else
     if (sn && (*sn) == PropellerWholeProgramInfo::kBbAddrMapSectionName)
 #endif
@@ -135,12 +139,11 @@ SymbolEntry *PropellerWholeProgramInfo::CreateFuncSymbolEntry(
                        std::forward_as_tuple(func_bb_num, nullptr));
   // Note, funcsym is not put into bb_addr_map_. It's accessible via
   // bb_addr_map_[func_name].front()->func_ptr.
-  SymbolEntry *funcsym =
-      new SymbolEntry(ordinal, func_name, aliases, address, size, nullptr, 0);
   // Put into address_map_.
-  address_map_[address].emplace_back(funcsym);
+  address_map_[address].emplace_back(std::make_unique<SymbolEntry>(
+      ordinal, func_name, aliases, address, size, nullptr, 0));
   ++stats_.syms_created;
-  return funcsym;
+  return address_map_[address].back().get();
 }
 
 SymbolEntry *PropellerWholeProgramInfo::CreateBbSymbolEntry(
@@ -159,15 +162,15 @@ SymbolEntry *PropellerWholeProgramInfo::CreateBbSymbolEntry(
   // SymbolEntry is StringRef and in bbinfo workflow, the bbsym's name field is
   // always "". But bbsym's id number can be calculated from: (bbsym->ordinal -
   // bbsym->func_ptr->ordinal - 1).
-  SymbolEntry *bb_symbol =
-      new SymbolEntry(ordinal, "", SymbolEntry::AliasesTy(), address, size,
-                      parent_func, metadata);
+  auto bb_symbol =
+      std::make_unique<SymbolEntry>(ordinal, "", SymbolEntry::AliasesTy(),
+                                    address, size, parent_func, metadata);
   CHECK(bb_index < iter->second.size());
-  iter->second[bb_index] = bb_symbol;
+  iter->second[bb_index] = bb_symbol.get();
   // Put into address_map_.
-  address_map_[address].emplace_back(bb_symbol);
+  address_map_[address].emplace_back(std::move(bb_symbol));
   ++stats_.syms_created;
-  return bb_symbol;
+  return address_map_[address].back().get();
 }
 
 void PropellerWholeProgramInfo::ReadSymbolTable() {
@@ -257,6 +260,8 @@ bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
   };
   auto check_conflicting_symbols =
       [this, &conflicting_symbols](
+          uint64_t func_size,
+          uint32_t func_num_blocks,
           llvm::SmallVector<llvm::object::SymbolRef, 2> &symbol_refs) {
         bool conflicting_symbols_found = false;
         for (llvm::object::SymbolRef sr : symbol_refs) {
@@ -271,10 +276,27 @@ bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
             LOG(INFO) << "Found global symbol '" << alias.str()
                       << "' conflicting with LOCAL symbol.";
           }
-          CHECK(alias.find("__uniq") == std::string::npos);
-          conflicting_symbols.insert(alias);
           conflicting_symbols_found = true;
           ++stats_.duplicate_symbols;
+          if (alias.find("__uniq") != std::string::npos) {
+            // duplicate uniq-named symbols found
+            CHECK(!i->second.empty());
+            SymbolEntry *dup_func = i->second.front()->func_ptr;
+            if (dup_func->size == func_size &&
+                i->second.size() == func_num_blocks) {
+              // uniq-named functions found with same size and same number of
+              // basicblocks, we assume they are the same and thus we keep one
+              // copy of them.
+              LOG(WARNING) << "duplicate uniq-named functions '" << alias.str()
+                           << "' with same size and structure found.";
+              continue;
+            } else {
+              LOG(WARNING) << "duplicate uniq-named functions '" << alias.str()
+                           << "' with different size or structure found , drop "
+                              "all of them.";
+            }
+          }
+          conflicting_symbols.insert(alias);
         }
         return conflicting_symbols_found;
       };
@@ -298,8 +320,25 @@ bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
       continue;
     }
     SymbolEntry::AliasesTy func_aliases;
+    // TODO(b/185956991): remove "drop_this_function" by sec_name after this is
+    // fixed in llvm upstream.
+    bool drop_this_function = false;
+    StringRef dropped_function_section_name;
     for (llvm::object::SymbolRef &sr : iter->second) {
       func_aliases.push_back(llvm::cantFail(sr.getName()));
+      StringRef sec_name =
+          llvm::cantFail(llvm::cantFail(sr.getSection())->getName());
+      if (!sec_name.startswith(".text")) {
+        drop_this_function = true;
+        dropped_function_section_name = sec_name;
+        break;
+      }
+    }
+    if (drop_this_function) {
+      LOG(WARNING) << "Skipped symbol in none '.text.*' section '"
+                                 << dropped_function_section_name.str()
+                                 << "': " << func_aliases.front().str();
+      continue;
     }
     CHECK(!func_aliases.empty());
     const uint64_t func_size =
@@ -311,7 +350,7 @@ bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
                    << func_address;
       continue;
     }
-    if (check_conflicting_symbols(iter->second))
+    if (check_conflicting_symbols(func_size, blocks.size(), iter->second))
       continue;
     SymbolEntry *func_symbol =
         CreateFuncSymbolEntry(++ordinal, func_aliases.front(), func_aliases,
@@ -423,7 +462,8 @@ bool PropellerWholeProgramInfo::DoCreateCfgs(LBRAggregation &&lbr_aggregation) {
   // Temp map from SymbolEntry -> CFGNode.
   std::map<const SymbolEntry *, CFGNode *, SymbolPtrComparator> tmp_node_map;
   // Temp map from SymbolEntry -> ControlFlowGraph.
-  std::map<const SymbolEntry *, ControlFlowGraph *, SymbolPtrComparator>
+  std::map<const SymbolEntry *, std::unique_ptr<ControlFlowGraph>,
+           SymbolPtrComparator>
       tmp_cfg_map;
   for (auto& [func_symbol, syms] : largest_alias_syms) {
     CHECK(!syms.empty());
@@ -431,30 +471,29 @@ bool PropellerWholeProgramInfo::DoCreateCfgs(LBRAggregation &&lbr_aggregation) {
     CHECK(tmp_cfg_map.find(func_symbol) == tmp_cfg_map.end());
 
     std::sort(syms.begin(), syms.end(), SymbolPtrComparator());
-    ControlFlowGraph *cfg = new ControlFlowGraph();
-    cfg->names_ = func_symbol->aliases;
-    tmp_cfg_map.emplace(func_symbol, cfg);
+    auto cfg = std::make_unique<ControlFlowGraph>(func_symbol->aliases);
 
     cfg->CreateNodes(syms);
-    stats_.nodes_created += cfg->nodes_.size();
+    stats_.nodes_created += cfg->nodes().size();
     // Setup mapping from syms <-> nodes.
-    assert(cfg->nodes_.size() == syms.size());
+    DCHECK_EQ(cfg->nodes().size(), syms.size());
     std::vector<SymbolEntry *>::iterator symsi = syms.begin();
-    for (const auto &nptr : cfg->nodes_) {
-      CHECK((*symsi)->ordinal == nptr.get()->symbol_ordinal_);
+    for (const auto &nptr : cfg->nodes()) {
+      CHECK((*symsi)->ordinal == nptr.get()->symbol_ordinal());
       tmp_node_map[*(symsi++)] = nptr.get();
     }
+    tmp_cfg_map.emplace(func_symbol, std::move(cfg));
     ++stats_.cfgs_created;
   }
   if (!CreateEdges(lbr_aggregation, tmp_node_map))
     return false;
 
   for (auto &cfgi : tmp_cfg_map) {
-    ControlFlowGraph *cfg_ptr = cfgi.second;
+    std::unique_ptr<ControlFlowGraph> cfg_ptr = std::move(cfgi.second);
     cfg_ptr->FinishCreatingControlFlowGraph();
     cfgs_.emplace(std::piecewise_construct,
                   std::forward_as_tuple(cfgi.first->name),
-                  std::forward_as_tuple(cfg_ptr));
+                  std::forward_as_tuple(std::move(cfg_ptr)));
   }
 
   // Release / cleanup.
@@ -472,7 +511,7 @@ bool PropellerWholeProgramInfo::DoCreateCfgs(LBRAggregation &&lbr_aggregation) {
 
 CFGEdge *PropellerWholeProgramInfo::InternalCreateEdge(
     const SymbolEntry *from_sym, const SymbolEntry *to_sym, uint64_t weight,
-    CFGEdge::Info edge_inf,
+    CFGEdge::Kind edge_kind,
     const std::map<const SymbolEntry *, CFGNode *, SymbolPtrComparator>
         &tmp_node_map,
     std::map<SymbolPtrPair, CFGEdge *, SymbolPtrPairComparator> *tmp_edge_map) {
@@ -480,13 +519,13 @@ CFGEdge *PropellerWholeProgramInfo::InternalCreateEdge(
   auto i = tmp_edge_map->find(std::make_pair(from_sym, to_sym));
   if (i != tmp_edge_map->end()) {
     edge = i->second;
-    if (edge->info_ != edge_inf) {
+    if (edge->kind() != edge_kind) {
       LOG(WARNING) << "Edges with same src and sink have different type: "
-                   << CFGEdgeNameFormatter(edge) << " has type " << edge_inf
-                   << " and " << edge->info_;
+                   << CFGEdgeNameFormatter(edge) << " has type " << edge_kind
+                   << " and " << edge->kind();
       stats_.edges_with_same_src_sink_but_different_type++;
     }
-    edge->weight_ += weight;
+    edge->IncrementWeight(weight);
   } else {
     auto from_ni = tmp_node_map.find(from_sym),
          to_ni = tmp_node_map.find(to_sym);
@@ -494,8 +533,8 @@ CFGEdge *PropellerWholeProgramInfo::InternalCreateEdge(
       return nullptr;
     CFGNode *from_node = from_ni->second;
     CFGNode *to_node = to_ni->second;
-    assert(from_node && to_node);
-    edge = from_node->cfg_->CreateEdge(from_node, to_node, weight, edge_inf);
+    DCHECK(from_node && to_node);
+    edge = from_node->cfg()->CreateEdge(from_node, to_node, weight, edge_kind);
     ++stats_.edges_created;
     tmp_edge_map->emplace(std::piecewise_construct,
                           std::forward_as_tuple(from_sym, to_sym),
@@ -577,13 +616,13 @@ bool PropellerWholeProgramInfo::CreateEdges(
       }
     }
 
-    CFGEdge::Info edge_inf = CFGEdge::DEFAULT;
+    CFGEdge::Kind edge_kind = CFGEdge::Kind::kBranchOrFallthough;
     if (to_sym->func_ptr->addr == to)
-      edge_inf = CFGEdge::CALL;
+      edge_kind = CFGEdge::Kind::kCall;
     else if (to != to_sym->addr || from_sym->IsReturnBlock())
-      edge_inf = CFGEdge::RET;
+      edge_kind = CFGEdge::Kind::kRet;
 
-    InternalCreateEdge(from_sym, to_sym, weight, edge_inf, tmp_node_map,
+    InternalCreateEdge(from_sym, to_sym, weight, edge_kind, tmp_node_map,
                        &tmp_edge_map);
   }
 
@@ -644,11 +683,10 @@ void PropellerWholeProgramInfo::CreateFallthroughs(
     CHECK_NE(from_sym, nullptr);
     for (auto *to_sym : path) {
       CHECK_NE(to_sym, nullptr);
-      auto *fallthrough_edge =
-          InternalCreateEdge(from_sym, to_sym, weight, CFGEdge::DEFAULT,
-                             tmp_node_map, tmp_edge_map);
+      auto *fallthrough_edge = InternalCreateEdge(
+          from_sym, to_sym, weight, CFGEdge::Kind::kBranchOrFallthough,
+          tmp_node_map, tmp_edge_map);
       if (!fallthrough_edge) break;
-      fallthrough_edge->src_->fallthrough_edge_ = fallthrough_edge;
       from_sym = to_sym;
     }
   }
@@ -668,13 +706,11 @@ bool PropellerWholeProgramInfo::CalculateFallthroughBBs(
                   "larger than end address. ***";
     return false;
   }
-
-  // TODO(rahmanl): Uncomment this. Ref: b/154263650.
-  // if (!from->isFallthroughBlock()) {
-  //   LOG(WARNING) << "*** Skipping non-fallthrough ***" << from->name.str() ;
-  //   return false;
-  // }
-
+  if (!from.CanFallThrough()) {
+    LOG(WARNING) << "*** Skipping non-fallthrough ***"
+                 << SymbolNameFormatter(from);
+    return false;
+  }
   auto p = address_map_.find(from.addr), q = address_map_.find(to.addr),
        e = address_map_.end();
   if (p == e || q == e) {
@@ -683,9 +719,10 @@ bool PropellerWholeProgramInfo::CalculateFallthroughBBs(
   }
   q = std::next(q);
   if (from.func_ptr != to.func_ptr) {
-    LOG(ERROR) << "fallthrough (" << SymbolNameFormatter(from) << " -> "
-               << SymbolNameFormatter(to)
-               << ") does not start and end within the same faunction.";
+    LOG(ERROR)
+        << "fallthrough (" << SymbolNameFormatter(from) << " -> "
+        << SymbolNameFormatter(to)
+        << ") does not start and end within the same function.";
     return false;
   }
   auto func = from.func_ptr;
@@ -696,6 +733,16 @@ bool PropellerWholeProgramInfo::CalculateFallthroughBBs(
       SymbolEntry *s1 = i->second.front().get();
       if (*s1 == to)
         break;
+      // (b/62827958) Sometimes LBR contains duplicate entries in the beginning
+      // of the stack which may result in false fallthrough paths. We discard
+      // the fallthrough path if any intermediate block (except the destination
+      // block) does not fall through (source block is checked before entering
+      // this loop).
+      if (!s1->CanFallThrough()) {
+        LOG(WARNING) << "*** Skipping non-fallthrough ***"
+                 << SymbolNameFormatter(*s1);
+        return false;
+      }
       if (s1->func_ptr == func) {
         path->push_back(s1);
         continue;
@@ -744,10 +791,10 @@ bool PropellerWholeProgramInfo::CalculateFallthroughBBs(
     path->insert(path->end(), candidates.begin(), candidates.end());
   }
   if (path->size() >= 200)
-    LOG(WARNING) << "More than 200 BBs along fallthrough ("
-                 << SymbolNameFormatter(from) << " -> "
-                 << SymbolNameFormatter(to) << "): " << std::dec << path->size()
-                 << " BBs.";
+    LOG(WARNING)
+        << "More than 200 BBs along fallthrough (" << SymbolNameFormatter(from)
+        << " -> " << SymbolNameFormatter(to) << "): " << std::dec
+        << path->size() << " BBs.";
   return true;
 }
 

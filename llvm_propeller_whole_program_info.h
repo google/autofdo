@@ -193,7 +193,7 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   // Helper method.
   CFGEdge *InternalCreateEdge(
       const SymbolEntry *from_sym, const SymbolEntry *to_sym, uint64_t weight,
-      CFGEdge::Info edge_inf,
+      CFGEdge::Kind edge_kind,
       const std::map<const SymbolEntry *, CFGNode *, SymbolPtrComparator>
           &tmp_node_map,
       std::map<SymbolPtrPair, CFGEdge *, SymbolPtrPairComparator>

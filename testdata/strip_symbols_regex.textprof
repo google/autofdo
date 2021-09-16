@@ -1,0 +1,12 @@
+foo:2604:10
+ 2: 2604
+_ZNK4llvm12SCEVUDivExpr7getTypeEv:7200:1
+ 2: 7200
+llvmSCEV:4500:200
+ 3: 4500
+getType:50:2
+ 1: 50
+_ZNK4llvm4SCEV7getTypeEv:620:5
+ 1: 620
+_ZNK4llvm11SCEVMulExpr7getTypeEv:592:1
+ 1: 592

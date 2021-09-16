@@ -18,7 +18,8 @@ void VerifySymbolMap(const devtools_crosstool_autofdo::SymbolMap &symbol_map) {
   const auto *data = symbol_map.map().at("_Z11compute_noii");
   constexpr uint16_t kLine = 3;
   constexpr uint16_t kDisc = 2;
-  constexpr uint32_t kLookup = kLine << 16 | kDisc;
+  constexpr uint64_t kLookup =
+      devtools_crosstool_autofdo::SourceInfo::GenerateOffset(kLine, kDisc);
 
   EXPECT_EQ(data->callsites.size(), 0);
   EXPECT_EQ(data->pos_counts.size(), 16);

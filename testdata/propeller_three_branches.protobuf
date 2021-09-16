@@ -69,7 +69,7 @@ cfg {
       source: 3
       sink: 5
       weight: 0
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 1

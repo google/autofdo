@@ -30,7 +30,7 @@ void InstructionMap::BuildPerFunctionInstructionMap(const std::string &name,
     addr2line_->GetInlineStack(addr, &info->source_stack);
     inst_map_.insert(InstMap::value_type(addr, info));
     if (info->source_stack.size() > 0) {
-      symbol_map_->AddSourceCount(name, info->source_stack, 0, 1,
+      symbol_map_->AddSourceCount(name, info->source_stack, 0, 1, 1,
                                   SymbolMap::PERFDATA);
     }
   }

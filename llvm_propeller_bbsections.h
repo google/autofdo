@@ -1,6 +1,7 @@
 #ifndef AUTOFDO_LLVM_PROPELLER_BBSECTIONS_H_
 #define AUTOFDO_LLVM_PROPELLER_BBSECTIONS_H_
 
+#include "base/logging.h"  // For "CHECK".
 #if defined(HAVE_LLVM)
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -45,6 +46,8 @@ struct SymbolEntry {
   bool IsReturnBlock() const { return metadata & kMetaReturnBlockMask; }
   bool IsTailCallBlock() const { return metadata & kMetaTailCallMask; }
   bool IsEhPadBlock() const { return metadata & kMetaEhPadMask; }
+  // Whether this block can fall through to its next.
+  bool CanFallThrough() const { return metadata & kMetaFallThroughMask; }
 
   bool operator<(const SymbolEntry &other) const {
     return ordinal < other.ordinal;
@@ -58,10 +61,11 @@ struct SymbolEntry {
     return ordinal != other.ordinal;
   }
 
-  static constexpr uint64_t kInvalidAddress = uint64_t(-1);
+  static constexpr uint64_t kInvalidAddress = static_cast<uint64_t>(-1);
   static constexpr uint64_t kMetaReturnBlockMask = 1;
   static constexpr uint64_t kMetaTailCallMask = (1 << 1);
   static constexpr uint64_t kMetaEhPadMask = (1 << 2);
+  static constexpr uint64_t kMetaFallThroughMask = (1 << 3);
 };
 
 // We sometime use "SymbolEntry *" as set element and map key, we need to use
@@ -69,7 +73,7 @@ struct SymbolEntry {
 // comparison is unstable.
 struct SymbolPtrComparator {
   bool operator()(const SymbolEntry *s1, const SymbolEntry *s2) const {
-    assert(s1 && s2);
+    DCHECK(s1 && s2);
     if (s1 == s2) return false;
     return *s1 < *s2;
   }
@@ -78,7 +82,7 @@ struct SymbolPtrComparator {
 struct SymbolUniquePtrComparator {
   bool operator()(const std::unique_ptr<SymbolEntry> &s1,
                   const std::unique_ptr<SymbolEntry> &s2) const {
-    assert(s1 && s2);
+    DCHECK(s1 && s2);
     if (*s1 == *s2) return false;
     return *s1 < *s2;
   }

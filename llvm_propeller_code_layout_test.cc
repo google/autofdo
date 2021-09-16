@@ -1,6 +1,7 @@
 #include "llvm_propeller_code_layout.h"
 
 #include <memory>
+#include <string>
 
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_cfg.pb.h"
@@ -21,16 +22,15 @@
 
 namespace {
 
+using ::devtools_crosstool_autofdo::CFGEdge;
 using ::devtools_crosstool_autofdo::CodeLayout;
 using ::devtools_crosstool_autofdo::ControlFlowGraph;
-using ::devtools_crosstool_autofdo::CFGEdge;
 using ::devtools_crosstool_autofdo::MockPropellerWholeProgramInfo;
-using ::devtools_crosstool_autofdo::PropellerWholeProgramInfo;
 using ::devtools_crosstool_autofdo::NodeChain;
 using ::devtools_crosstool_autofdo::NodeChainBuilder;
-using ::devtools_crosstool_autofdo::PropellerOptions;
-using ::devtools_crosstool_autofdo::PropellerCodeLayoutScorer;
 using ::devtools_crosstool_autofdo::PropellerCodeLayoutParameters;
+using ::devtools_crosstool_autofdo::PropellerCodeLayoutScorer;
+using ::devtools_crosstool_autofdo::PropellerOptions;
 using ::devtools_crosstool_autofdo::PropellerOptionsBuilder;
 
 static std::unique_ptr<MockPropellerWholeProgramInfo> GetTestWholeProgramInfo(
@@ -50,7 +50,7 @@ static std::vector<uint64_t> GetOrderedNodeIds(
     const std::unique_ptr<NodeChain> &chain) {
   std::vector<uint64_t> node_ids;
   chain->VisitEachNodeRef(
-      [&node_ids](auto &n) { node_ids.push_back(n.symbol_ordinal_); });
+      [&node_ids](auto &n) { node_ids.push_back(n.symbol_ordinal()); });
   return node_ids;
 }
 
@@ -96,64 +96,66 @@ TEST(CodeLayoutScorerTest, GetEdgeScore) {
   params.set_backward_jump_distance(100);
   PropellerCodeLayoutScorer scorer(params);
 
-  ASSERT_EQ(bar_cfg.inter_edges_.size(), 1);
+  ASSERT_EQ(bar_cfg.inter_edges().size(), 1);
   {
-    const auto &call_edge = bar_cfg.inter_edges_.front();
+    const auto &call_edge = bar_cfg.inter_edges().front();
     ASSERT_TRUE(call_edge->IsCall());
-    ASSERT_NE(call_edge->weight_, 0);
-    ASSERT_NE(call_edge->src_->size_, 0);
+    ASSERT_NE(call_edge->weight(), 0);
+    ASSERT_NE(call_edge->src()->size(), 0);
     // Score with negative src-to-sink distance (backward call).
     // Check that for calls, half of src size is always added to the distance.
-    EXPECT_EQ(
-        scorer.GetEdgeScore(*call_edge, -10),
-        call_edge->weight_ * 1 * 200 * (100 - 10 + call_edge->src_->size_ / 2));
+    EXPECT_EQ(scorer.GetEdgeScore(*call_edge, -10),
+              call_edge->weight() * 1 * 200 *
+                  (100 - 10 + call_edge->src()->size() / 2));
     // Score with zero src-to-sink distance (forward call).
-    EXPECT_EQ(scorer.GetEdgeScore(*call_edge, 0),
-             call_edge->weight_ * 2 * 100 * (200 - call_edge->src_->size_ / 2));
-    // Score with positive src-to-sink distance (forward call).
     EXPECT_EQ(
-        scorer.GetEdgeScore(*call_edge, 20),
-        call_edge->weight_ * 2 * 100 * (200 - 20 - call_edge->src_->size_ / 2));
+        scorer.GetEdgeScore(*call_edge, 0),
+        call_edge->weight() * 2 * 100 * (200 - call_edge->src()->size() / 2));
+    // Score with positive src-to-sink distance (forward call).
+    EXPECT_EQ(scorer.GetEdgeScore(*call_edge, 20),
+              call_edge->weight() * 2 * 100 *
+                  (200 - 20 - call_edge->src()->size() / 2));
     // Score must be zero when beyond the src-to-sink distance exceeds the
     // distance parameters.
     EXPECT_EQ(scorer.GetEdgeScore(*call_edge, 250), 0);
     EXPECT_EQ(scorer.GetEdgeScore(*call_edge, -150), 0);
   }
 
-  ASSERT_EQ(foo_cfg.inter_edges_.size(), 2);
-  for (const std::unique_ptr<CFGEdge> &ret_edge : foo_cfg.inter_edges_) {
+  ASSERT_EQ(foo_cfg.inter_edges().size(), 2);
+  for (const std::unique_ptr<CFGEdge> &ret_edge : foo_cfg.inter_edges()) {
     ASSERT_TRUE(ret_edge->IsReturn());
-    ASSERT_NE(ret_edge->weight_, 0);
-    ASSERT_NE(ret_edge->sink_->size_, 0);
+    ASSERT_NE(ret_edge->weight(), 0);
+    ASSERT_NE(ret_edge->sink()->size(), 0);
     // Score with negative src-to-sink distance (backward return).
     // Check that for returns, half of sink size is always added to the
     // distance.
-    EXPECT_EQ(
-        scorer.GetEdgeScore(*ret_edge, -10),
-        ret_edge->weight_ * 1 * 200 * (100 - 10 + ret_edge->sink_->size_ / 2));
+    EXPECT_EQ(scorer.GetEdgeScore(*ret_edge, -10),
+              ret_edge->weight() * 1 * 200 *
+                  (100 - 10 + ret_edge->sink()->size() / 2));
     // Score with zero src-to-sink distance (forward return).
-    EXPECT_EQ(scorer.GetEdgeScore(*ret_edge, 0),
-             ret_edge->weight_ * 2 * 100 * (200 - ret_edge->sink_->size_ / 2));
-    // Score with positive src-to-sink distance (forward return).
     EXPECT_EQ(
-        scorer.GetEdgeScore(*ret_edge, 20),
-        ret_edge->weight_ * 2 * 100 * (200 - 20 - ret_edge->sink_->size_ / 2));
+        scorer.GetEdgeScore(*ret_edge, 0),
+        ret_edge->weight() * 2 * 100 * (200 - ret_edge->sink()->size() / 2));
+    // Score with positive src-to-sink distance (forward return).
+    EXPECT_EQ(scorer.GetEdgeScore(*ret_edge, 20),
+              ret_edge->weight() * 2 * 100 *
+                  (200 - 20 - ret_edge->sink()->size() / 2));
     EXPECT_EQ(scorer.GetEdgeScore(*ret_edge, 250), 0);
     EXPECT_EQ(scorer.GetEdgeScore(*ret_edge, -150), 0);
   }
 
-  for (const std::unique_ptr<CFGEdge> &edge : foo_cfg.intra_edges_) {
-    ASSERT_EQ(edge->info_, devtools_crosstool_autofdo::CFGEdge::DEFAULT);
-    ASSERT_NE(edge->weight_, 0);
+  for (const std::unique_ptr<CFGEdge> &edge : foo_cfg.intra_edges()) {
+    ASSERT_EQ(edge->kind(),
+              devtools_crosstool_autofdo::CFGEdge::Kind::kBranchOrFallthough);
+    ASSERT_NE(edge->weight(), 0);
     // Fallthrough score.
-    EXPECT_EQ(scorer.GetEdgeScore(*edge, 0),
-             edge->weight_ * 10 * 100 * 200);
+    EXPECT_EQ(scorer.GetEdgeScore(*edge, 0), edge->weight() * 10 * 100 * 200);
     // Backward edge (within distance threshold) score.
     EXPECT_EQ(scorer.GetEdgeScore(*edge, -40),
-             edge->weight_ * 1 * 200 * (100 - 40));
+              edge->weight() * 1 * 200 * (100 - 40));
     // Forward edge (within distance threshold) score.
     EXPECT_EQ(scorer.GetEdgeScore(*edge, 80),
-             edge->weight_ * 2 * 100 * (200 - 80));
+              edge->weight() * 2 * 100 * (200 - 80));
     // Forward and backward edge beyond the distance thresholds (zero score).
     EXPECT_EQ(scorer.GetEdgeScore(*edge, 201), 0);
     EXPECT_EQ(scorer.GetEdgeScore(*edge, -101), 0);
@@ -170,7 +172,7 @@ TEST(CodeLayoutTest, BuildChains) {
   EXPECT_EQ(whole_program_info->cfgs().size(), 1);
   const std::unique_ptr<ControlFlowGraph> &foo_cfg =
       whole_program_info->cfgs().at("foo");
-  ASSERT_EQ(6, foo_cfg->nodes_.size());
+  ASSERT_EQ(6, foo_cfg->nodes().size());
   auto chain_builder =
       NodeChainBuilder(PropellerCodeLayoutScorer(
                            whole_program_info->options().code_layout_params()),
@@ -185,7 +187,7 @@ TEST(CodeLayoutTest, BuildChains) {
   for (auto &chain_elem : chains) {
     EXPECT_THAT(GetOrderedNodeIds(chain_elem.second),
                 testing::ElementsAreArray(
-                    {chain_elem.second->delegate_node_->symbol_ordinal_}));
+                    {chain_elem.second->delegate_node_->symbol_ordinal()}));
   }
 
   chain_builder.InitChainEdges();
@@ -249,8 +251,8 @@ TEST(CodeLayoutTest, FindOptimalFallthrough) {
   EXPECT_THAT(func_cluster_info.clusters.front().bb_indexes,
               testing::ElementsAreArray({0, 3, 1}));
   // Verify that the new layout improves the score.
-  EXPECT_GT(func_cluster_info.optimized_intra_score,
-            func_cluster_info.original_intra_score);
+  EXPECT_GT(func_cluster_info.optimized_score.intra_score,
+            func_cluster_info.original_score.intra_score);
 }
 
 TEST(CodeLayoutTest, FindOptimalLoopLayout) {
@@ -272,8 +274,8 @@ TEST(CodeLayoutTest, FindOptimalLoopLayout) {
   EXPECT_THAT(func_cluster_info.clusters.front().bb_indexes,
               testing::ElementsAreArray({0, 1, 3, 4}));
   // Verify that the new layout improves the score.
-  EXPECT_GT(func_cluster_info.optimized_intra_score,
-            func_cluster_info.original_intra_score);
+  EXPECT_GT(func_cluster_info.optimized_score.intra_score,
+            func_cluster_info.original_score.intra_score);
 }
 
 TEST(CodeLayoutTest, FindOptimalNestedLoopLayout) {
@@ -293,8 +295,8 @@ TEST(CodeLayoutTest, FindOptimalNestedLoopLayout) {
   EXPECT_THAT(func_cluster_info.clusters.front().bb_indexes,
               testing::ElementsAreArray({0, 3, 1, 4, 5, 2}));
   // Verify that the new layout improves the score.
-  EXPECT_GT(func_cluster_info.optimized_intra_score,
-            func_cluster_info.original_intra_score);
+  EXPECT_GT(func_cluster_info.optimized_score.intra_score,
+            func_cluster_info.original_score.intra_score);
 }
 
 TEST(CodeLayoutTest, FindOptimalMultiFunctionLayout) {
@@ -335,12 +337,14 @@ TEST(CodeLayoutTest, FindOptimalMultiFunctionLayout) {
 
   // Verify that the new layout improves the score for 'foo' and 'bar' and keeps
   // it equal to zero for 'qux'.
-  EXPECT_GT(func_cluster_info_1.optimized_intra_score,
-            func_cluster_info_1.original_intra_score);
-  EXPECT_GT(func_cluster_info_4.optimized_intra_score,
-            func_cluster_info_4.original_intra_score);
-  EXPECT_EQ(func_cluster_info_9.optimized_intra_score, 0);
-  EXPECT_EQ(func_cluster_info_9.original_intra_score, 0);
+  EXPECT_GT(func_cluster_info_1.optimized_score.intra_score,
+            func_cluster_info_1.original_score.intra_score);
+  EXPECT_GT(func_cluster_info_4.optimized_score.intra_score,
+            func_cluster_info_4.original_score.intra_score);
+  EXPECT_EQ(func_cluster_info_9.optimized_score.intra_score, 0);
+  EXPECT_EQ(func_cluster_info_9.original_score.intra_score, 0);
+  // TODO(rahmanl): Check for improvement in inter_out_score once we have
+  // function reordering.
 
   // Check the layout index of hot clusters.
   EXPECT_EQ(0, func_cluster_info_1.clusters.front().layout_index);

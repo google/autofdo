@@ -14,7 +14,7 @@ uint32_t safe_multiply(uint32_t a, uint32_t b, uint32_t c = 1u) {
 }
 }  // namespace
 
-// The original ext-tsp score calculation is described as follows.
+// The original ext-tsp score calculation [1] is described as follows:
 // 1- If edge is a fallthrough:
 //      edge.weight_ * fallthrough_weight
 // 2- If edge is a forward jump:
@@ -36,6 +36,9 @@ uint32_t safe_multiply(uint32_t a, uint32_t b, uint32_t c = 1u) {
 //             (backward_jump_distance - src_sink_distance)
 // Where scaled_fallthrough_weight, scaled_forward_jump_weight, and
 // scaled_backward_jump_weight are calculated as in the constructor below.
+//
+// [1] Newell A, Pupyrev S. Improved basic block reordering.
+//     IEEE Transactions on Computers. 2020 Mar 30;69(12):1784-94.
 PropellerCodeLayoutScorer::PropellerCodeLayoutScorer(
     const PropellerCodeLayoutParameters &params)
     : code_layout_params_(params),
@@ -61,24 +64,24 @@ PropellerCodeLayoutScorer::PropellerCodeLayoutScorer(
 uint64_t PropellerCodeLayoutScorer::GetEdgeScore(
     const CFGEdge &edge, int64_t src_sink_distance) const {
   // Approximate callsites to be in the middle of the source basic block.
-  if (edge.IsCall()) src_sink_distance += edge.src_->size_ / 2;
+  if (edge.IsCall()) src_sink_distance += edge.src()->size() / 2;
 
-  if (edge.IsReturn()) src_sink_distance += edge.sink_->size_ / 2;
+  if (edge.IsReturn()) src_sink_distance += edge.sink()->size() / 2;
 
-  if (src_sink_distance == 0 && edge.info_ == CFGEdge::DEFAULT)
-    return edge.weight_ * scaled_fallthrough_weight_;
+  if (src_sink_distance == 0 && edge.IsFallthrough())
+    return edge.weight() * scaled_fallthrough_weight_;
 
   uint64_t absolute_src_sink_distance =
       static_cast<uint64_t>(std::abs(src_sink_distance));
   if (src_sink_distance > 0 &&
       absolute_src_sink_distance < code_layout_params_.forward_jump_distance())
-    return edge.weight_ * scaled_forward_jump_weight_ *
+    return edge.weight() * scaled_forward_jump_weight_ *
            (code_layout_params_.forward_jump_distance() -
             absolute_src_sink_distance);
 
   if (src_sink_distance < 0 &&
       absolute_src_sink_distance < code_layout_params_.backward_jump_distance())
-    return edge.weight_ * scaled_backward_jump_weight_ *
+    return edge.weight() * scaled_backward_jump_weight_ *
            (code_layout_params_.backward_jump_distance() -
             absolute_src_sink_distance);
   return 0;

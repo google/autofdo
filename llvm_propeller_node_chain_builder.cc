@@ -13,10 +13,10 @@ void NodeChainBuilder::InitNodeChains() {
   for (ControlFlowGraph *cfg : cfgs_) {
     // TODO(rahmanl) Construct bundles as vector of CFGNodes.
     // For now, make single-node chains for every hot node.
-    for (auto &node : cfg->nodes_)
-      if (node->freq_) {
-        auto * chain = new NodeChain(node.get());
-        chains_.try_emplace(chain->id(), chain);
+    for (auto &node : cfg->nodes())
+      if (node->freq()) {
+        auto chain = std::make_unique<NodeChain>(node.get());
+        chains_.try_emplace(chain->id(), std::move(chain));
       }
   }
 }
@@ -43,11 +43,11 @@ uint64_t NodeChainBuilder::ComputeScore(NodeChain *chain) const {
   uint64_t score = 0;
 
   chain->VisitEachOutEdgeToChain(chain, [&](const CFGEdge &edge) {
-    assert(edge.src_->bundle_ != edge.sink_->bundle_);
-    auto src_offset = GetNodeOffset(edge.src_);
-    auto sink_offset = GetNodeOffset(edge.sink_);
+    DCHECK_NE(edge.src()->bundle(), edge.sink()->bundle());
+    auto src_offset = GetNodeOffset(edge.src());
+    auto sink_offset = GetNodeOffset(edge.sink());
     score += code_layout_scorer_.GetEdgeScore(edge,
-                          sink_offset - src_offset - edge.src_->size_);
+                          sink_offset - src_offset - edge.src()->size());
   });
 
   return score;
@@ -100,14 +100,14 @@ void NodeChainBuilder::UpdateNodeChainAssembly(NodeChain *left_chain,
   uint64_t score = 0;
 
   auto addEdgeScore = [&](const CFGEdge &edge) {
-    auto *src_chain = GetNodeChain(edge.src_);
-    auto src_offset = GetNodeOffset(edge.src_);
-    auto sink_offset = GetNodeOffset(edge.sink_);
+    auto *src_chain = GetNodeChain(edge.src());
+    auto src_offset = GetNodeOffset(edge.src());
+    auto sink_offset = GetNodeOffset(edge.sink());
     if (src_chain == left_chain)
       sink_offset += left_chain->size_;
     else
       src_offset += left_chain->size_;
-    int64_t src_sink_offset = sink_offset - src_offset - edge.src_->size_;
+    int64_t src_sink_offset = sink_offset - src_offset - edge.src()->size();
     score += code_layout_scorer_.GetEdgeScore(edge, src_sink_offset);
   };
 
@@ -182,10 +182,10 @@ void NodeChainBuilder::InitChainEdges() {
       n.ForEachOutEdgeRef([chain](CFGEdge &edge) {
         // Ignore returns and zero-frequency edges.
         // TODO(rahmanl): Remove IsCall() for interp
-        if (!edge.weight_ || edge.IsReturn() || edge.IsCall()) return;
+        if (!edge.weight() || edge.IsReturn() || edge.IsCall()) return;
         // Ignore edges running within the same bundle, as they won't be split.
-        if (edge.src_->bundle_ == edge.sink_->bundle_) return;
-        auto *sink_node_chain = GetNodeChain(edge.sink_);
+        if (edge.src()->bundle() == edge.sink()->bundle()) return;
+        auto *sink_node_chain = GetNodeChain(edge.sink());
         chain->out_edges_[sink_node_chain].push_back(&edge);
         sink_node_chain->in_edges_.insert(chain);
       });

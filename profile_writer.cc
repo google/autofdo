@@ -99,7 +99,8 @@ class SourceProfileWriter: public SymbolTraverser {
     gcov_write_unsigned(node->pos_counts.size());
     gcov_write_unsigned(node->callsites.size());
     for (const auto &pos_count : node->pos_counts) {
-      gcov_write_unsigned(pos_count.first);
+      uint64_t value = pos_count.first;
+      gcov_write_unsigned(SourceInfo::GenerateCompressedOffset(value));
       gcov_write_unsigned(pos_count.second.target_map.size());
       gcov_write_counter(pos_count.second.count);
       TargetCountPairs target_counts;
@@ -118,7 +119,8 @@ class SourceProfileWriter: public SymbolTraverser {
   }
 
   virtual void VisitCallsite(const Callsite &callsite) {
-    gcov_write_unsigned(callsite.first);
+    uint64_t value = callsite.first;
+    gcov_write_unsigned(SourceInfo::GenerateCompressedOffset(value));
     gcov_write_unsigned(GetStringIndex(Symbol::Name(callsite.second)));
   }
 
@@ -202,8 +204,6 @@ void AutoFDOProfileWriter::WriteWorkingSet() {
 }
 
 bool AutoFDOProfileWriter::WriteToFile(const std::string &output_filename) {
-  if (absl::GetFlag(FLAGS_debug_dump)) Dump();
-
   if (!WriteHeader(output_filename)) {
     return false;
   }
@@ -236,11 +236,13 @@ class ProfileDumper : public SymbolTraverser {
     printf("%*sDiscriminator:  %u\n", indent, " ", info.discriminator);
   }
 
-  void PrintSourceLocation(uint32_t start_line, uint32_t offset) {
-    if (offset & 0xffff) {
-      printf("%u.%u: ", (offset >> 16) + start_line, offset & 0xffff);
+  void PrintSourceLocation(uint32_t start_line, uint64_t offset) {
+    uint32_t line = SourceInfo::GetLineNumberFromOffset(offset);
+    uint32_t discriminator = SourceInfo::GetDiscriminatorFromOffset(offset);
+    if (discriminator) {
+      printf("%u.%u: ", line + start_line, discriminator);
     } else {
-      printf("%u: ", (offset >> 16) + start_line);
+      printf("%u: ", line + start_line);
     }
   }
 
@@ -262,7 +264,7 @@ class ProfileDumper : public SymbolTraverser {
       Callsite site = callsite_symbol.first;
       Symbol *symbol = callsite_symbol.second;
       printf("  #%d: site\n", i);
-      printf("    uint32: %u\n", site.first);
+      printf("    uint64: %lu\n", site.first);
       printf("    const char *: %s\n", site.second);
       printf("  #%d: symbol: ", i);
       symbol->Dump(0);
@@ -274,7 +276,7 @@ class ProfileDumper : public SymbolTraverser {
                  static_cast<uint64_t>(node->pos_counts.size()));
     absl::PrintF("node->callsites.size() = %u\n",
                  static_cast<uint64_t>(node->callsites.size()));
-    std::vector<uint32_t> positions;
+    std::vector<uint64_t> positions;
     for (const auto &pos_count : node->pos_counts)
       positions.push_back(pos_count.first);
     std::sort(positions.begin(), positions.end());
@@ -282,7 +284,7 @@ class ProfileDumper : public SymbolTraverser {
     for (const auto &pos : positions) {
       PositionCountMap::const_iterator pos_count = node->pos_counts.find(pos);
       DCHECK(pos_count != node->pos_counts.end());
-      uint32_t location = pos_count->first;
+      uint64_t location = pos_count->first;
       ProfileInfo info = pos_count->second;
 
       printf("#%d: location (line[.discriminator]) = ", i);
@@ -316,7 +318,7 @@ class ProfileDumper : public SymbolTraverser {
 
   virtual void VisitCallsite(const Callsite &callsite) {
     printf("VisitCallSite: %s\n", callsite.second);
-    printf("callsite.first: %u\n", callsite.first);
+    printf("callsite.first: %lu\n", callsite.first);
     printf("GetStringIndex(callsite.second): %u\n",
            GetStringIndex(callsite.second ? callsite.second : std::string()));
   }

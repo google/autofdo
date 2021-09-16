@@ -6,6 +6,7 @@
 #include "gmock/gmock.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
+#include "llvm/Config/llvm-config.h"
 
 #define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 
@@ -57,7 +58,12 @@ TEST(LlvmProfileWriterTest, ReadProfile) {
   //  14: 0
   //  10: _Z3bari:137340
   //   1: 9890
-  const auto &main_profile_it = profiles.find("main");
+  const auto &main_profile_it =
+#ifndef LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT
+      profiles.find(llvm::sampleprof::SampleContext("main"));
+#else
+      profiles.find("main");
+#endif
   ASSERT_NE(main_profile_it, profiles.end());
   const auto &main_profile = main_profile_it->second;
   ASSERT_EQ(main_profile.getTotalSamples(), 1186160);
@@ -92,7 +98,12 @@ TEST(LlvmProfileWriterTest, ConvertProfile) {
   StringTableUpdater::Update(symbol_map, &name_table);
   LLVMProfileBuilder builder(name_table);
   const auto &profiles = builder.ConvertProfiles(symbol_map);
-  const auto &foo_profile_it = profiles.find("foo");
+  const auto &foo_profile_it =
+#ifndef LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT
+      profiles.find(llvm::sampleprof::SampleContext("foo"));
+#else
+      profiles.find("foo");
+#endif
   ASSERT_NE(foo_profile_it, profiles.end());
 #if LLVM_VERSION_MAJOR>=12
   const auto &bar1_profile = foo_profile_it->second.findFunctionSamplesAt(

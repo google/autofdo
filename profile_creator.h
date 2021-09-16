@@ -18,16 +18,10 @@ namespace devtools_crosstool_autofdo {
 class ProfileCreator {
  public:
   explicit ProfileCreator(const std::string &binary)
-      : sample_reader_(nullptr),
-        binary_(binary),
-        use_discriminator_encoding_(false) {}
+      : sample_reader_(nullptr), binary_(binary) {}
 
   ~ProfileCreator() {
     delete sample_reader_;
-  }
-
-  void set_use_discriminator_encoding(bool use_discriminator_encoding) {
-    use_discriminator_encoding_ = use_discriminator_encoding;
   }
 
   // Returns the total sample counts from a text profile.
@@ -64,7 +58,6 @@ class ProfileCreator {
 
   SampleReader *sample_reader_;
   std::string binary_;
-  bool use_discriminator_encoding_;
 };
 
 bool MergeSample(const std::string &input_file,

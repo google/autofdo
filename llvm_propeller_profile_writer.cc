@@ -6,6 +6,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "llvm_propeller_abstract_whole_program_info.h"
@@ -16,6 +17,7 @@
 #include "llvm_propeller_whole_program_info.h"
 #include "third_party/abseil/absl/status/status.h"
 #include "third_party/abseil/absl/strings/str_format.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ObjectFile.h"
@@ -90,14 +92,23 @@ void PropellerProfWriter::PrintStats() const {
                  << " bbaddrmap entries, because they do not have "
                     "corresponding symbols in "
                     "binary symtab.";
-  const double score_percent_change =
+  const double intra_score_percent_change =
       100 * (static_cast<double>(stats_.optimized_intra_score) /
                  stats_.original_intra_score -
              1);
   LOG(INFO) << absl::StreamFormat(
-      "Changed layout (ext-tsp) score by %+.1f%% from %llu to %llu.",
-      score_percent_change, stats_.original_intra_score,
+      "Changed intra-function (ext-tsp) score by %+.1f%% from %llu to %llu.",
+      intra_score_percent_change, stats_.original_intra_score,
       stats_.optimized_intra_score);
+
+  const double inter_score_percent_change =
+      100 * (static_cast<double>(stats_.optimized_inter_score) /
+                 stats_.original_inter_score -
+             1);
+  LOG(INFO) << absl::StreamFormat(
+      "Changed inter-function (ext-tsp) score by %+.1f%% from %llu to %llu.",
+      inter_score_percent_change, stats_.original_inter_score,
+      stats_.optimized_inter_score);
 }
 
 bool PropellerProfWriter::Write(const CodeLayoutResult &layout_cluster_info) {
@@ -107,8 +118,8 @@ bool PropellerProfWriter::Write(const CodeLayoutResult &layout_cluster_info) {
     total_clusters += elem.second.clusters.size();
 
   // Allocate the symbol order vector
-  std::vector<std::pair<StringRef, Optional<unsigned>>> symbol_order(
-      total_clusters);
+  std::vector<std::pair<llvm::SmallVector<StringRef, 3>, Optional<unsigned>>>
+      symbol_order(total_clusters);
   // Allocate the cold symbol order vector equally sized as
   // layout_cluster_info, as there is one cold cluster per function.
   std::vector<CFGNode *> cold_symbol_order(layout_cluster_info.size());
@@ -116,12 +127,28 @@ bool PropellerProfWriter::Write(const CodeLayoutResult &layout_cluster_info) {
   std::ofstream out_stream(options_.cluster_out_name());
   // TODO(b/160339651): Remove this in favour of structured format in LLVM code.
   for (const auto &[unused, func_layout_info] : layout_cluster_info) {
-    stats_.original_intra_score += func_layout_info.original_intra_score;
-    stats_.optimized_intra_score += func_layout_info.optimized_intra_score;
+    stats_.original_intra_score += func_layout_info.original_score.intra_score;
+    stats_.optimized_intra_score +=
+        func_layout_info.optimized_score.intra_score;
+    stats_.original_inter_score +=
+        func_layout_info.original_score.inter_out_score;
+    stats_.optimized_inter_score +=
+        func_layout_info.optimized_score.inter_out_score;
 
-    StringRef func_name = func_layout_info.cfg->GetPrimaryName();
     // Print all alias names of the function, separated by '/'.
-    out_stream << "!" << llvm::join(func_layout_info.cfg->names_, "/") << "\n";
+    out_stream << "!" << llvm::join(func_layout_info.cfg->names(), "/") << "\n";
+
+    if (options_.verbose_cluster_output()) {
+      // Print the layout score for intra-function and inter-function edges
+      // involving this function. This information allows us to study the impact
+      // on layout score on each individual function.
+      out_stream << absl::StreamFormat(
+          "#ext-tsp score: [intra: %llu -> %llu] [inter: %llu -> %llu]\n",
+          func_layout_info.original_score.intra_score,
+          func_layout_info.optimized_score.intra_score,
+          func_layout_info.original_score.inter_out_score,
+          func_layout_info.optimized_score.inter_out_score);
+    }
     auto &clusters = func_layout_info.clusters;
     for (unsigned cluster_id = 0; cluster_id < clusters.size(); ++cluster_id) {
       auto &cluster = clusters[cluster_id];
@@ -129,9 +156,10 @@ bool PropellerProfWriter::Write(const CodeLayoutResult &layout_cluster_info) {
       // the function name is sufficient for section ordering. Otherwise,
       // the cluster number is required.
       symbol_order[cluster.layout_index] =
-          std::pair<StringRef, Optional<unsigned>>(
-              func_name, cluster.bb_indexes.front() == 0 ? Optional<unsigned>()
-                                                         : cluster_id);
+          std::pair<llvm::SmallVector<StringRef, 3>, Optional<unsigned>>(
+              func_layout_info.cfg->names_, cluster.bb_indexes.front() == 0
+                                                ? Optional<unsigned>()
+                                                : cluster_id);
       for (unsigned i = 0; i < cluster.bb_indexes.size(); ++i)
         out_stream << (i ? " " : "!!") << cluster.bb_indexes[i];
       out_stream << "\n";
@@ -141,19 +169,26 @@ bool PropellerProfWriter::Write(const CodeLayoutResult &layout_cluster_info) {
   }
 
   std::ofstream symorder_stream(options_.symbol_order_out_name());
-  for (const auto &[func_name, cluster_id] : symbol_order) {
-    symorder_stream << func_name.str();
-    if (cluster_id.hasValue())
-      symorder_stream << ".__part." << cluster_id.getValue();
-    symorder_stream << "\n";
+  for (const auto &[func_names, cluster_id] : symbol_order) {
+    // Print the symbol names corresponding to every function name alias. This
+    // guarantees we get the right order regardless of which function name is
+    // picked by the compiler.
+    for (auto &func_name : func_names) {
+      symorder_stream << func_name.str();
+      if (cluster_id.hasValue())
+        symorder_stream << ".__part." << cluster_id.getValue();
+      symorder_stream << "\n";
+    }
   }
 
   // Insert the .cold symbols for cold parts of hot functions.
   for (CFGNode *cold_node : cold_symbol_order) {
     // The cold node could be null if all BBs in the CFG are hot.
     if (cold_node == nullptr) continue;
-    symorder_stream << cold_node->cfg_->GetPrimaryName().str();
-    if (!cold_node->is_entry()) symorder_stream << ".cold";
+    for (auto &func_name : cold_node->cfg()->names()) {
+      symorder_stream << func_name.str();
+      if (!cold_node->is_entry()) symorder_stream << ".cold";
+    }
     symorder_stream << "\n";
   }
 

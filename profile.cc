@@ -131,9 +131,8 @@ void Profile::ProcessPerFunctionProfile(std::string func_name,
     }
     if (!info->source_stack.empty()) {
       symbol_map_->AddSourceCount(
-          func_name, info->source_stack,
-          address_count.second * info->source_stack[0].DuplicationFactor(), 0,
-          SymbolMap::PERFDATA);
+          func_name, info->source_stack, address_count.second, 0,
+          info->source_stack[0].DuplicationFactor(), SymbolMap::PERFDATA);
     }
   }
 

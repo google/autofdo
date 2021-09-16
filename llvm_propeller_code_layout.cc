@@ -12,6 +12,7 @@
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_chain_cluster_builder.h"
 #include "llvm_propeller_node_chain_builder.h"
+#include "third_party/abseil/absl/algorithm/container.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/functional/function_ref.h"
 
@@ -25,14 +26,21 @@ CFGScoreMapTy CodeLayout::ComputeCfgScores(
   CFGScoreMapTy score_map;
   for (const ControlFlowGraph *cfg : cfgs_) {
     uint64_t intra_score = 0;
-    for (const auto &edge : cfg->intra_edges_) {
-      if (edge->weight_ == 0) continue;
+    for (const auto &edge : cfg->intra_edges()) {
+      if (edge->weight() == 0) continue;
       // Compute the distance between the end of src and beginning of sink.
-      int64_t distance = static_cast<int64_t>(get_node_addr(edge->sink_)) -
-                         get_node_addr(edge->src_) - edge->src_->size_;
+      int64_t distance = static_cast<int64_t>(get_node_addr(edge->sink())) -
+                         get_node_addr(edge->src()) - edge->src()->size();
       intra_score += code_layout_scorer_.GetEdgeScore(*edge, distance);
     }
-    score_map.emplace(cfg, intra_score);
+    uint64_t inter_out_score = 0;
+    for (const auto &edge : cfg->inter_edges()) {
+      if (edge->weight() == 0 || edge->IsReturn()) continue;
+      int64_t distance = static_cast<int64_t>(get_node_addr(edge->sink())) -
+                         get_node_addr(edge->src()) - edge->src()->size();
+      inter_out_score += code_layout_scorer_.GetEdgeScore(*edge, distance);
+    }
+    score_map.emplace(cfg, CFGScore({intra_score, inter_out_score}));
   }
   return score_map;
 }
@@ -40,7 +48,7 @@ CFGScoreMapTy CodeLayout::ComputeCfgScores(
 // Returns the intra-procedural ext-tsp scores for the given CFGs under the
 // original layout.
 CFGScoreMapTy CodeLayout::ComputeOrigLayoutScores() {
-  return ComputeCfgScores([](const CFGNode *n) { return n->addr_; });
+  return ComputeCfgScores([](const CFGNode *n) { return n->addr(); });
 }
 
 // Returns the intra-procedural ext-tsp scores for the given CFGs under the new
@@ -53,7 +61,7 @@ CFGScoreMapTy CodeLayout::ComputeOptLayoutScores(
   for (auto &cluster : clusters) {
     cluster->VisitEachNodeRef([&](CFGNode &node) {
       layout_address_map.emplace(&node, layout_addr);
-      layout_addr += node.size_;
+      layout_addr += node.size();
     });
   }
 
@@ -76,11 +84,11 @@ CodeLayoutResult CodeLayout::OrderAll() {
 
   // Order clusters consistent with the original ordering.
   // TODO(rahmanl): Order clusters in decreasing order of their exec density.
-  std::sort(clusters.begin(), clusters.end(),
+  absl::c_sort(clusters,
             [](auto &lhs, auto &rhs) { return lhs->id() < rhs->id(); });
 
-  CFGScoreMapTy orig_intra_score_map = ComputeOrigLayoutScores();
-  CFGScoreMapTy opt_intra_score_map = ComputeOptLayoutScores(clusters);
+  CFGScoreMapTy orig_score_map = ComputeOrigLayoutScores();
+  CFGScoreMapTy opt_score_map = ComputeOptLayoutScores(clusters);
 
   CodeLayoutResult layout_clusters;
 
@@ -99,25 +107,26 @@ CodeLayoutResult CodeLayout::OrderAll() {
   // information.
   for (auto &cluster : clusters) {
     cluster->VisitEachNodeRef([&](auto &n) {
-      if (cfg != n.cfg_ || n.is_entry()) {
+      if (cfg != n.cfg() || n.is_entry()) {
         // Switch to the right cluster layout info when the function changes or
         // Or when an entry basic block is reached.
-        cfg = n.cfg_;
-        uint64_t func_symbol_ordinal = cfg->GetEntryNode()->symbol_ordinal_;
+        cfg = n.cfg();
+        uint64_t func_symbol_ordinal = cfg->GetEntryNode()->symbol_ordinal();
         bool inserted = false;
-        std::tie(func_cluster_info_it, inserted) = layout_clusters.emplace(
-            std::piecewise_construct,
-            std::forward_as_tuple(func_symbol_ordinal),
-            std::forward_as_tuple(cfg,
-                                  orig_intra_score_map.at(cfg),
-                                  opt_intra_score_map.at(cfg),
-                                  cold_cluster_layout_index));
+        std::tie(func_cluster_info_it, inserted) = layout_clusters.insert(
+            {func_symbol_ordinal,
+             {.cfg = cfg,
+              // We populate the clusters vector later.
+              .clusters = {},
+              .original_score = orig_score_map.at(cfg),
+              .optimized_score = opt_score_map.at(cfg),
+              .cold_cluster_layout_index = cold_cluster_layout_index}});
         if (inserted) ++cold_cluster_layout_index;
         // Start a new cluster and increment the global layout index.
         func_cluster_info_it->second.clusters.emplace_back(layout_index++);
       }
       func_cluster_info_it->second.clusters.back().bb_indexes.push_back(
-          n.bb_index_);
+          n.bb_index());
     });
   }
   // For each function cluster info, sort the BB clusters in increasing order of

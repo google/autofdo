@@ -6,7 +6,11 @@
 #include "base_profile_reader.h"
 #include "source_info.h"
 #include "third_party/abseil/absl/container/node_hash_set.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/ProfileData/SampleProf.h"
+#if LLVM_VERSION_MAJOR >= 12
+#include "llvm/Support/Discriminator.h"
+#endif
 
 namespace llvm {
 class StringRef;
@@ -40,7 +44,16 @@ class LLVMProfileReader : public ProfileReader {
                              SpecialSyms *special_syms = nullptr)
       : symbol_map_(symbol_map), names_(names), special_syms_(special_syms) {}
 
+#if LLVM_VERSION_MAJOR >= 12
+  bool ReadFromFile(const std::string &output_file) override {
+    return ReadFromFile(output_file,
+                        llvm::sampleprof::FSDiscriminatorPass::PassLast);
+  }
+  bool ReadFromFile(const std::string &filename,
+                    llvm::sampleprof::FSDiscriminatorPass discriminator_pass);
+#else
   bool ReadFromFile(const std::string &output_file) override;
+#endif
 
   bool shouldMergeProfileForSym(const std::string name);
 

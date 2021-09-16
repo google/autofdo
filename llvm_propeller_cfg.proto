@@ -14,14 +14,14 @@ message CFGEdgePb {
   // Frequency count of the jump from profile.
   optional uint64 weight = 3;
 
-  enum Info {
-    DEFAULT = 0;
+  enum Kind {
+    BRANCH_OR_FALLTHROUGH = 0;
     CALL = 1;
     RETURN = 2;
   }
 
-  // Edge type.
-  optional Info info = 4;
+  // Edge kind.
+  optional Kind kind = 4;
 }
 
 // Basic blocks.

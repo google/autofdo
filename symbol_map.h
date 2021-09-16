@@ -20,12 +20,22 @@
 #include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/container/flat_hash_set.h"
 #include "third_party/abseil/absl/container/node_hash_map.h"
+#include "third_party/abseil/absl/flags/declare.h"
+
 #if defined(HAVE_LLVM)
 #include "llvm/ProfileData/SampleProf.h"
 #endif
 // Macros from gcc (profile.c)
 #define NUM_GCOV_WORKING_SETS 128
 #define WORKING_SET_INSN_PER_BB 10
+
+// Whether to use discriminator encoding.
+ABSL_DECLARE_FLAG(bool, use_discriminator_encoding);
+
+#if defined(HAVE_LLVM)
+// Whether to use FS discriminator.
+ABSL_DECLARE_FLAG(bool, use_fs_discriminator);
+#endif
 
 namespace devtools_crosstool_autofdo {
 
@@ -72,10 +82,10 @@ class ProfileInfo {
 typedef std::map<const SourceStack, ProfileInfo> SourceStackCountMap;
 
 // Map from a source location (represented by offset+discriminator) to profile.
-typedef std::map<uint32_t, ProfileInfo> PositionCountMap;
+typedef std::map<uint64_t, ProfileInfo> PositionCountMap;
 
 // callsite_location, callee_name
-typedef std::pair<uint32_t, const char *> Callsite;
+typedef std::pair<uint64_t, const char *> Callsite;
 
 struct CallsiteHash {
   size_t operator()(const Callsite &callsite) const {
@@ -113,14 +123,19 @@ class CallGraph;
 class Symbol {
  public:
   // This constructor is used to create inlined symbol.
-  Symbol(const char *name, std::string dir, std::string file,
+#if defined(HAVE_LLVM)
+  Symbol(const char *name, llvm::StringRef dir, llvm::StringRef file,
          uint32_t start)
+#else
+  Symbol(const char *name, std::string dir, std::string file, uint32_t start)
+#endif
       : info(SourceInfo(name, dir, file, start, 0, 0)),
         total_count(0),
         total_count_incl(0),
         head_count(0),
         callsites(0),
-        pos_counts() {}
+        pos_counts() {
+  }
 
   // This constructor is used to create aliased symbol.
   Symbol(const Symbol *src, const char *new_func_name)
@@ -160,7 +175,7 @@ class Symbol {
   void EstimateHeadCount();
 
   // Convert an inline instance profile into a callsite location.
-  void FlattenCallsite(uint32_t offset, const Symbol *callee);
+  void FlattenCallsite(uint64_t offset, const Symbol *callee);
 
   // Merges flat profile stored in src symbol with this symbol.
   void FlatMerge(const Symbol *src);
@@ -230,7 +245,6 @@ class SymbolMap {
       : binary_(binary),
         base_addr_(0),
         count_threshold_(0),
-        use_discriminator_encoding_(false),
         ignore_thresholds_(false),
         suffix_elision_policy_(ElideAll) {
     initSuffixElisionPolicy();
@@ -243,12 +257,16 @@ class SymbolMap {
   SymbolMap()
       : base_addr_(0),
         count_threshold_(0),
-        use_discriminator_encoding_(false),
         suffix_elision_policy_(ElideAll) {
     initSuffixElisionPolicy();
   }
 
   static bool IsLLVMCompiler(const std::string &path);
+
+  // Return the fs_discriminator flag variable name.
+  static const char *get_fs_discriminator_symbol() {
+    return "__llvm_fs_discriminator__";
+  }
 
   uint64_t size() const { return map_.size(); }
 
@@ -271,10 +289,6 @@ class SymbolMap {
   // Returns relocation start address.
   uint64_t base_addr() const { return base_addr_; }
 
-  void set_use_discriminator_encoding(bool v) {
-    use_discriminator_encoding_ = v;
-  }
-
   void set_ignore_thresholds(bool v) {
     ignore_thresholds_ = v;
   }
@@ -290,6 +304,11 @@ class SymbolMap {
 
   // Removes a symbol by setting total and head count to zero.
   void RemoveSymbol(const std::string &name);
+
+  // Removes all the out of line symbols matching the regular expression
+  // "regex_str" by setting their total and head counts to zero. Those
+  // symbols with zero counts will be removed when profile is written out.
+  void RemoveSymsMatchingRegex(const std::string &regex_str);
 
   // Adds the given symbols and their mappings to the symbol map. SymbolMap
   // takes ownership of the symbols in new_map. Existing mappings in SymbolMap
@@ -361,11 +380,13 @@ class SymbolMap {
   //   source: source location (in terms of inlined source stack).
   //   count: total sampled count.
   //   num_inst: number of instructions that is mapped to the source.
+  //   duplication: multiply count with this value.
   //   data_source: the type of data used to generate autofdo profile.
   //   Typically it is perf data, autofdo proto or some other autofdo
   //   profile.
   void AddSourceCount(const std::string &symbol, const SourceStack &source,
                       uint64_t count, uint64_t num_inst,
+                      uint32_t duplication = 1,
                       DataSource data_source = AFDOPROFILE);
 
   // Generates hybrid profiles by flattening callsites whose total counts are
@@ -517,7 +538,6 @@ class SymbolMap {
   const std::string binary_;
   uint64_t base_addr_;
   int64_t count_threshold_;
-  bool use_discriminator_encoding_;
   bool ignore_thresholds_;
   uint8_t suffix_elision_policy_;
   std::unique_ptr<Addr2line> addr2line_;

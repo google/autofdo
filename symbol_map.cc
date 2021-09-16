@@ -20,6 +20,7 @@
 #include "third_party/abseil/absl/memory/memory.h"
 #include "third_party/abseil/absl/strings/match.h"
 #include "third_party/abseil/absl/strings/str_format.h"
+#include <regex>
 #include "util/symbolize/elf_reader.h"
 
 ABSL_FLAG(int32_t, dump_cutoff_percent, 2,
@@ -33,6 +34,15 @@ ABSL_FLAG(std::string, suffix_elision_policy, "selected",
           "suffixed names: one of 'all' [default], 'selected', 'none'.");
 ABSL_FLAG(bool, demangle_symbol_names, false,
           "Demangle symbol names in function profile diff output");
+ABSL_FLAG(bool, use_discriminator_encoding, false,
+          "Tell the symbol map that the discriminator encoding is enabled in "
+          "the profile.");
+ABSL_FLAG(bool, use_discriminator_multiply_factor, true,
+          "Tell the symbol map whether to use discriminator multiply factors.");
+#if defined(HAVE_LLVM)
+ABSL_FLAG(bool, use_fs_discriminator, false,
+          "Tell the symbol map whether to use FS discriminators.");
+#endif
 
 namespace {
 // Prints some blank space for identation.
@@ -42,12 +52,16 @@ void Identation(int ident) {
   }
 }
 
-void PrintSourceLocation(uint32_t start_line, uint32_t offset, int ident) {
+using devtools_crosstool_autofdo::SourceInfo;
+
+void PrintSourceLocation(uint32_t start_line, uint64_t offset, int ident) {
   Identation(ident);
-  if (offset & 0xffff) {
-    printf("%u.%u: ", (offset >> 16) + start_line, offset & 0xffff);
+  uint32_t line = SourceInfo::GetLineNumberFromOffset(offset);
+  uint32_t discriminator = SourceInfo::GetDiscriminatorFromOffset(offset);
+  if (discriminator) {
+    printf("%u.%u: ", line + start_line, discriminator);
   } else {
-    printf("%u: ", (offset >> 16) + start_line);
+    printf("%u: ", line + start_line);
   }
 }
 
@@ -94,7 +108,7 @@ void GetSortedTargetCountPairs(const CallTargetCountMap &call_target_count_map,
 
 bool SymbolMap::IsLLVMCompiler(const std::string &path) {
   // llvm-optout will not be in this string so we don't need to look for it
-  return path.find("-llvm-") != std::string::npos;
+  return absl::StrContains(path, "-llvm-");
 }
 
 Symbol::~Symbol() {
@@ -141,12 +155,12 @@ void Symbol::EstimateHeadCount() {
     return;
 
   // Get the count of the source location with the lowest offset.
-  uint32_t offset = std::numeric_limits<uint32_t>::max();
-  std::vector<uint32_t> positions;
+  uint64_t offset = std::numeric_limits<uint64_t>::max();
+  std::vector<uint64_t> positions;
   for (const auto &pos_count : pos_counts)
     positions.push_back(pos_count.first);
   if (!positions.empty()) {
-    uint32_t minpos = *std::min_element(positions.begin(), positions.end());
+    uint64_t minpos = *std::min_element(positions.begin(), positions.end());
     PositionCountMap::const_iterator ret = pos_counts.find(minpos);
     DCHECK(ret != pos_counts.end());
     head_count = ret->second.count;
@@ -171,7 +185,7 @@ void Symbol::EstimateHeadCount() {
   }
 }
 
-void Symbol::FlattenCallsite(uint32_t offset, const Symbol *callee) {
+void Symbol::FlattenCallsite(uint64_t offset, const Symbol *callee) {
   pos_counts[offset].count = std::max(pos_counts[offset].count,
                                       callee->head_count);
   pos_counts[offset].target_map[callee->info.func_name] +=
@@ -407,6 +421,8 @@ class SymbolReader : public ElfReader::SymbolSink {
         address_symbol_map_(address_symbol_map) { }
   void AddSymbol(const char *name, uint64_t address, uint64_t size, int binding,
                  int type, int section) override {
+    if (strcmp(name, SymbolMap::get_fs_discriminator_symbol()) == 0)
+      use_fs_discriminaor_ = true;
     std::pair<AddressSymbolMap::iterator, bool> ret =
         address_symbol_map_->insert(
             std::make_pair(address, std::make_pair(std::string(name), size)));
@@ -415,10 +431,12 @@ class SymbolReader : public ElfReader::SymbolSink {
     }
   }
   virtual ~SymbolReader() { }
+  bool use_fs_discriminaor() const { return use_fs_discriminaor_; }
 
  private:
   NameAliasMap *name_alias_map_;
   AddressSymbolMap *address_symbol_map_;
+  bool use_fs_discriminaor_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(SymbolReader);
 };
@@ -430,10 +448,16 @@ void SymbolMap::BuildSymbolMap() {
   SymbolReader symbol_reader(&name_alias_map_, &address_symbol_map_);
   symbol_reader.filter = [](const char *name, uint64 address, uint64 size,
                             int binding, int type, int section) {
+    if (strcmp(name, get_fs_discriminator_symbol()) == 0) return true;
     return (size != 0 && (type == STT_FUNC || absl::EndsWith(name, ".cold")) &&
             strcmp(name + strlen(name) - 4, "@plt") != 0);
   };
   elf_reader.VisitSymbols(&symbol_reader);
+#if defined(HAVE_LLVM)
+  if (symbol_reader.use_fs_discriminaor() ||
+      absl::GetFlag(FLAGS_use_fs_discriminator))
+    SourceInfo::use_fs_discriminator = true;
+#endif
 }
 
 void SymbolMap::UpdateSymbolMap(
@@ -478,6 +502,8 @@ Symbol *SymbolMap::TraverseInlineStack(const std::string &symbol_name,
                                        const SourceStack &src, uint64_t count,
                                        DataSource data_source) {
   if (src.empty()) return nullptr;
+  bool use_discriminator_encoding =
+      absl::GetFlag(FLAGS_use_discriminator_encoding);
   Symbol *symbol = map_.find(symbol_name)->second;
   symbol->total_count += count;
   const SourceInfo &info = src[src.size() - 1];
@@ -491,7 +517,7 @@ Symbol *SymbolMap::TraverseInlineStack(const std::string &symbol_name,
       break;
     std::pair<CallsiteMap::iterator, bool> ret =
         symbol->callsites.insert(CallsiteMap::value_type(
-            Callsite(src[i].Offset(use_discriminator_encoding_),
+            Callsite(src[i].Offset(use_discriminator_encoding),
                      src[i - 1].func_name),
             NULL));
     if (ret.second) {
@@ -508,12 +534,18 @@ Symbol *SymbolMap::TraverseInlineStack(const std::string &symbol_name,
 
 void SymbolMap::AddSourceCount(const std::string &symbol_name,
                                const SourceStack &src, uint64_t count,
-                               uint64_t num_inst, DataSource data_source) {
+                               uint64_t num_inst, uint32_t duplication,
+                               DataSource data_source) {
+  bool use_discriminator_encoding =
+      absl::GetFlag(FLAGS_use_discriminator_encoding);
+  if (duplication != 1 &&
+      absl::GetFlag(FLAGS_use_discriminator_multiply_factor))
+    count *= duplication;
   Symbol *symbol = TraverseInlineStack(symbol_name, src, count, data_source);
   if (!symbol) return;
   bool need_conversion = (data_source == PERFDATA || data_source == AFDOPROTO);
   if (need_conversion && src[0].HasInvalidInfo()) return;
-  uint32_t offset = src[0].Offset(use_discriminator_encoding_);
+  uint64_t offset = src[0].Offset(use_discriminator_encoding);
   // If it is to convert perf data or afdoproto to afdo profile, select the
   // MAX count if there are multiple records mapping to the same offset.
   // If it is just to read afdo profile, merge those counts.
@@ -531,13 +563,15 @@ bool SymbolMap::AddIndirectCallTarget(const std::string &symbol_name,
                                       const SourceStack &src,
                                       const std::string &target, uint64_t count,
                                       DataSource data_source) {
+  bool use_discriminator_encoding =
+      absl::GetFlag(FLAGS_use_discriminator_encoding);
   Symbol *symbol = TraverseInlineStack(symbol_name, src, 0, data_source);
   if (!symbol) return false;
   if ((data_source == PERFDATA || data_source == AFDOPROTO) &&
       src[0].HasInvalidInfo())
     return false;
-  symbol->pos_counts[src[0].Offset(use_discriminator_encoding_)].target_map[
-      GetOriginalName(target.c_str())] = count;
+  symbol->pos_counts[src[0].Offset(use_discriminator_encoding)]
+      .target_map[GetOriginalName(target.c_str())] = count;
   return true;
 }
 
@@ -574,7 +608,7 @@ void Symbol::ComputeTotalCountIncl(const NameSymbolMap &nsmap,
 }
 
 void Symbol::DumpBody(int ident, bool for_analysis) const {
-  std::vector<uint32_t> positions;
+  std::vector<uint64_t> positions;
   for (const auto &pos_count : pos_counts)
     positions.push_back(pos_count.first);
   std::sort(positions.begin(), positions.end());
@@ -657,7 +691,7 @@ uint64_t Symbol::EntryCount() const {
   max_source.line = kMaxValidLine;
 
   uint64_t entry_count = 0;
-  uint32_t min_pos = max_source.Offset(false);
+  uint64_t min_pos = max_source.Offset(false);
   for (const auto& pos_count : pos_counts) {
     if (pos_count.first < min_pos) {
       min_pos = pos_count.first;
@@ -1020,7 +1054,7 @@ void SymbolMap::DumpFuncLevelProfileCompare(const SymbolMap &map) const {
 
       const auto &iter = map_.find(name);
       uint64_t compare_count = 0;
-      if (iter != map.map().end()) {
+      if (iter != map_.end()) {
         compare_count = iter->second->total_count;
         if (compare_count * 100 >=
             max_1 * absl::GetFlag(FLAGS_dump_cutoff_percent)) {
@@ -1211,7 +1245,7 @@ bool SymbolMap::Validate() const {
       if (pos_count.first != 0) {
         num_srcs_non_zero++;
       }
-      if ((pos_count.first & 0xffff) != 0) {
+      if (SourceInfo::GetDiscriminatorFromOffset(pos_count.first) != 0) {
         has_discriminator = true;
       }
     }
@@ -1389,9 +1423,22 @@ bool SymbolMap::EnsureEntryInFuncForSymbol(const std::string &func_name,
   return true;
 }
 
+// Removes a symbol by setting total and head count to zero.
 void SymbolMap::RemoveSymbol(const std::string &name) {
   for (const auto &name_symbol : map()) {
     if (name == name_symbol.first.c_str()) {
+      name_symbol.second->total_count = 0;
+      name_symbol.second->head_count = 0;
+    }
+  }
+}
+
+// Removes all the out of line symbols matching the regular expression
+// "regex_str" by setting their total and head counts to zero. Those
+// symbols with zero counts will be removed when profile is written out.
+void SymbolMap::RemoveSymsMatchingRegex(const std::string &regex) {
+  for (const auto &name_symbol : map()) {
+    if (std::regex_match(name_symbol.first, std::regex(regex))) {
       name_symbol.second->total_count = 0;
       name_symbol.second->head_count = 0;
     }

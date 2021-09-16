@@ -14,7 +14,15 @@
 
 namespace devtools_crosstool_autofdo {
 
-using CFGScoreMapTy = absl::flat_hash_map<const ControlFlowGraph *, uint64_t>;
+struct CFGScore {
+  // Total score across all intra-function edges in a CFG.
+  uint64_t intra_score = 0;
+  // Total score across all inter-function edges for a CFG. We consider
+  // only the outgoing edges to prevent from double counting.
+  uint64_t inter_out_score = 0;
+};
+
+using CFGScoreMapTy = absl::flat_hash_map<const ControlFlowGraph *, CFGScore>;
 
 // This struct represents the layout information for every function
 struct FuncLayoutClusterInfo {
@@ -33,29 +41,19 @@ struct FuncLayoutClusterInfo {
   };
 
   // Associated CFG.
-  const ControlFlowGraph *cfg;
+  const ControlFlowGraph *cfg = nullptr;
 
   // Clusters pertaining to this CFG.
-  std::vector<BBCluster> clusters;
+  std::vector<BBCluster> clusters = {};
 
-  // Intra-function score of this CFG in the original layout.
-  uint64_t original_intra_score;
+  // Score of this CFG in the original layout.
+  const CFGScore original_score;
 
-  // Intra-function score of this CFG in the computed layout.
-  uint64_t optimized_intra_score;
+  // Score of this CFG in the computed layout.
+  const CFGScore optimized_score;
 
   // Index of the function's cold cluster within the cold part.
-  const unsigned cold_cluster_layout_index;
-
-  // Basic constructor. 'clusters' vector must be populated afterwards.
-  FuncLayoutClusterInfo(const ControlFlowGraph *cfg_,
-                        uint64_t original_intra_score_,
-                        uint64_t optimized_intra_score_,
-                        unsigned cold_cluster_layout_index_)
-      : cfg(cfg_),
-        original_intra_score(original_intra_score_),
-        optimized_intra_score(optimized_intra_score_),
-        cold_cluster_layout_index(cold_cluster_layout_index_) {}
+  const unsigned cold_cluster_layout_index = 0;
 };
 
 // CodeLayoutResult holds the result of the layout algorithm which is consumed

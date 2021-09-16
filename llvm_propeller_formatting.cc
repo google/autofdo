@@ -49,8 +49,8 @@ std::ostream &operator<<(std::ostream &out, const SymbolNameFormatter &f) {
 
 std::ostream &operator<<(std::ostream &out, const CFGEdgeNameFormatter &f) {
   if (f.edge == nullptr) return out << "nullptr-edge";
-  return out << f.edge->src_->GetName() << " -> " << f.edge->sink_->GetName()
-             << "[ weight: " << f.edge->weight_ << "]";
+  return out << f.edge->src()->GetName() << " -> " << f.edge->sink()->GetName()
+             << "[ weight: " << f.edge->weight() << "]";
 }
 
 std::ostream &operator<<(std::ostream &out, const AddressFormatter &f) {

@@ -303,12 +303,12 @@ TEST(SymbolMapTest, BuildSelectivelyFlatProfile) {
   EXPECT_FALSE(got.map().find("baz") != got.map().end());
   EXPECT_FALSE(got.map().find("qux") != got.map().end());
   // Expect that cold fn is flattened i.e. the inlined callsite should be
-  // converted to an indirect call. Offset << 16 is how its stored in the source
+  // converted to an indirect call. Offset << 32 is how its stored in the source
   // location
   EXPECT_FALSE(got.map().find("cold_callsite1") != got.map().end());
-  EXPECT_TRUE(got.map().at("cold_fn")->pos_counts[50 << 16].target_map.find(
+  EXPECT_TRUE(got.map().at("cold_fn")->pos_counts[50l << 32].target_map.find(
                   "cold_callsite1") !=
-              got.map().at("cold_fn")->pos_counts[50 << 16].target_map.end());
+              got.map().at("cold_fn")->pos_counts[50l << 32].target_map.end());
   EXPECT_EQ(total, 2);
   EXPECT_EQ(numFlattened, 1);
 }
@@ -346,13 +346,58 @@ TEST(SymbolMapTest, BuildHybridProfile) {
   EXPECT_TRUE(got.map().find("qux") != got.map().end());
   EXPECT_TRUE(got.map().find("cold_callsite1") != got.map().end());
   ASSERT_TRUE(got.map().find("cold_fn") != got.map().end());
-  EXPECT_TRUE(got.map().at("cold_fn")->pos_counts[50 << 16].target_map.find(
+  EXPECT_TRUE(got.map().at("cold_fn")->pos_counts[50l << 32].target_map.find(
                   "cold_callsite1") !=
-              got.map().at("cold_fn")->pos_counts[50 << 16].target_map.end());
+              got.map().at("cold_fn")->pos_counts[50l << 32].target_map.end());
   EXPECT_TRUE(got.map().find("cold_callsite2") != got.map().end());
   EXPECT_TRUE(got.map().find("cold_callsite3") != got.map().end());
   EXPECT_EQ(num_callsites, 6);
   EXPECT_EQ(num_callsites_flattened, 5);
+}
+
+TEST(SymbolMapTest, FSDiscriminator) {
+  absl::SetFlag(&FLAGS_use_fs_discriminator, false);
+  SymbolMap symbol_map1(FLAGS_test_srcdir + kTestDataDir +
+                        "test.binary");
+  // Check if the use_fs_discriminaor is correctly set to false.
+  EXPECT_FALSE(devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator);
+
+  absl::SetFlag(&FLAGS_use_fs_discriminator, false);
+  SymbolMap symbol_map2(FLAGS_test_srcdir + kTestDataDir +
+                        "test.fs.binary");
+  // Check if the use_fs_discriminaor is correctly set.
+  EXPECT_TRUE(devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator);
+}
+
+TEST(SymbolMapTest, RemoveSymsMatchingRegex) {
+  SymbolMap symbol_map;
+  absl::node_hash_set<std::string> names;
+  devtools_crosstool_autofdo::LLVMProfileReader reader(&symbol_map, names);
+  reader.ReadFromFile(FLAGS_test_srcdir + kTestDataDir +
+                      "strip_symbols_regex.textprof");
+
+  const devtools_crosstool_autofdo::NameSymbolMap &map = symbol_map.map();
+
+  EXPECT_EQ(map.find("_ZNK4llvm12SCEVUDivExpr7getTypeEv")->second->total_count,
+            7200);
+  EXPECT_EQ(map.find("llvmSCEV")->second->total_count, 4500);
+  EXPECT_EQ(map.find("getType")->second->total_count, 50);
+  EXPECT_EQ(map.find("_ZNK4llvm4SCEV7getTypeEv")->second->total_count, 620);
+  EXPECT_EQ(map.find("_ZNK4llvm11SCEVMulExpr7getTypeEv")->second->total_count,
+            592);
+
+  symbol_map.RemoveSymsMatchingRegex(".*SCEV.*getType.*");
+
+  // Check the symbols matching regular expression ".*SCEV.*getType.*" has
+  // been set to symbols with zero counts. They will be removed in when
+  // profile is written out.
+  EXPECT_EQ(map.find("_ZNK4llvm12SCEVUDivExpr7getTypeEv")->second->total_count,
+            0);
+  EXPECT_EQ(map.find("llvmSCEV")->second->total_count, 4500);
+  EXPECT_EQ(map.find("getType")->second->total_count, 50);
+  EXPECT_EQ(map.find("_ZNK4llvm4SCEV7getTypeEv")->second->total_count, 0);
+  EXPECT_EQ(map.find("_ZNK4llvm11SCEVMulExpr7getTypeEv")->second->total_count,
+            0);
 }
 
 }  // namespace

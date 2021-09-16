@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <numeric>
 #include <string>
 
 #include "llvm_propeller_bbsections.h"
@@ -68,15 +69,15 @@ TEST(LlvmPropellerWholeProgramInfo, CreateCFG) {
   EXPECT_TRUE(this_is_vey_code);
 
   // Examine main nodes / edges.
-  EXPECT_GE(main->nodes_.size(), 4);
+  EXPECT_GE(main->nodes().size(), 4);
 
-  EXPECT_GE(main->inter_edges_.size(), 1);
-  EXPECT_TRUE(main->inter_edges_.front()->IsCall());
-  EXPECT_GT(main->inter_edges_.front()->weight_, 100);
+  EXPECT_GE(main->inter_edges().size(), 1);
+  EXPECT_TRUE(main->inter_edges().front()->IsCall());
+  EXPECT_GT(main->inter_edges().front()->weight(), 100);
 
-  EXPECT_GE(compute_flag->inter_edges_.size(), 1);
-  EXPECT_TRUE(compute_flag->inter_edges_.front()->IsReturn());
-  EXPECT_GT(compute_flag->inter_edges_.front()->weight_, 100);
+  EXPECT_GE(compute_flag->inter_edges().size(), 1);
+  EXPECT_TRUE(compute_flag->inter_edges().front()->IsReturn());
+  EXPECT_GT(compute_flag->inter_edges().front()->weight(), 100);
 }
 
 // This test checks that the mock can load a CFG from the serialized format
@@ -94,15 +95,15 @@ TEST(LlvmPropellerMockWholeProgramInfo, CreateCFGFromProto) {
   // Check some inter-func edge is valid.
   const ControlFlowGraph *main = wpi.FindCfg("main");
   EXPECT_NE(main, (nullptr));
-  EXPECT_FALSE(main->inter_edges_.empty());
-  CFGEdge &edge = *(main->inter_edges_.front());
-  EXPECT_EQ(edge.src_->cfg_, main);
-  EXPECT_NE(edge.sink_->cfg_, main);
+  EXPECT_FALSE(main->inter_edges().empty());
+  CFGEdge &edge = *(main->inter_edges().front());
+  EXPECT_EQ(edge.src()->cfg(), main);
+  EXPECT_NE(edge.sink()->cfg(), main);
   // The same "edge" instance exists both in src->inter_outs_ and
   // sink->inter_ins_.
-  EXPECT_NE(std::find(edge.sink_->inter_ins_.begin(),
-                      edge.sink_->inter_ins_.end(), &edge),
-            edge.sink_->inter_ins_.end());
+  EXPECT_NE(std::find(edge.sink()->inter_ins().begin(),
+                      edge.sink()->inter_ins().end(), &edge),
+            edge.sink()->inter_ins().end());
 }
 
 TEST(LlvmPropellerWholeProgramInfoBbAddrMapTest, BbAddrMapExist) {
@@ -203,17 +204,17 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, CreateCfgsFromBbInfo) {
   auto ii = cfgs.find("main");
   EXPECT_TRUE(ii != cfgs.end());
   const ControlFlowGraph &main_cfg = *(ii->second);
-  EXPECT_GT(main_cfg.nodes_.size(), 1);
-  CFGNode *entry = main_cfg.nodes_.begin()->get();
+  EXPECT_GT(main_cfg.nodes().size(), 1);
+  CFGNode *entry = main_cfg.nodes().begin()->get();
   SymbolEntry *main_sym =
       whole_program_info->bb_addr_map().at("main").front()->func_ptr;
   // "main_sym" is a function symbol, and function symbol does not correspond to
   // any CFGNode. The first CFGNode of a ControlFlowGraph is the entry node,
   // which represents the first basic block symbol of a functon symbol.
-  EXPECT_EQ(main_sym->ordinal, entry->symbol_ordinal_ - 1);
+  EXPECT_EQ(main_sym->ordinal, entry->symbol_ordinal() - 1);
   EXPECT_EQ(main_sym->func_ptr, main_sym);
   // Function's size > entry bb size.
-  EXPECT_GT(main_sym->size, entry->size_);
+  EXPECT_GT(main_sym->size, entry->size());
 }
 
 TEST(LlvmPropellerWholeProgramInfoBbInfoTest, CheckStatsSanity) {
@@ -276,11 +277,14 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, TestMultiplePerfDataFiles) {
   auto wpi2 = init_whole_program_info(std::vector<std::string>{perf2});
   auto wpi12 = init_whole_program_info(std::vector<std::string>{perf1, perf2});
 
+  // The run for perf2 is a superset of the run for perf1. Thus cfg2 has more
+  // nodes (hot nodes) than cfg1. However, perf1 + perf2 includes as many hot
+  // nodes as perf2.
   ControlFlowGraph *cfg1 = wpi1->cfgs().at("main").get();
   ControlFlowGraph *cfg2 = wpi2->cfgs().at("main").get();
   ControlFlowGraph *cfg12 = wpi12->cfgs().at("main").get();
-  EXPECT_EQ(cfg1->nodes_.size(), cfg2->nodes_.size());
-  EXPECT_EQ(cfg1->nodes_.size(), cfg12->nodes_.size());
+  EXPECT_GE(cfg2->nodes().size(), cfg1->nodes().size());
+  EXPECT_EQ(cfg2->nodes().size(), cfg12->nodes().size());
 
   std::set<std::pair<uint64_t, uint64_t>> edge_set1;
   std::set<std::pair<uint64_t, uint64_t>> edge_set2;
@@ -288,9 +292,9 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, TestMultiplePerfDataFiles) {
   auto initialize_edge_set =
       [](ControlFlowGraph *cfg,
          std::set<std::pair<uint64_t, uint64_t>> &edge_set) {
-        for (auto &edge : cfg->intra_edges_)
-          edge_set.emplace(edge->src_->symbol_ordinal_,
-                           edge->sink_->symbol_ordinal_);
+        for (auto &edge : cfg->intra_edges())
+          edge_set.emplace(edge->src()->symbol_ordinal(),
+                           edge->sink()->symbol_ordinal());
       };
   initialize_edge_set(cfg1, edge_set1);
   initialize_edge_set(cfg2, edge_set2);
@@ -316,15 +320,16 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, TestMultiplePerfDataFiles) {
   // those constructed from perf1 and perf2 together.
   EXPECT_EQ(union12, edge_set12);
 
-  auto accumutor = [](uint64_t acc, std::unique_ptr<CFGEdge> &e) -> uint64_t {
-    return acc + e->weight_;
+  auto accumutor = [](uint64_t acc,
+                      const std::unique_ptr<CFGEdge> &e) -> uint64_t {
+    return acc + e->weight();
   };
-  uint64_t weight1 = std::accumulate(cfg1->intra_edges_.begin(),
-                                     cfg1->intra_edges_.end(), 0, accumutor);
-  uint64_t weight2 = std::accumulate(cfg2->intra_edges_.begin(),
-                                     cfg2->intra_edges_.end(), 0, accumutor);
-  uint64_t weight12 = std::accumulate(cfg12->intra_edges_.begin(),
-                                      cfg12->intra_edges_.end(), 0, accumutor);
+  uint64_t weight1 = std::accumulate(cfg1->intra_edges().begin(),
+                                     cfg1->intra_edges().end(), 0, accumutor);
+  uint64_t weight2 = std::accumulate(cfg2->intra_edges().begin(),
+                                     cfg2->intra_edges().end(), 0, accumutor);
+  uint64_t weight12 = std::accumulate(cfg12->intra_edges().begin(),
+                                      cfg12->intra_edges().end(), 0, accumutor);
   // The sum of weights collected from perf file 1 & 2 separately equals to the
   // sum of weights collected from perf file 1 & 2 in oneshot.
   EXPECT_EQ(weight1 + weight2, weight12);
@@ -365,4 +370,45 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, DuplicateSymbolsDropped) {
   EXPECT_NE(bb_addr_map.find("compute_flag"), bb_addr_map.end());
   EXPECT_GE(wpi->stats().duplicate_symbols, 1);
 }
+
+TEST(LlvmPropellerWholeProgramInfoBbInfoTest, NoneDotTextSymbolsDropped) {
+  const PropellerOptions options = PropellerOptions(
+      PropellerOptionsBuilder()
+          .SetBinaryName(
+              GetAutoFdoTestDataFilePath("propeller_sample_section.bin")));
+  std::unique_ptr<PropellerWholeProgramInfo> wpi =
+        PropellerWholeProgramInfo::Create(options);
+    EXPECT_NE(wpi.get(), nullptr);
+
+  EXPECT_TRUE(wpi->PopulateSymbolMap());
+  const PropellerWholeProgramInfo::BbAddrMapTy &bb_addr_map =
+      wpi->bb_addr_map();
+  // "anycall" is inside ".anycall.anysection", so it should not be processed by
+  // propeller.
+  EXPECT_EQ(bb_addr_map.find("anycall"), bb_addr_map.end());
+  // ".text.unlikely" function symbols are processed.
+  EXPECT_NE(bb_addr_map.find("unlikelycall"), bb_addr_map.end());
+  // Other functions are not affected.
+  EXPECT_NE(bb_addr_map.find("compute_flag"), bb_addr_map.end());
+}
+
+TEST(LlvmPropellerWholeProgramInfo, DuplicateUniqNames) {
+  const PropellerOptions options = PropellerOptions(
+      PropellerOptionsBuilder()
+          .SetBinaryName(
+              GetAutoFdoTestDataFilePath("duplicate_unique_names.out")));
+  std::unique_ptr<PropellerWholeProgramInfo> wpi =
+        PropellerWholeProgramInfo::Create(options);
+  EXPECT_NE(wpi.get(), nullptr);
+  wpi->CreateCfgs();
+  // We have 3 duplicated symbols, the last 2 are marked as duplicate_symbols.
+  // 11: 0000000000001880     6 FUNC    LOCAL  DEFAULT   14
+  //                     _ZL3foov.__uniq.148988607218547176184555965669372770545
+  // 13: 00000000000018a0     6 FUNC    LOCAL  DEFAULT   14
+  //                     _ZL3foov.__uniq.148988607218547176184555965669372770545
+  // 15: 00000000000018f0     6 FUNC    LOCAL  DEFAULT   14
+  //                     _ZL3foov.__uniq.148988607218547176184555965669372770545
+  EXPECT_EQ(wpi->stats().duplicate_symbols, 2);
+}
+
 }  // namespace

@@ -34,7 +34,7 @@ cfg {
       source: 1
       sink: 4
       weight: 5
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -46,19 +46,19 @@ cfg {
       source: 4
       sink: 2
       weight: 60
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 6
       sink: 4
       weight: 40
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 1
       sink: 4
       weight: 5
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -70,19 +70,19 @@ cfg {
       source: 2
       sink: 5
       weight: 600
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 5
       sink: 2
       weight: 550
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 4
       sink: 2
     	weight: 60
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -94,19 +94,19 @@ cfg {
       source: 5
       sink: 6
       weight: 55
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_outs {
       source: 5
       sink: 2
       weight: 550
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 2
       sink: 5
       weight: 600
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -118,19 +118,19 @@ cfg {
       source: 6
       sink: 4
       weight: 40
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_outs {
       source: 6
       sink: 3
       weight: 10
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
     intra_ins {
       source: 5
       sink: 6
       weight: 55
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
@@ -142,7 +142,7 @@ cfg {
       source: 6
       sink: 3
       weight: 10
-      info: DEFAULT
+      kind: BRANCH_OR_FALLTHROUGH
     }
   }
 }

@@ -18,6 +18,7 @@
 #include "third_party/abseil/absl/container/node_hash_set.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/memory/memory.h"
+#include "llvm/Config/llvm-config.h"
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
 
@@ -58,6 +59,9 @@ ABSL_FLAG(bool, partial_profile, false,
 ABSL_FLAG(bool, split_layout, false,
           "Split the profile to two parts with one part containing context "
           "sensitive information and another part not. ");
+ABSL_FLAG(std::string, strip_symbols_regex, "",
+          "Strip outline symbols "
+          "matching the regular expression in the merged profile. ");
 
 namespace {
 // Some sepcial symbols or symbol patterns we are going to handle.
@@ -211,13 +215,15 @@ int main(int argc, char **argv) {
     auto sample_profile_writer =
         writer->CreateSampleWriter(absl::GetFlag(FLAGS_output_file));
     if (!sample_profile_writer) return 1;
-#if LLVM_VERSION_MAJOR >= 11
+#if LLVM_VERSION_MAJOR >= 12
     // If resetSecLayout is needed, it should be called just after the
     // sample_profile_writer is created because resetSecLayout will reset
     // all the section flags in the extbinary profile.
     if (absl::GetFlag(FLAGS_split_layout)) {
       sample_profile_writer->resetSecLayout(llvm::sampleprof::CtxSplitLayout);
     }
+#endif
+#if LLVM_VERSION_MAJOR >= 11
     if (has_prof_sym_list) {
       sample_profile_writer->setProfileSymbolList(&prof_sym_list);
     }
@@ -231,6 +237,11 @@ int main(int argc, char **argv) {
       sample_profile_writer->setPartialProfile();
     }
 #endif
+    auto strip_symbols_regex = absl::GetFlag(FLAGS_strip_symbols_regex);
+    if (!strip_symbols_regex.empty()) {
+      symbol_map.RemoveSymsMatchingRegex(strip_symbols_regex);
+    }
+
     writer->setSymbolMap(&symbol_map);
     if (!writer->WriteToFile(absl::GetFlag(FLAGS_output_file))) {
       LOG(FATAL) << "Error writing to " << absl::GetFlag(FLAGS_output_file);

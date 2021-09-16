@@ -2,7 +2,8 @@ syntax = "proto2";
 
 package devtools_crosstool_autofdo;
 
-// Next Available: 9.
+
+// Next Available: 10.
 message PropellerOptions {
   // binary file name.
   optional string binary_name = 1;
@@ -29,6 +30,10 @@ message PropellerOptions {
 
   // Parameters used to calculate the Extended TSP score for layout.
   optional PropellerCodeLayoutParameters code_layout_params = 8;
+
+  // Include extra information such as per-function layout scores in the
+  // propeller cluster file.
+  optional bool verbose_cluster_output = 9 [default = false];
 }
 
 // Next Available: 6.
