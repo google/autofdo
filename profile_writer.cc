@@ -204,6 +204,10 @@ void AutoFDOProfileWriter::WriteWorkingSet() {
 }
 
 bool AutoFDOProfileWriter::WriteToFile(const std::string &output_filename) {
+  if (absl::GetFlag(FLAGS_debug_dump)) {
+    Dump();
+  }
+
   if (!WriteHeader(output_filename)) {
     return false;
   }
