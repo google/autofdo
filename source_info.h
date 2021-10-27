@@ -53,7 +53,7 @@ struct SourceInfo {
                    discriminator)
              : discriminator));
 #else
-    return ((line - start_line) << 16) | discriminator;
+    return (static_cast<uint64_t>(line - start_line) << 32) | discriminator;
 #endif
   }
 
