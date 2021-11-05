@@ -837,8 +837,16 @@ bool ElfReader::SectionNamesMatch(const string &name, const string &sh_name) {
 
 string ElfReader::GetBuildId() {
   std::vector<string> build_ids;
+  auto round_up_to_4 = [](size_t sz) { return (sz + 3) & ~3; };
 
   // The format of the .note section is as follows (see "ELF file Format"):
+  typedef struct GenericNoteSection {
+    uint32 namesz;
+    uint32 descsz;
+    uint32 type;
+  } GenericNoteSection;
+  constexpr size_t note_size = sizeof(GenericNoteSection);
+  // GNU buildid note section.
   typedef struct BuildIdNoteSection {
     uint32 namesz;
     uint32 descsz;
@@ -850,22 +858,32 @@ string ElfReader::GetBuildId() {
   for (int nindex = GetSectionIndexByType(SHT_NOTE, 0); nindex >= 0;
        nindex = GetSectionIndexByType(SHT_NOTE, nindex + 1)) {
     size_t size;
-    const BuildIdNoteSection *id_note =
-        reinterpret_cast<const BuildIdNoteSection *>(
-            GetSectionByIndex(nindex, &size));
+    const char *c_note = GetSectionByIndex(nindex, &size);
+    if (c_note == nullptr) continue;
 
-    if (id_note != nullptr && size >= sizeof(*id_note) &&
-        id_note->type == NT_GNU_BUILD_ID &&
-        memcmp(id_note->gnu_name, "GNU\0", 4) == 0 && id_note->descsz <= 20) {
-      // Pre-fill with '0' so that the build ID is always 40 chars long.
-      // TODO(dehao): remove [adding once quipper is fixed (see b/21597512)
-      string build_id((id_note->descsz << 1), '0');
-      const char hexdigits[] = "0123456789abcdef";
-      for (int i = 0; i < id_note->descsz; i++) {
-        build_id[2 * i] = hexdigits[(id_note->id[i]) >> 4];
-        build_id[2 * i + 1] = hexdigits[id_note->id[i] & 0x0f];
+    const char *c_note_end = c_note + size;
+    while (c_note + note_size < c_note_end) {
+      const auto *id_note = reinterpret_cast<const BuildIdNoteSection*>(c_note);
+      if (size >= sizeof(*id_note) &&
+          id_note->type == NT_GNU_BUILD_ID &&
+          id_note->namesz == 4 &&
+          id_note->descsz <= 20 &&
+          memcmp(id_note->gnu_name, "GNU\0", 4) == 0) {
+        // Pre-fill with '0' so that the build ID is always 40 chars long.
+        // TODO(dehao): remove [adding once quipper is fixed (see b/21597512)
+        string build_id((id_note->descsz << 1), '0');
+        const char hexdigits[] = "0123456789abcdef";
+        for (int i = 0; i < id_note->descsz; i++) {
+          build_id[2 * i] = hexdigits[(id_note->id[i]) >> 4];
+          build_id[2 * i + 1] = hexdigits[id_note->id[i] & 0x0f];
+        }
+        build_ids.push_back(build_id);
       }
-      build_ids.push_back(build_id);
+
+      // There could be multiple ELF notes in the .note section.
+      // Advance to the next note.
+      c_note += note_size + round_up_to_4(id_note->namesz) +
+          round_up_to_4(id_note->descsz);
     }
   }
 
