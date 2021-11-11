@@ -20,7 +20,7 @@ There are essentially four steps to optimize any binary with Propeller:
 
 In the following sections, we will show how to go about doing each step in
 detail. We have uploaded the script to do all the steps mentioned below
-[here.](propeller_optimize_clang.sh)
+[here.](../propeller_optimize_clang.sh)
 
 ## Build Trunk LLVM
 
