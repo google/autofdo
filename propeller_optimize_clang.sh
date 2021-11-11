@@ -17,7 +17,7 @@
 set -eu
 
 # Set this path and run the script.
-BASE_PROPELLER_CLANG_DIR=
+BASE_PROPELLER_CLANG_DIR="$(cd $(dirname $0); pwd)"/propeller_optimize_clang.dir
 if [[ -z "${BASE_PROPELLER_CLANG_DIR}" ]]; then
     echo "Please change this script to set variable BASE_PROPELLER_CLANG_DIR to an empty directory."
     exit 1
