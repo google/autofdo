@@ -102,6 +102,8 @@ llvm::Optional<llvm::object::SectionRef> FindBbAddrMapSection(
 }
 }  // namespace
 
+bool ReadTextSectionAddresses(ObjectFile &obj);
+
 std::unique_ptr<PropellerWholeProgramInfo> PropellerWholeProgramInfo::Create(
     const PropellerOptions &options) {
   BinaryPerfInfo bpi;
@@ -111,6 +113,8 @@ std::unique_ptr<PropellerWholeProgramInfo> PropellerWholeProgramInfo::Create(
 
   Optional<llvm::object::SectionRef> opt_bb_addr_map_section =
       FindBbAddrMapSection(*(bpi.binary_info.object_file));
+
+  ReadTextSectionAddresses(*(bpi.binary_info.object_file));
 
   if (!opt_bb_addr_map_section) {
     LOG(ERROR) << "'" << options.binary_name() << "' does not have '"
@@ -205,6 +209,220 @@ void PropellerWholeProgramInfo::ReadSymbolTable() {
     }
     if (check_size_ok) addr_sym_list.push_back(sr);
   }
+}
+
+std::list<llvm::object::ELFSectionRef> text_sections;
+
+bool ReadTextSectionAddresses(ObjectFile &obj) {
+  for (auto sec : obj.sections()) {
+    llvm::object::ELFSectionRef esec(sec);
+    if (esec.isText())
+      text_sections.push_back(esec);
+  }
+  return true;
+}
+
+typedef uint64_t (*target_address_func_ty)(uint64_t pc, const unsigned char *rel);
+
+uint64_t target_address_no_addr(uint64_t pc, const unsigned char *rel) {
+  return 0;
+}
+
+uint64_t target_address_func_rel8(uint64_t pc, const unsigned char *rel) {
+  unsigned char offset = (unsigned char)(rel[0]);
+  if ((offset & 0x80) == 0) {
+    return pc + offset;
+  }
+  offset = (~offset) + 1;
+  return pc - offset;
+}
+
+uint64_t target_address_func_rel16(uint64_t pc, const unsigned char *rel) {
+  unsigned short offset = (unsigned short)(rel[0] | (rel[1] << 8));
+  if ((offset & 0x8000) == 0)
+    return pc + offset;
+  offset = (~offset) + 1;
+  return pc - offset;
+}
+
+uint64_t target_address_func_rel32(uint64_t pc, const unsigned char *rel) {
+  unsigned int offset = (unsigned int)(rel[0] | (rel[1] << 8) |
+                                         (rel[2] << 16) | (rel[3] << 24));
+  if ((offset & 0x80000000) == 0)
+    return pc + offset;
+  offset = (~offset) + 1;
+  return pc - offset;
+}
+
+constexpr struct {
+  unsigned pos;
+  unsigned size;
+  unsigned char p[6];
+  char insn[64];
+  target_address_func_ty target_func;
+  unsigned max_pass;
+} bb_ending_patterns[] = {
+  { 6, 2, {0x0f, 0x8f}, "jg rel32", target_address_func_rel32, 2 },
+  { 6, 2, {0x0f, 0x8e}, "jle rel32", target_address_func_rel32, 2 },
+  { 6, 2, {0x0f, 0x8d}, "jge rel32", target_address_func_rel32, 2 },
+  { 6, 2, {0x0f, 0x8c}, "jnge rel32", target_address_func_rel32, 2 },
+  { 6, 2, {0x0f, 0x8b}, "jpo rel32", target_address_func_rel32, 2 },
+  { 6, 2, {0x0f, 0x8a}, "jp rel32", target_address_func_rel32, 2 },
+  { 6, 2, {0x0f, 0x89}, "jns rel32", target_address_func_rel32, 2 },
+  { 6, 2, {0x0f, 0x88}, "js rel32", target_address_func_rel32, 2 },
+  { 6, 2, {0x0f, 0x87}, "ja rel32", target_address_func_rel32, 2 },
+  { 6, 2, {0x0f, 0x86}, "jbe rel32", target_address_func_rel32, 2 },
+  { 6, 2, {0x0f, 0x85}, "jne rel32", target_address_func_rel32, 2 },
+  { 6, 2, {0x0f, 0x84}, "jz rel32", target_address_func_rel32, 2},
+  { 6, 2, {0x0f, 0x83}, "jae rel32", target_address_func_rel32, 2},
+  { 6, 2, {0x0f, 0x82}, "jb rel32", target_address_func_rel32, 2},
+  { 6, 2, {0x0f, 0x81}, "jno rel32", target_address_func_rel32, 2},
+  { 5, 1, {0xe9}, "jmp rel32", target_address_func_rel32, 1 },
+  { 5, 1, {0xe8}, "call rel32", target_address_no_addr, 1 },
+  { 4, 2, {0x0f, 0x86}, "jbe rel16", target_address_func_rel16, 2 },
+  { 4, 2, {0x0f, 0x85}, "jne rel16", target_address_func_rel16, 2 },
+  { 4, 2, {0x0f, 0x84}, "jz rel16", target_address_func_rel16, 2 },
+  { 4, 2, {0x0f, 0x82}, "jb rel16", target_address_func_rel16, 2 },
+  { 3, 1, {0xe9}, "jmp rel16", target_address_func_rel16, 1 },
+  { 2, 1, {0xeb}, "jmp rel8", target_address_func_rel8, 1 },
+  { 2, 1, {0x7f}, "jg rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x7e}, "jle rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x7d}, "jge rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x7c}, "jl rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x7b}, "jnp rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x7a}, "jp rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x79}, "jns rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x78}, "js rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x77}, "ja rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x76}, "jbe rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x75}, "jnz rel8", target_address_func_rel8, 2},
+  { 2, 1, {0x74}, "jz rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x73}, "jnc rel8", target_address_func_rel8, 2 },
+  { 2, 1, {0x72}, "jc rel8", target_address_func_rel8, 2 },
+  { 1, 1, {0xc3}, "ret", target_address_no_addr, 1 }
+};
+  
+// cannot fix this function: static const std::string focus_func_name = "_ZN4llvm19getUnderlyingObjectEPKNS_5ValueEj";
+// static const std::string focus_func_name = "_ZN4llvm5Value11setMetadataEjPNS_6MDNodeE";
+// static const std::string focus_func_name = "_ZN4llvm14SpillPlacement8addLinksENS_8ArrayRefIjEE";
+// static const std::string focus_func_name = "_ZN4llvm14SpillPlacement7iterateEv";
+// static const std::string focus_func_name = "_ZN4llvm15LowerDbgDeclareERNS_8FunctionE";
+// static const std::string focus_func_name = "_ZL15SimplifyGEPInstPN4llvm4TypeENS_8ArrayRefIPNS_5ValueEEEbRKNS_13SimplifyQueryEj.__uniq.211684107414781178935122691899976471211";
+
+static const std::string focus_func_name = "";
+
+bool PropellerWholeProgramInfo::CalculateStaticCfgInfo(
+    const std::vector<SymbolEntry *> &basicblocks) {
+  std::string func_name = basicblocks[0]->func_ptr->name.str();      
+  if (focus_func_name != "" && func_name != focus_func_name)
+    return false;
+  auto find_containing_section =
+      [](uint64_t address) -> llvm::Optional<llvm::object::ELFSectionRef> {
+    for (llvm::object::ELFSectionRef &se : text_sections)
+      if (se.getAddress() <= address &&
+          address <= se.getAddress() + se.getSize())
+        return se;
+    return llvm::None;
+  };
+  auto opt_section = find_containing_section(basicblocks[0]->addr);
+  if (!opt_section) return false;
+  llvm::object::ELFSectionRef section = *opt_section;
+  StringRef contents = llvm::cantFail(section.getContents());
+  auto target_addr_to_bb = [&basicblocks](uint64_t addr) -> SymbolEntry * {
+    for (auto *bb : basicblocks)
+      if (bb->addr == addr)
+        return bb;
+    return nullptr;
+  };
+  std::map<unsigned, std::set<unsigned>> cfg;
+  // fprintf(stderr, ">>> %s\n", func_name.c_str());
+  for (auto *bb : basicblocks) {
+    // bb index, starting from 0
+    unsigned bbidx = bb->ordinal - bb->func_ptr->ordinal - 1;
+    cfg[bbidx] = std::set<unsigned>();
+    if (bb->CanFallThrough())
+      cfg[bbidx].insert(bbidx + 1);
+    bool match;
+    unsigned total_matched_size = 0;
+    for (unsigned pass = 1; pass <= 2; ++pass) {
+      uint64_t bb_end_scan_pos = bb->addr + bb->size - total_matched_size;
+      for (const auto &pat : bb_ending_patterns) {
+        match = false;
+        // if (bbidx == 80) {
+        //   fprintf(stderr, "bb->size=%d, total_matched_size=%d, pat.size=%d\n", bb->size, total_matched_size, pat.size);
+        // }
+        if (bb->size - total_matched_size < pat.pos) continue;
+        /*
+ 4a0a09a:       39 d1                   cmp    %edx,%ecx
+ 4a0a09c:       0f 85 3a fe ff ff       jne    4a09edc <_ZN4llvm14SpillPlacement8addLinksENS_8ArrayRefIjEE+0x1ac>
+ 4a0a0a2:       e9 08 fe ff ff          jmp    4a09eaf <_ZN4llvm14SpillPlacement8addLinksENS_8ArrayRefIjEE+0x17f>
+        */
+        if (bb->size - total_matched_size - pat.pos == 2 &&
+            ((unsigned char)(contents.data()[bb->addr - section.getAddress()]) != 0xa8) &&
+            ((unsigned char)(contents.data()[bb->addr - section.getAddress()]) != 0x39) &&
+            ((unsigned char)(contents.data()[bb->addr - section.getAddress()]) != 0x38) &&
+            ((unsigned char)(contents.data()[bb->addr - section.getAddress()]) != 0x3c) &&
+            ((unsigned char)(contents.data()[bb->addr - section.getAddress()]) != 0x72) &&
+            ((unsigned char)(contents.data()[bb->addr - section.getAddress()]) != 0x84) &&
+            ((unsigned char)(contents.data()[bb->addr - section.getAddress()]) != 0x85))
+            continue;
+        // if (bb->size - total_matched_size - 3 /* -3 is heuristic, a block should have at least 3 bytes besides jmp/jcc. */ < pat.pos)
+        //   continue;
+        if (pat.max_pass < pass)
+          continue;
+        match = true;
+        
+        for (int i = 0; match && i < pat.size; ++i) {
+          if (pat.p[i] != (unsigned char)(contents.data()[bb_end_scan_pos - pat.pos + i - section.getAddress()]))
+            match = false;
+        }
+        if (match) {
+          SymbolEntry * target_bb = nullptr;
+          if (pat.target_func) {
+            unsigned target_addr = pat.target_func(
+                bb_end_scan_pos,
+                (unsigned char *)(contents.data() + bb->addr + bb->size -
+                                  total_matched_size - pat.pos + pat.size -
+                                  section.getAddress()));
+            if (target_addr != 0) {
+              target_bb = target_addr_to_bb(target_addr);
+              if (target_bb) {
+                cfg[bbidx].insert(target_bb->ordinal - target_bb->func_ptr->ordinal - 1);
+              } else {
+                // No BB starting with "target_addr", consider this is not a match and try next.
+                continue;
+              }
+            }
+          }
+          if (focus_func_name != "") {
+            if (target_bb)
+              fprintf(stderr, "bb.%lu: [0x%lx, 0x%lx): 0x%lx: %s (bb.%u)\n",
+                      bbidx, bb->addr, bb->addr + bb->size,
+                      bb->addr + bb->size - total_matched_size - pat.pos,
+                      pat.insn,
+                      target_bb->ordinal - target_bb->func_ptr->ordinal - 1);
+            else 
+              fprintf(stderr, "bb.%lu: [0x%lx, 0x%lx): 0x%lx: %s\n",
+                      bbidx, bb->addr, bb->addr + bb->size,
+                      bb->addr + bb->size - total_matched_size - pat.pos,
+                      pat.insn);
+          }
+          total_matched_size += pat.pos;
+          break;  // out of pattern matching
+        }
+      }
+      if (!match) {
+        if (focus_func_name != "")
+          fprintf(stderr, "bb.%lu: [0x%lx, 0x%lx)\n", bbidx, bb->addr, bb->addr + bb->size);
+        break;
+      }
+    } // end of 2 pass
+    fprintf(stderr, "> %s.bb.%lu:", func_name.c_str(), bbidx);
+    for (unsigned target_bbidx : cfg[bbidx])
+      fprintf(stderr, " %d", target_bbidx);
+    fprintf(stderr, "\n");
+  }
+  return true;
 }
 
 bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
@@ -375,7 +593,11 @@ bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
 
 bool PropellerWholeProgramInfo::PopulateSymbolMap() {
   ReadSymbolTable();
-  return ReadBbAddrMapSection();
+  bool t = ReadBbAddrMapSection();
+  for (const auto &pa : bb_addr_map_) {
+    CalculateStaticCfgInfo(pa.second);
+  }
+  return true;
 }
 
 bool PropellerWholeProgramInfo::PopulateSymbolMapWithPromise(
@@ -805,12 +1027,13 @@ bool PropellerWholeProgramInfo::CreateCfgs() {
       &PropellerWholeProgramInfo::PopulateSymbolMapWithPromise, this,
       std::move(read_symbols_promise));
 
-  Optional<LBRAggregation> opt_lbr_aggregation = ParsePerfData();
+  // Optional<LBRAggregation> opt_lbr_aggregation = ParsePerfData();
   populate_symbol_map_thread.join();
-  if (!future_result.get() || !opt_lbr_aggregation) return false;
+  // if (!future_result.get() || !opt_lbr_aggregation) return false;
+  return true;
 
   // This must be done only after both PopulateSymbolMaps and ParsePerfData
   // finish. Note: opt_lbr_aggregation is released afterwards.
-  return DoCreateCfgs(std::move(*opt_lbr_aggregation));
+  // return DoCreateCfgs(std::move(*opt_lbr_aggregation));
 }
 }  // namespace devtools_crosstool_autofdo

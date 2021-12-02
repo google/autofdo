@@ -35,12 +35,12 @@ absl::Status GeneratePropellerProfiles(const PropellerOptions &opts) {
   if (!writer)
     return absl::InternalError("Failed to create PropellerProfWriter object");
 
-  const devtools_crosstool_autofdo::CodeLayoutResult layout_per_function =
-      devtools_crosstool_autofdo::CodeLayout(
-          opts.code_layout_params(), writer->whole_program_info()->GetHotCfgs())
-          .OrderAll();
-  if (!writer->Write(layout_per_function))
-    return absl::InternalError("Failed to compute code layout result");
+  // const devtools_crosstool_autofdo::CodeLayoutResult layout_per_function =
+  //     devtools_crosstool_autofdo::CodeLayout(
+  //         opts.code_layout_params(), writer->whole_program_info()->GetHotCfgs())
+  //         .OrderAll();
+  // if (!writer->Write(layout_per_function))
+  //   return absl::InternalError("Failed to compute code layout result");
   return absl::OkStatus();
 }
 

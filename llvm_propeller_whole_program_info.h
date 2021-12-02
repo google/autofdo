@@ -174,6 +174,8 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   // parsed correctly.
   bool ReadBbAddrMapSection();
 
+  // bool ReadTextSectionAddresses(llvm::object::ObjectFile &obj);
+
   bool WriteSymbolsToProtobuf();
 
   // We select mmap events from perfdata file by comparing the mmap event's
@@ -187,6 +189,8 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
                    const std::string &buildid_name);
 
   bool CreateCfgs() override;
+
+  bool CalculateStaticCfgInfo(const std::vector<SymbolEntry *> &basicblocks);
 
   bool DoCreateCfgs(LBRAggregation &&lbr_aggregation);
 
