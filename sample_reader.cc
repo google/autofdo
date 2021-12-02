@@ -60,15 +60,23 @@ void PerfDataSampleReader::GetFileNameFromBuildID(const quipper::PerfReader*
   focus_bins_.clear();
   for (const auto &name_buildid : name_buildid_map) {
     if (name_buildid.second == build_id_) {
-      focus_bins_.insert(name_buildid.first);
       // The build ID event reports the kernel name as '[kernel.kallsyms]'.
       // However, the MMAP event reports the kernel image as either
       // '[kernel.kallsyms]_stext' or '[kernel.kallsyms]_text'.
+      // Additionally if the trace is recorded (or decoded) with --vmlinux
+      // the name in the build ID event will be a full path to the vmlinux file.
       // If a build_id is associated with the kernel image name, include the
       // alternate names in focus_bins_ too.
-      if (name_buildid.first == "[kernel.kallsyms]") {
+      const size_t vmlinux_len = std::strlen("vmlinux");
+      if (name_buildid.first == "[kernel.kallsyms]" ||
+          (name_buildid.first.size() >= vmlinux_len &&
+           !name_buildid.first.compare(name_buildid.first.size() - vmlinux_len,
+                                       vmlinux_len, "vmlinux"))) {
+        focus_bins_.insert("[kernel.kallsyms]");
         focus_bins_.insert("[kernel.kallsyms]_stext");
         focus_bins_.insert("[kernel.kallsyms]_text");
+      } else {
+        focus_bins_.insert(name_buildid.first);
       }
     }
   }
