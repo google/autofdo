@@ -104,4 +104,35 @@ TEST_F(SampleReaderTest, ReadLBRWithDupEntries) {
   devtools_crosstool_autofdo::Range range2(0x630, 0x726);
   EXPECT_EQ(range_map.find(range2), range_map.end());
 }
+
+TEST_F(SampleReaderTest, ReadKernelKallsymsProfile) {
+  // Verify that the perf reader counts branches mapped to
+  // [kernel.kallsyms]_stext when the kernel dso name is [kernel.kallsyms].
+
+  // $ perf buildid-list -i testdata/perf-kernel.data
+  // d4eba24dde8ec63cbdf519e6b4008c4ecdcf1f49 [kernel.kallsyms]
+  // $ perf report -D -i testdata/perf-kernel.data | grep kallsyms
+  // 0 0 0x1000 [0x60]: PERF_RECORD_MMAP -1/0: [0xffffffe43f680800(0xb7f800) @
+  // 0xffffffe43f680800]: x [kernel.kallsyms]_stext
+  std::string profile =
+      FLAGS_test_srcdir + kTestDataDir + "perf-kernel.data";
+  devtools_crosstool_autofdo::PerfDataSampleReader reader(
+      profile, ".*/vmlinux", "d4eba24dde8ec63cbdf519e6b4008c4ecdcf1f49");
+  ASSERT_TRUE(reader.ReadAndSetTotalCount());
+  EXPECT_EQ(reader.GetTotalSampleCount(), 1421);
+}
+
+TEST_F(SampleReaderTest, ReadVmlinuxProfile) {
+  // Verify that the perf reader counts branches mapped to
+  // [kernel.kallsyms]_stext when the kernel dso name is /tmp/vmlinux.
+
+  // $ perf buildid-list -i testdata/perf-vmlinux.data
+  // 948da3c05fff6a515eab7b9dd416e30564b2ccf2 /tmp/vmlinux
+  std::string profile =
+      FLAGS_test_srcdir + kTestDataDir + "perf-vmlinux.data";
+  devtools_crosstool_autofdo::PerfDataSampleReader reader(
+      profile, ".*/vmlinux", "948da3c05fff6a515eab7b9dd416e30564b2ccf2");
+  ASSERT_TRUE(reader.ReadAndSetTotalCount());
+  EXPECT_EQ(reader.GetTotalSampleCount(), 1936);
+}
 }  // namespace
