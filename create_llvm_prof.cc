@@ -72,6 +72,9 @@ ABSL_FLAG(bool, prof_sym_list, false,
 ABSL_FLAG(bool, ignore_build_id, false,
           "Ignore build id, use file name to match data in perfdata file.");
 
+ABSL_FLAG(bool, dump_static_cfgs, false,
+          "Dump static control flow graph information.");
+
 devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
   devtools_crosstool_autofdo::PropellerOptionsBuilder option_builder;
   std::string pstr = absl::GetFlag(FLAGS_profile);
@@ -93,7 +96,8 @@ devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
           .SetClusterOutName(absl::GetFlag(FLAGS_out))
           .SetSymbolOrderOutName(absl::GetFlag(FLAGS_propeller_symorder))
           .SetProfiledBinaryName(absl::GetFlag(FLAGS_profiled_binary_name))
-          .SetIgnoreBuildId(absl::GetFlag(FLAGS_ignore_build_id)));
+          .SetIgnoreBuildId(absl::GetFlag(FLAGS_ignore_build_id))
+          .SetDumpStaticCfgs(absl::GetFlag(FLAGS_dump_static_cfgs)));
 }
 
 int main(int argc, char **argv) {

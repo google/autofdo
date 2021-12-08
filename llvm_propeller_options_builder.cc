@@ -45,4 +45,10 @@ PropellerOptionsBuilder::SetKeepFrontendIntermediateData(bool value) {
   return *this;
 }
 
+PropellerOptionsBuilder&
+PropellerOptionsBuilder::SetDumpStaticCfgs(bool value) {
+  data_.set_dump_static_cfgs(value);
+  return *this;
+}
+
 }  // namespace devtools_crosstool_autofdo

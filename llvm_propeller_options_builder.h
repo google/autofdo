@@ -27,6 +27,7 @@ class PropellerOptionsBuilder {
   PropellerOptionsBuilder& SetProfiledBinaryName(const std::string& value);
   PropellerOptionsBuilder& SetIgnoreBuildId(bool value);
   PropellerOptionsBuilder& SetKeepFrontendIntermediateData(bool value);
+  PropellerOptionsBuilder& SetDumpStaticCfgs(bool value);
 
  private:
   PropellerOptions data_;

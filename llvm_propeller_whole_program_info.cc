@@ -102,7 +102,7 @@ llvm::Optional<llvm::object::SectionRef> FindBbAddrMapSection(
 }
 }  // namespace
 
-bool ReadTextSectionAddresses(ObjectFile &obj);
+void ReadTextSectionAddresses(ObjectFile &obj);
 
 std::unique_ptr<PropellerWholeProgramInfo> PropellerWholeProgramInfo::Create(
     const PropellerOptions &options) {
@@ -114,7 +114,8 @@ std::unique_ptr<PropellerWholeProgramInfo> PropellerWholeProgramInfo::Create(
   Optional<llvm::object::SectionRef> opt_bb_addr_map_section =
       FindBbAddrMapSection(*(bpi.binary_info.object_file));
 
-  ReadTextSectionAddresses(*(bpi.binary_info.object_file));
+  if (options.dump_static_cfgs())
+    ReadTextSectionAddresses(*(bpi.binary_info.object_file));
 
   if (!opt_bb_addr_map_section) {
     LOG(ERROR) << "'" << options.binary_name() << "' does not have '"
@@ -213,13 +214,12 @@ void PropellerWholeProgramInfo::ReadSymbolTable() {
 
 std::list<llvm::object::ELFSectionRef> text_sections;
 
-bool ReadTextSectionAddresses(ObjectFile &obj) {
+void ReadTextSectionAddresses(ObjectFile &obj) {
   for (auto sec : obj.sections()) {
     llvm::object::ELFSectionRef esec(sec);
     if (esec.isText())
       text_sections.push_back(esec);
   }
-  return true;
 }
 
 typedef uint64_t (*target_address_func_ty)(uint64_t pc, const unsigned char *rel);
@@ -303,12 +303,6 @@ constexpr struct {
 };
   
 // cannot fix this function: static const std::string focus_func_name = "_ZN4llvm19getUnderlyingObjectEPKNS_5ValueEj";
-// static const std::string focus_func_name = "_ZN4llvm5Value11setMetadataEjPNS_6MDNodeE";
-// static const std::string focus_func_name = "_ZN4llvm14SpillPlacement8addLinksENS_8ArrayRefIjEE";
-// static const std::string focus_func_name = "_ZN4llvm14SpillPlacement7iterateEv";
-// static const std::string focus_func_name = "_ZN4llvm15LowerDbgDeclareERNS_8FunctionE";
-// static const std::string focus_func_name = "_ZL15SimplifyGEPInstPN4llvm4TypeENS_8ArrayRefIPNS_5ValueEEEbRKNS_13SimplifyQueryEj.__uniq.211684107414781178935122691899976471211";
-
 static const std::string focus_func_name = "";
 
 bool PropellerWholeProgramInfo::CalculateStaticCfgInfo(
@@ -335,7 +329,6 @@ bool PropellerWholeProgramInfo::CalculateStaticCfgInfo(
     return nullptr;
   };
   std::map<unsigned, std::set<unsigned>> cfg;
-  // fprintf(stderr, ">>> %s\n", func_name.c_str());
   for (auto *bb : basicblocks) {
     // bb index, starting from 0
     unsigned bbidx = bb->ordinal - bb->func_ptr->ordinal - 1;
@@ -593,10 +586,10 @@ bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
 
 bool PropellerWholeProgramInfo::PopulateSymbolMap() {
   ReadSymbolTable();
-  bool t = ReadBbAddrMapSection();
-  for (const auto &pa : bb_addr_map_) {
-    CalculateStaticCfgInfo(pa.second);
-  }
+  if (!ReadBbAddrMapSection()) return false;
+  if (options_.dump_static_cfgs())
+    for (const auto &pa : bb_addr_map_)
+      CalculateStaticCfgInfo(pa.second);
   return true;
 }
 
@@ -1021,19 +1014,38 @@ bool PropellerWholeProgramInfo::CalculateFallthroughBBs(
 }
 
 bool PropellerWholeProgramInfo::CreateCfgs() {
+  if (options_.dump_static_cfgs())
+    return PopulateSymbolMap();
+
   std::promise<bool> read_symbols_promise;
   std::future<bool> future_result = read_symbols_promise.get_future();
   std::thread populate_symbol_map_thread(
       &PropellerWholeProgramInfo::PopulateSymbolMapWithPromise, this,
       std::move(read_symbols_promise));
 
-  // Optional<LBRAggregation> opt_lbr_aggregation = ParsePerfData();
+  Optional<LBRAggregation> opt_lbr_aggregation = ParsePerfData();
   populate_symbol_map_thread.join();
-  // if (!future_result.get() || !opt_lbr_aggregation) return false;
-  return true;
+  if (!future_result.get() || !opt_lbr_aggregation) return false;
 
   // This must be done only after both PopulateSymbolMaps and ParsePerfData
   // finish. Note: opt_lbr_aggregation is released afterwards.
-  // return DoCreateCfgs(std::move(*opt_lbr_aggregation));
+  return DoCreateCfgs(std::move(*opt_lbr_aggregation));
+
+  // report function freq for each hot function.
+  // uint64_t total_weight = 0;
+  // for (auto &[cfgname, cfgptr] : cfgs_) {
+  //   std::string func_name = cfgname.str();
+  //   if (!functions_to_print_split_info.count(func_name))
+  //     continue;
+  //   uint64_t largest_freq = 0;
+  //   cfgptr->ForEachNodeRef([&largest_freq](const CFGNode &nref) {
+  //     if (largest_freq < nref.freq())
+  //       largest_freq = nref.freq();
+  //   });
+  //   fprintf(stderr, "@ %s: %lu\n", func_name.c_str(), largest_freq);
+  //   total_weight += largest_freq;
+  // }
+  // fprintf(stderr, "@ __total__: %lu\n", total_weight);
+  // return true;
 }
-}  // namespace devtools_crosstool_autofdo
+} // namespace devtools_crosstool_autofdo
