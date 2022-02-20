@@ -15,6 +15,7 @@
 #include "third_party/abseil/absl/container/node_hash_map.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
+#include "llvm/DebugInfo/DWARF/DWARFDebugAranges.h"
 #include "llvm/Object/ObjectFile.h"
 
 ABSL_RETIRED_FLAG(bool, use_legacy_symbolizer, false,
@@ -88,6 +89,7 @@ void LLVMAddr2line::GetInlineStack(uint64_t address, SourceStack *stack) const {
   uint32_t line = (row_index == -1U ? 0 : line_table->Rows[row_index].Line);
   uint32_t discriminator =
       (row_index == -1U ? 0 : line_table->Rows[row_index].Discriminator);
+  stack->reserve(InlinedChain.size());
   for (const llvm::DWARFDie &FunctionDIE : InlinedChain) {
     const char *function_name =
         FunctionDIE.getSubroutineName(llvm::DINameKind::LinkageName);
@@ -96,15 +98,16 @@ void LLVMAddr2line::GetInlineStack(uint64_t address, SourceStack *stack) const {
     std::string dir_name;
     if (line_table->hasFileAtIndex(file)) {
       const auto &entry = line_table->Prologue.getFileNameEntry(file);
-      file_name = entry.Name.getAsCString().getValue();
+      file_name = llvm::dwarf::toString(entry.Name).getValue();
       if (entry.DirIdx > 0 &&
           entry.DirIdx <= line_table->Prologue.IncludeDirectories.size())
-        dir_name = line_table->Prologue.IncludeDirectories[entry.DirIdx - 1]
-                       .getAsCString()
-                       .getValue();
+        dir_name =
+            llvm::dwarf::toString(
+                line_table->Prologue.IncludeDirectories[entry.DirIdx - 1])
+                .getValue();
     }
-    stack->push_back(SourceInfo(function_name, dir_name, file_name, start_line,
-                                line, discriminator));
+    stack->emplace_back(function_name, dir_name, file_name, start_line, line,
+                        discriminator);
     uint32_t col;
     FunctionDIE.getCallerFrame(file, line, col, discriminator);
   }
