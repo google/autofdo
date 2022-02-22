@@ -36,10 +36,10 @@ To build autofdo tool for gcc, no llvm installation is needed.
     - cmake -G Ninja -DCMAKE_INSTALL_PREFIX=. ../   # Note: "-DCMAKE_INSTALL_PREFIX=." must be used, because there is a bug in the basil cmakelist.
     - ninja
 
-  2.2.1 Build autofdo tools using customized built gcc
+  2.2.2 Build autofdo tools using customized built gcc
     - download gcc tarball, for example, gcc-11.2.0.tar.gz, and extract
     - download prerequisites by "cd gcc-release-11.2.0/; ./contrib/download_prerequisites"
-    - mkdir build ; cd build ; ../gcc-releases-gcc-11.2.0/configure \
+      mkdir build ; cd build ; ../gcc-releases-gcc-11.2.0/configure \
           --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu \
           --prefix=${HOME}/installs/gcc-11.2.0 \
           --enable-checking=release \
@@ -54,5 +54,4 @@ To build autofdo tool for gcc, no llvm installation is needed.
 
       mkdir -p build-with-gcc
       cd build-with-gcc
-      cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=. \
-        -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" ../autofdo
+      cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=. -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" ../autofdo
