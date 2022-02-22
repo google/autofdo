@@ -18,14 +18,14 @@ namespace {
 
 TEST(ProfileSymbolListTest, EmptyNameList) {
   SymbolMap map;
-  auto list = absl::make_unique<llvm::sampleprof::ProfileSymbolList>();
+  auto list = std::make_unique<llvm::sampleprof::ProfileSymbolList>();
   fillProfileSymbolList(list.get(), /*name_size_list=*/{}, &map);
   EXPECT_EQ(list->size(), 0);
 }
 
 TEST(ProfileSymbolListTest, Threshold0) {
   SymbolMap map;
-  auto list = absl::make_unique<llvm::sampleprof::ProfileSymbolList>();
+  auto list = std::make_unique<llvm::sampleprof::ProfileSymbolList>();
   fillProfileSymbolList(list.get(), /*name_size_list=*/{{"foo", 0}}, &map,
                         /*size_threshold_frac=*/0);
   EXPECT_EQ(list->size(), 0);
@@ -33,7 +33,7 @@ TEST(ProfileSymbolListTest, Threshold0) {
 
 TEST(ProfileSymbolListTest, Threshold100) {
   SymbolMap map;
-  auto list = absl::make_unique<llvm::sampleprof::ProfileSymbolList>();
+  auto list = std::make_unique<llvm::sampleprof::ProfileSymbolList>();
   fillProfileSymbolList(list.get(),
                         /*name_size_list=*/{{"foo", 10}}, &map,
                         /*size_threshold_frac=*/1.0);
@@ -42,7 +42,7 @@ TEST(ProfileSymbolListTest, Threshold100) {
 
 TEST(ProfileSymbolListTest, Threshold100Size0) {
   SymbolMap map;
-  auto list = absl::make_unique<llvm::sampleprof::ProfileSymbolList>();
+  auto list = std::make_unique<llvm::sampleprof::ProfileSymbolList>();
   fillProfileSymbolList(
       list.get(),
       /*name_size_list=*/{{"foo", 10}, {"bar", 20}, {"f", 0}, {"g", 0}}, &map,
@@ -53,7 +53,7 @@ TEST(ProfileSymbolListTest, Threshold100Size0) {
 
 TEST(ProfileSymbolListTest, Threshold001Size0) {
   SymbolMap map;
-  auto list = absl::make_unique<llvm::sampleprof::ProfileSymbolList>();
+  auto list = std::make_unique<llvm::sampleprof::ProfileSymbolList>();
   fillProfileSymbolList(
       list.get(),
       /*name_size_list=*/{{"foo", 10}, {"bar", 20}, {"f", 0}, {"g", 0}}, &map,

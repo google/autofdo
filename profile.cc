@@ -44,28 +44,26 @@ Profile::ProfileMaps *Profile::GetProfileMaps(uint64_t addr) {
 void Profile::AggregatePerFunctionProfile() {
   uint64_t start = symbol_map_->base_addr();
   const AddressCountMap *count_map = &sample_reader_->address_count_map();
-  for (const auto &addr_count : *count_map) {
-    ProfileMaps *maps = GetProfileMaps(addr_count.first + start);
+  for (const auto &[addr, count] : *count_map) {
+    ProfileMaps *maps = GetProfileMaps(addr + start);
     if (maps != nullptr) {
-      maps->address_count_map[addr_count.first + start] += addr_count.second;
+      maps->address_count_map[addr + start] += count;
     }
   }
   const RangeCountMap *range_map = &sample_reader_->range_count_map();
-  for (const auto &range_count : *range_map) {
-    ProfileMaps *maps = GetProfileMaps(range_count.first.first + start);
+  for (const auto &[range, count] : *range_map) {
+    ProfileMaps *maps = GetProfileMaps(range.first + start);
     if (maps != nullptr) {
-      maps->range_count_map[std::make_pair(range_count.first.first + start,
-                                           range_count.first.second + start)] +=
-          range_count.second;
+      maps->range_count_map[std::make_pair(range.first + start,
+                                           range.second + start)] += count;
     }
   }
   const BranchCountMap *branch_map = &sample_reader_->branch_count_map();
-  for (const auto &branch_count : *branch_map) {
-    ProfileMaps *maps = GetProfileMaps(branch_count.first.first + start);
+  for (const auto &[branch, count] : *branch_map) {
+    ProfileMaps *maps = GetProfileMaps(branch.first + start);
     if (maps != nullptr) {
-      maps->branch_count_map[std::make_pair(
-          branch_count.first.first + start,
-          branch_count.first.second + start)] += branch_count.second;
+      maps->branch_count_map[std::make_pair(branch.first + start,
+                                            branch.second + start)] += count;
     }
   }
 
@@ -80,19 +78,18 @@ uint64_t Profile::ProfileMaps::GetAggregatedCount() const {
   uint64_t ret = 0;
 
   if (!range_count_map.empty()) {
-    for (const auto &range_count : range_count_map) {
-      ret += range_count.second * (1 + range_count.first.second -
-                                   range_count.first.first);
+    for (const auto &[range, count] : range_count_map) {
+      ret += count * (1 + range.second - range.first);
     }
   } else {
-    for (const auto &addr_count : address_count_map) {
-      ret += addr_count.second;
+    for (const auto &[addr, count] : address_count_map) {
+      ret += count;
     }
   }
   return ret;
 }
 
-void Profile::ProcessPerFunctionProfile(std::string func_name,
+void Profile::ProcessPerFunctionProfile(const std::string &func_name,
                                         const ProfileMaps &maps) {
   InstructionMap inst_map(addr2line_, symbol_map_);
   inst_map.BuildPerFunctionInstructionMap(func_name, maps.start_addr,
@@ -105,13 +102,10 @@ void Profile::ProcessPerFunctionProfile(std::string func_name,
       LOG(WARNING) << "use_lbr was enabled but range_count_map was empty!";
       return;
     }
-    for (const auto &range_count : maps.range_count_map) {
-      for (InstructionMap::InstMap::const_iterator iter =
-               inst_map.inst_map().find(range_count.first.first);
-           iter != inst_map.inst_map().end()
-               && iter->first <= range_count.first.second;
-           ++iter) {
-        map[iter->first] += range_count.second;
+    for (const auto &[range, count] : maps.range_count_map) {
+      for (uint64_t addr = range.first;
+           inst_map.lookup(addr) && addr <= range.second; ++addr) {
+        map[addr] += count;
       }
     }
     map_ptr = &map;
@@ -119,48 +113,37 @@ void Profile::ProcessPerFunctionProfile(std::string func_name,
     map_ptr = &maps.address_count_map;
   }
 
-  for (const auto &address_count : *map_ptr) {
-    InstructionMap::InstMap::const_iterator iter =
-        inst_map.inst_map().find(address_count.first);
-    if (iter == inst_map.inst_map().end()) {
-      continue;
-    }
-    const InstructionMap::InstInfo *info = iter->second;
+  for (const auto &[address, count] : *map_ptr) {
+    const InstructionMap::InstInfo *info = inst_map.lookup(address);
     if (info == nullptr) {
       continue;
     }
     if (!info->source_stack.empty()) {
-      symbol_map_->AddSourceCount(
-          func_name, info->source_stack, address_count.second, 0,
-          info->source_stack[0].DuplicationFactor(), SymbolMap::PERFDATA);
+      symbol_map_->AddSourceCount(func_name, info->source_stack, count, 0,
+                                  info->source_stack[0].DuplicationFactor(),
+                                  SymbolMap::PERFDATA);
     }
   }
 
-  for (const auto &branch_count : maps.branch_count_map) {
-    InstructionMap::InstMap::const_iterator iter =
-        inst_map.inst_map().find(branch_count.first.first);
-    if (iter == inst_map.inst_map().end()) {
-      continue;
-    }
-    const InstructionMap::InstInfo *info = iter->second;
+  for (const auto &[branch, count] : maps.branch_count_map) {
+    const InstructionMap::InstInfo *info = inst_map.lookup(branch.first);
     if (info == nullptr) {
       continue;
     }
     const std::string *callee =
-        symbol_map_->GetSymbolNameByStartAddr(branch_count.first.second);
+        symbol_map_->GetSymbolNameByStartAddr(branch.second);
     if (!callee) {
       continue;
     }
     if (symbol_map_->map().count(*callee)) {
-      symbol_map_->AddSymbolEntryCount(*callee, branch_count.second);
+      symbol_map_->AddSymbolEntryCount(*callee, count);
       symbol_map_->AddIndirectCallTarget(func_name, info->source_stack, *callee,
-                                         branch_count.second,
-                                         SymbolMap::PERFDATA);
+                                         count, SymbolMap::PERFDATA);
     }
   }
 
-  for (const auto &addr_count : *map_ptr) {
-    global_addr_count_map_[addr_count.first] = addr_count.second;
+  for (const auto &[addr, count] : *map_ptr) {
+    global_addr_count_map_[addr] = count;
   }
 }
 
@@ -170,23 +153,17 @@ void Profile::ComputeProfile() {
   AggregatePerFunctionProfile();
 
   if (absl::GetFlag(FLAGS_llc_misses)) {
-    for (const auto &symbol_profile : symbol_profile_maps_) {
-      const auto func_name = symbol_profile.first;
-      const auto &maps = *symbol_profile.second;
-
+    for (const auto &[func_name, maps] : symbol_profile_maps_) {
       std::map<uint64_t, uint64_t> counts;
-      for (const auto &address_count : maps.address_count_map) {
-        auto pc = address_count.first;
-        DCHECK(maps.start_addr <= pc && pc <= maps.end_addr);
+      for (const auto &[pc, count] : maps->address_count_map) {
+        DCHECK(maps->start_addr <= pc && pc <= maps->end_addr);
         if (!symbol_map_->EnsureEntryInFuncForSymbol(func_name, pc))
           continue;
-        counts[pc] += address_count.second;
+        counts[pc] += count;
       }
 
-      CHECK(maps.branch_count_map.empty());
-      for (const auto pair : counts) {
-        uint64_t pc = pair.first;
-        uint64_t count = pair.second;
+      CHECK(maps->branch_count_map.empty());
+      for (const auto &[pc, count] : counts) {
         SourceStack stack;
         symbol_map_->get_addr2line()->GetInlineStack(pc, &stack);
         symbol_map_->AddIndirectCallTarget(func_name, stack, "__llc_misses__",
@@ -227,8 +204,8 @@ void Profile::ComputeProfile() {
 }
 
 Profile::~Profile() {
-  for (auto &symbol_maps : symbol_profile_maps_) {
-    delete symbol_maps.second;
+  for (auto &[symbol, maps] : symbol_profile_maps_) {
+    delete maps;
   }
 }
 }  // namespace devtools_crosstool_autofdo

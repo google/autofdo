@@ -1,35 +1,82 @@
 #include "llvm_propeller_whole_program_info.h"
 
 #include <algorithm>
+#include <iterator>
 #include <memory>
 #include <numeric>
+#include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
-#include "llvm_propeller_bbsections.h"
+#include "llvm_propeller_abstract_whole_program_info.h"
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_mock_whole_program_info.h"
 #include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_options_builder.h"
+#include "perfdata_reader.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "third_party/abseil/absl/container/flat_hash_set.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
+#include "llvm/Object/ELFTypes.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/Path.h"
 
 #define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 
 #define FLAGS_test_srcdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 
+#define ASSERT_OK(exp) ASSERT_TRUE((exp).ok())
+#define EXPECT_OK(exp) EXPECT_TRUE((exp).ok())
+
 namespace {
 
+using ::devtools_crosstool_autofdo::BranchDirection;
+using ::devtools_crosstool_autofdo::CfgCreationMode;
 using ::devtools_crosstool_autofdo::CFGEdge;
 using ::devtools_crosstool_autofdo::CFGNode;
 using ::devtools_crosstool_autofdo::ControlFlowGraph;
 using ::devtools_crosstool_autofdo::MockPropellerWholeProgramInfo;
+using ::devtools_crosstool_autofdo::MultiStatusProvider;
 using ::devtools_crosstool_autofdo::PropellerOptions;
 using ::devtools_crosstool_autofdo::PropellerOptionsBuilder;
 using ::devtools_crosstool_autofdo::PropellerWholeProgramInfo;
-using ::devtools_crosstool_autofdo::SymbolEntry;
+
+using ::testing::_;
+using ::testing::AllOf;
+using ::testing::Contains;
+using ::testing::ElementsAre;
+using ::testing::Field;
+using ::testing::FieldsAre;
+using ::testing::IsEmpty;
+using ::testing::Key;
+using ::testing::Not;
+using ::testing::Optional;
+using ::testing::Pair;
+using ::testing::Pointee;
+using ::testing::ResultOf;
+using ::testing::UnorderedElementsAre;
+
+using ::llvm::object::BBAddrMap;
+
+MATCHER_P2(BbAddrMapIs, function_address_matcher, bb_entries_matcher, "") {
+  return ExplainMatchResult(function_address_matcher, arg.Addr,
+                            result_listener) &&
+         ExplainMatchResult(bb_entries_matcher, arg.BBEntries, result_listener);
+}
+
+MATCHER_P6(
+    CfgNodeFieldsAre, symbol_ordinal, address, bb_index, freq, size, cfg,
+    absl::StrFormat("%s fields {symbol_ordinal: %llu, address: 0x%llX, "
+                    "bb_index: %d, frequency: %llu, size: 0x%llX, CFG: %p}",
+                    negation ? "doesn't have" : "has", symbol_ordinal, address,
+                    bb_index, freq, size, cfg)) {
+  return arg.symbol_ordinal() == symbol_ordinal && arg.addr() == address &&
+         arg.bb_index() == bb_index && arg.freq() == freq &&
+         arg.size() == size && arg.cfg() == cfg;
+}
 
 static std::string GetAutoFdoTestDataFilePath(const std::string &filename) {
   const std::string testdata_filepath =
@@ -37,6 +84,28 @@ static std::string GetAutoFdoTestDataFilePath(const std::string &filename) {
       "/testdata/" +
       filename;
   return testdata_filepath;
+}
+
+static absl::flat_hash_set<llvm::StringRef> GetAllFunctionNamesFromSymtab(
+    const typename PropellerWholeProgramInfo::SymTabTy &symtab) {
+  absl::flat_hash_set<llvm::StringRef> all_functions;
+  for (const auto &symtab_entry : symtab)
+    for (const auto &symref : symtab_entry.second)
+      all_functions.insert(
+          llvm::cantFail(llvm::object::ELFSymbolRef(symref).getName()));
+  return all_functions;
+}
+
+static absl::flat_hash_map<llvm::StringRef, BBAddrMap>
+GetBBAddrMapByFunctionName(const PropellerWholeProgramInfo &wpi) {
+  absl::flat_hash_map<llvm::StringRef, BBAddrMap> bb_addr_map_by_func_name;
+  for (const auto &[function_index, function_aliases] :
+       wpi.function_index_to_names_map()) {
+    for (llvm::StringRef alias : function_aliases)
+      bb_addr_map_by_func_name.insert(
+          {alias, wpi.bb_addr_map()[function_index]});
+  }
+  return bb_addr_map_by_func_name;
 }
 
 TEST(LlvmPropellerWholeProgramInfo, CreateCFG) {
@@ -51,13 +120,14 @@ TEST(LlvmPropellerWholeProgramInfo, CreateCFG) {
           .SetClusterOutName("dummy.out")
           .SetProfiledBinaryName("propeller_sample.bin"));
 
-  auto wpi = PropellerWholeProgramInfo::Create(options);
-  ASSERT_TRUE(wpi.get());
-
-  ASSERT_TRUE(wpi->CreateCfgs());
-
+  MultiStatusProvider status("generate profile");
+  auto wpi = PropellerWholeProgramInfo::Create(options, &status);
+  ASSERT_NE(wpi, nullptr);
+  EXPECT_EQ(status.GetProgress(), 1);
+  ASSERT_OK(wpi->CreateCfgs(CfgCreationMode::kAllFunctions));
+  EXPECT_TRUE(status.IsDone());
   // Test resources are released after CreateCFG.
-  EXPECT_TRUE(wpi->binary_mmaps().empty());
+  EXPECT_THAT(wpi->binary_mmaps(), IsEmpty());
 
   const ControlFlowGraph *main = wpi->FindCfg("main");
   EXPECT_TRUE(main);
@@ -88,14 +158,14 @@ TEST(LlvmPropellerMockWholeProgramInfo, CreateCFGFromProto) {
   const PropellerOptions options(
       PropellerOptionsBuilder().AddPerfNames(protobuf_input));
   MockPropellerWholeProgramInfo wpi(options);
-  ASSERT_TRUE(wpi.CreateCfgs());
+  ASSERT_OK(wpi.CreateCfgs(CfgCreationMode::kAllFunctions));
 
   EXPECT_GT(wpi.cfgs().size(), 10);
 
   // Check some inter-func edge is valid.
   const ControlFlowGraph *main = wpi.FindCfg("main");
   EXPECT_NE(main, (nullptr));
-  EXPECT_FALSE(main->inter_edges().empty());
+  EXPECT_THAT(main->inter_edges(), Not(IsEmpty()));
   CFGEdge &edge = *(main->inter_edges().front());
   EXPECT_EQ(edge.src()->cfg(), main);
   EXPECT_NE(edge.sink()->cfg(), main);
@@ -115,6 +185,7 @@ TEST(LlvmPropellerWholeProgramInfoBbAddrMapTest, BbAddrMapExist) {
       PropellerOptionsBuilder().SetBinaryName(binary).SetClusterOutName(
           "dummy.out")));
   ASSERT_NE(nullptr, wpi) << "Could not initialize whole program info";
+  EXPECT_OK(wpi->ReadBinaryInfo());
 }
 
 TEST(LlvmPropellerWholeProgramInfoBbAddrTest, BbAddrMapReadSymbolTable) {
@@ -126,7 +197,7 @@ TEST(LlvmPropellerWholeProgramInfoBbAddrTest, BbAddrMapReadSymbolTable) {
       PropellerOptionsBuilder().SetBinaryName(binary).SetClusterOutName(
           "dummy.out")));
   ASSERT_NE(nullptr, wpi) << "Could not initialize whole program info";
-  wpi->ReadSymbolTable();
+  ASSERT_OK(wpi->ReadBinaryInfo());
   auto &symtab = wpi->symtab();
   bool found = false;
   for (auto &p : symtab) {
@@ -147,8 +218,9 @@ TEST(LlvmPropellerWholeProgramInfoBbAddrMapTest, SkipEntryIfSymbolNotInSymtab) {
       PropellerOptionsBuilder().SetBinaryName(binary).SetClusterOutName(
           "dummy.out")));
   ASSERT_NE(nullptr, wpi) << "Could not initialize whole program info";
-  wpi->ReadSymbolTable();
-  ASSERT_TRUE(wpi->ReadBbAddrMapSection());
+  ASSERT_OK(wpi->ReadBinaryInfo());
+  EXPECT_THAT(wpi->SelectFunctions(CfgCreationMode::kAllFunctions, nullptr),
+              Not(IsEmpty()));
   EXPECT_GT(wpi->stats().bbaddrmap_function_does_not_have_symtab_entry, 1);
 }
 
@@ -161,32 +233,41 @@ TEST(LlvmPropellerWholeProgramInfoBbAddrMapTest, ReadBbAddrMap) {
       PropellerOptionsBuilder().SetBinaryName(binary).SetClusterOutName(
           "dummy.out")));
   ASSERT_NE(nullptr, wpi) << "Could not initialize whole program info";
-  wpi->ReadSymbolTable();
-  ASSERT_TRUE(wpi->ReadBbAddrMapSection());
-  EXPECT_GT(wpi->bb_addr_map().at("compute_flag").size(), 0);
-  SymbolEntry *fsym = wpi->bb_addr_map().at("compute_flag").front()->func_ptr;
-  ASSERT_NE(nullptr, fsym);
-  EXPECT_TRUE(fsym->IsFunction());
-  EXPECT_EQ(fsym->ordinal + 1,
-            wpi->bb_addr_map().at("compute_flag")[0]->ordinal);
-  uint64_t last_ordinal = fsym->ordinal;
-  for (auto *sym : wpi->bb_addr_map().at("compute_flag")) {
-    EXPECT_TRUE(sym->IsBasicBlock());
-    EXPECT_EQ(sym->func_ptr, fsym);
-    EXPECT_EQ(last_ordinal, sym->ordinal - 1);
-    last_ordinal = sym->ordinal;
-  }
-  // The last bb of compute_flag_symbol function is a return block.
-  EXPECT_TRUE(wpi->bb_addr_map().at("compute_flag").back()->IsReturnBlock());
-
-  // Check ordinals are monotonically increasing.
-  uint64_t prev_ordinal = 0;
-  for (auto &l1 : wpi->address_map()) {
-    for (const std::unique_ptr<SymbolEntry> &sym : l1.second) {
-      EXPECT_LT(prev_ordinal, sym->ordinal);
-      prev_ordinal = sym->ordinal;
-    }
-  }
+  ASSERT_OK(wpi->ReadBinaryInfo());
+  EXPECT_THAT(wpi->SelectFunctions(CfgCreationMode::kAllFunctions, nullptr),
+              Not(IsEmpty()));
+  auto bb_addr_map_by_func_name = GetBBAddrMapByFunctionName(*wpi);
+  EXPECT_THAT(bb_addr_map_by_func_name,
+              Contains(Pair("compute_flag",
+                            Field(&BBAddrMap::BBEntries, Not(IsEmpty())))));
+  EXPECT_THAT(
+      GetBBAddrMapByFunctionName(*wpi),
+      UnorderedElementsAre(
+          Pair("main",
+               FieldsAre(0x11e0,
+                         ElementsAre(
+                             FieldsAre(0x0, 0x30, false, false, false, false),
+                             FieldsAre(0x30, 0xD, false, false, false, false),
+                             FieldsAre(0x3D, 0x25, false, false, false, false),
+                             FieldsAre(0x62, 0x2E, false, false, false, false),
+                             FieldsAre(0x90, 0x1D, false, false, false, false),
+                             FieldsAre(0xAD, 0x37, false, false, false, false),
+                             FieldsAre(0xE4, 0x5, false, false, false, false),
+                             FieldsAre(0xE9, 0xE, false, false, false, false),
+                             FieldsAre(0xF7, 0x8, true, false, false, false)))),
+          Pair("sample1_func",
+               FieldsAre(0x11D0, ElementsAre(FieldsAre(0x0, 0xB, true, false,
+                                                       false, false)))),
+          Pair("compute_flag",
+               FieldsAre(0x1190,
+                         ElementsAre(
+                             FieldsAre(0x0, 0x1B, false, false, false, false),
+                             FieldsAre(0x1B, 0xE, false, false, false, false),
+                             FieldsAre(0x29, 0x7, false, false, false, false),
+                             FieldsAre(0x30, 0x5, true, false, false, false)))),
+          Pair("this_is_very_code",
+               FieldsAre(0x1130, ElementsAre(FieldsAre(0x0, 0x5d, true, false,
+                                                       false, false))))));
 }
 
 TEST(LlvmPropellerWholeProgramInfoBbInfoTest, CreateCfgsFromBbInfo) {
@@ -199,22 +280,20 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, CreateCfgsFromBbInfo) {
           .SetProfiledBinaryName("propeller_sample.bin"));
   auto whole_program_info = PropellerWholeProgramInfo::Create(options);
   ASSERT_NE(whole_program_info, nullptr);
-  ASSERT_TRUE(whole_program_info->CreateCfgs());
+  ASSERT_OK(whole_program_info->CreateCfgs(CfgCreationMode::kAllFunctions));
   auto &cfgs = whole_program_info->cfgs();
-  auto ii = cfgs.find("main");
-  EXPECT_TRUE(ii != cfgs.end());
-  const ControlFlowGraph &main_cfg = *(ii->second);
-  EXPECT_GT(main_cfg.nodes().size(), 1);
-  CFGNode *entry = main_cfg.nodes().begin()->get();
-  SymbolEntry *main_sym =
-      whole_program_info->bb_addr_map().at("main").front()->func_ptr;
-  // "main_sym" is a function symbol, and function symbol does not correspond to
-  // any CFGNode. The first CFGNode of a ControlFlowGraph is the entry node,
-  // which represents the first basic block symbol of a functon symbol.
-  EXPECT_EQ(main_sym->ordinal, entry->symbol_ordinal() - 1);
-  EXPECT_EQ(main_sym->func_ptr, main_sym);
-  // Function's size > entry bb size.
-  EXPECT_GT(main_sym->size, entry->size());
+  ASSERT_THAT(cfgs, Contains(Pair("main", _)));
+  const ControlFlowGraph &main_cfg = *cfgs.at("main");
+  EXPECT_THAT(
+      main_cfg.nodes(),
+      ElementsAre(
+          Pointee(CfgNodeFieldsAre(6, 0x11E0, 0, 1, 0x30, &main_cfg)),
+          Pointee(CfgNodeFieldsAre(7, 0x1210, 1, 22714, 0xD, &main_cfg)),
+          Pointee(CfgNodeFieldsAre(8, 0x121D, 2, 23039, 0x25, &main_cfg)),
+          Pointee(CfgNodeFieldsAre(9, 0x1242, 3, 0, 0x6D, &main_cfg)),
+          Pointee(CfgNodeFieldsAre(10, 0x1270, 4, 21603, 0x1D, &main_cfg)),
+          Pointee(CfgNodeFieldsAre(12, 0x12C4, 6, 21980, 0x5, &main_cfg)),
+          Pointee(CfgNodeFieldsAre(13, 0x12C9, 7, 22714, 0xE, &main_cfg))));
 }
 
 TEST(LlvmPropellerWholeProgramInfoBbInfoTest, CheckStatsSanity) {
@@ -227,13 +306,11 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, CheckStatsSanity) {
           .SetProfiledBinaryName("propeller_sample.bin"));
   auto whole_program_info = PropellerWholeProgramInfo::Create(options);
   ASSERT_NE(whole_program_info, nullptr);
-  ASSERT_TRUE(whole_program_info->CreateCfgs());
+  ASSERT_OK(whole_program_info->CreateCfgs(CfgCreationMode::kAllFunctions));
   EXPECT_GT(whole_program_info->stats().cfgs_created, 3);
   EXPECT_GT(whole_program_info->stats().edges_created, 3);
   EXPECT_GT(whole_program_info->stats().nodes_created, 8);
-  EXPECT_GT(whole_program_info->stats().syms_created, 10);
   EXPECT_GT(whole_program_info->stats().binary_mmap_num, 1);
-  EXPECT_EQ(whole_program_info->stats().dropped_symbols, 0);
   EXPECT_EQ(whole_program_info->stats().duplicate_symbols, 0);
 }
 
@@ -265,7 +342,7 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, TestMultiplePerfDataFiles) {
     std::unique_ptr<PropellerWholeProgramInfo> wpi =
         PropellerWholeProgramInfo::Create(options);
     EXPECT_NE(wpi.get(), nullptr);
-    EXPECT_TRUE(wpi->CreateCfgs());
+    EXPECT_OK(wpi->CreateCfgs(CfgCreationMode::kAllFunctions));
     return wpi;
   };
 
@@ -311,7 +388,7 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, TestMultiplePerfDataFiles) {
   // "if (argc > 1) {".
 
   // edges constructed from perf1 differs from those constructed from perf2.
-  EXPECT_FALSE(sym_diff.empty());
+  EXPECT_THAT(sym_diff, Not(IsEmpty()));
 
   std::set<std::pair<uint64_t, uint64_t>> union12;
   std::set_union(edge_set1.begin(), edge_set1.end(), edge_set2.begin(),
@@ -335,23 +412,6 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, TestMultiplePerfDataFiles) {
   EXPECT_EQ(weight1 + weight2, weight12);
 }
 
-TEST(LlvmPropellerWholeProgramInfoBbInfoTest, TestDroppingInvalidDataFile) {
-  const PropellerOptions options = PropellerOptions(
-      PropellerOptionsBuilder()
-          .SetBinaryName(GetAutoFdoTestDataFilePath("propeller_sample_1.bin"))
-          .AddPerfNames(
-              GetAutoFdoTestDataFilePath("propeller_sample_1.perfdata1"))
-          .AddPerfNames(
-              GetAutoFdoTestDataFilePath("propeller_sample_1.perfdata")));
-  std::unique_ptr<PropellerWholeProgramInfo> wpi =
-      PropellerWholeProgramInfo::Create(options);
-  ASSERT_NE(wpi.get(), nullptr);
-  EXPECT_TRUE(wpi->CreateCfgs());
-  // "propeller_sample.perfdata" is not a valid perfdata file for
-  // "propeller_sample_1.bin", so wpi only processes 1 profile.
-  EXPECT_EQ(wpi->stats().perf_file_parsed, 1);
-}
-
 TEST(LlvmPropellerWholeProgramInfoBbInfoTest, DuplicateSymbolsDropped) {
   const PropellerOptions options = PropellerOptions(
       PropellerOptionsBuilder()
@@ -359,15 +419,17 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, DuplicateSymbolsDropped) {
               GetAutoFdoTestDataFilePath("propeller_duplicate_symbols.bin")));
   std::unique_ptr<PropellerWholeProgramInfo> wpi =
         PropellerWholeProgramInfo::Create(options);
-    EXPECT_NE(wpi.get(), nullptr);
+  ASSERT_NE(wpi.get(), nullptr);
+  ASSERT_OK(wpi->ReadBinaryInfo());
 
-  EXPECT_TRUE(wpi->PopulateSymbolMap());
-  const PropellerWholeProgramInfo::BbAddrMapTy &bb_addr_map =
-      wpi->bb_addr_map();
-  // Not a single instance of function that have duplicate names are kept.
-  EXPECT_EQ(bb_addr_map.find("sample1_func"), bb_addr_map.end());
-  // Other functions are not affected.
-  EXPECT_NE(bb_addr_map.find("compute_flag"), bb_addr_map.end());
+  EXPECT_THAT(wpi->SelectFunctions(CfgCreationMode::kAllFunctions, nullptr),
+              Not(IsEmpty()));
+  // Multiple symbols have the "sample1_func1" name hence none of them will be
+  // kept. Other functions are not affected.
+  EXPECT_THAT(
+      GetBBAddrMapByFunctionName(*wpi),
+      AllOf(Contains(Pair("sample1_func", BbAddrMapIs(_, IsEmpty()))),
+            Contains(Pair("compute_flag", BbAddrMapIs(_, Not(IsEmpty()))))));
   EXPECT_GE(wpi->stats().duplicate_symbols, 1);
 }
 
@@ -378,18 +440,18 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, NoneDotTextSymbolsDropped) {
               GetAutoFdoTestDataFilePath("propeller_sample_section.bin")));
   std::unique_ptr<PropellerWholeProgramInfo> wpi =
         PropellerWholeProgramInfo::Create(options);
-    EXPECT_NE(wpi.get(), nullptr);
+  EXPECT_NE(wpi.get(), nullptr);
+  ASSERT_OK(wpi->ReadBinaryInfo());
 
-  EXPECT_TRUE(wpi->PopulateSymbolMap());
-  const PropellerWholeProgramInfo::BbAddrMapTy &bb_addr_map =
-      wpi->bb_addr_map();
+  EXPECT_THAT(wpi->SelectFunctions(CfgCreationMode::kAllFunctions, nullptr),
+              Not(IsEmpty()));
   // "anycall" is inside ".anycall.anysection", so it should not be processed by
-  // propeller.
-  EXPECT_EQ(bb_addr_map.find("anycall"), bb_addr_map.end());
-  // ".text.unlikely" function symbols are processed.
-  EXPECT_NE(bb_addr_map.find("unlikelycall"), bb_addr_map.end());
-  // Other functions are not affected.
-  EXPECT_NE(bb_addr_map.find("compute_flag"), bb_addr_map.end());
+  // propeller. ".text.unlikely" function symbols are processed. Other functions
+  // are not affected.
+  EXPECT_THAT(
+      GetBBAddrMapByFunctionName(*wpi),
+      AllOf(Contains(Pair("anycall", BbAddrMapIs(_, IsEmpty()))),
+            Contains(Key("unlikelycall")), Contains(Key("compute_flag"))));
 }
 
 TEST(LlvmPropellerWholeProgramInfo, DuplicateUniqNames) {
@@ -399,16 +461,193 @@ TEST(LlvmPropellerWholeProgramInfo, DuplicateUniqNames) {
               GetAutoFdoTestDataFilePath("duplicate_unique_names.out")));
   std::unique_ptr<PropellerWholeProgramInfo> wpi =
         PropellerWholeProgramInfo::Create(options);
-  EXPECT_NE(wpi.get(), nullptr);
-  wpi->CreateCfgs();
+  ASSERT_NE(wpi.get(), nullptr);
+  ASSERT_OK(wpi->ReadBinaryInfo());
+
+  EXPECT_THAT(wpi->SelectFunctions(CfgCreationMode::kAllFunctions, nullptr),
+              Not(IsEmpty()));
   // We have 3 duplicated symbols, the last 2 are marked as duplicate_symbols.
   // 11: 0000000000001880     6 FUNC    LOCAL  DEFAULT   14
   //                     _ZL3foov.__uniq.148988607218547176184555965669372770545
-  // 13: 00000000000018a0     6 FUNC    LOCAL  DEFAULT   14
+  // 13: 00000000000018a0     6 FUNC    LOCAL  DEFAULT   1
   //                     _ZL3foov.__uniq.148988607218547176184555965669372770545
   // 15: 00000000000018f0     6 FUNC    LOCAL  DEFAULT   14
   //                     _ZL3foov.__uniq.148988607218547176184555965669372770545
   EXPECT_EQ(wpi->stats().duplicate_symbols, 2);
 }
 
+TEST(LlvmPropellerWholeProgramInfo, CreateCfgsOnlyForHotFunctions) {
+  const PropellerOptions options = PropellerOptions(
+      PropellerOptionsBuilder()
+          .SetKeepFrontendIntermediateData(true)  // need "symtab_" for testing.
+          .SetBinaryName(GetAutoFdoTestDataFilePath("propeller_sample_1.bin"))
+          .AddPerfNames(
+              GetAutoFdoTestDataFilePath("propeller_sample_1.perfdata1")));
+  std::unique_ptr<PropellerWholeProgramInfo> wpi =
+        PropellerWholeProgramInfo::Create(options);
+  ASSERT_NE(wpi.get(), nullptr);
+  ASSERT_OK(wpi->CreateCfgs(CfgCreationMode::kOnlyHotFunctions));
+
+  const PropellerWholeProgramInfo::CFGMapTy &cfgs = wpi->cfgs();
+  // "sample1_func" is cold, and should not have CFG.
+  EXPECT_THAT(cfgs, Not(Contains(Pair("sample1_func", _))));
+  // But "sample1_func" exists in symtab_.
+  EXPECT_THAT(GetAllFunctionNamesFromSymtab(wpi->symtab()),
+              Contains("sample1_func"));
+  // "main" is hot function.
+  EXPECT_THAT(cfgs, Contains(Pair("main", _)));
+}
+
+TEST(LlvmPropellerWholeProgramInfo, CheckNoHotFunctionsInSymtab) {
+  const PropellerOptions options = PropellerOptions(
+      PropellerOptionsBuilder()
+          .SetKeepFrontendIntermediateData(false)
+          .SetBinaryName(GetAutoFdoTestDataFilePath("propeller_sample_1.bin"))
+          .AddPerfNames(
+              GetAutoFdoTestDataFilePath("propeller_sample_1.perfdata1")));
+  std::unique_ptr<PropellerWholeProgramInfo> wpi =
+        PropellerWholeProgramInfo::Create(options);
+  ASSERT_NE(wpi.get(), nullptr);
+  auto pd = wpi->ParsePerfData();
+  ASSERT_OK(pd);
+  devtools_crosstool_autofdo::LBRAggregation lbr_aggregation = std::move(pd.value());
+  ASSERT_OK(wpi->ReadBinaryInfo());
+
+  wpi->DropNonSelectedFunctions(wpi->CalculateHotFunctions(lbr_aggregation));
+
+  // "sample1_func" is cold, and should not exists in symtab.
+  for (const auto &i : wpi->symtab())
+    for (llvm::object::SymbolRef sym : i.second)
+      EXPECT_NE(llvm::cantFail(sym.getName()), "sample1_func");
+  // "main" is hot function, check it is in symtab.
+  bool found_main = false;
+  for (const auto &i : wpi->symtab())
+    for (llvm::object::SymbolRef sym : i.second)
+      found_main |= llvm::cantFail(sym.getName()) == "main";
+  EXPECT_TRUE(found_main);
+  EXPECT_THAT(GetBBAddrMapByFunctionName(*wpi),
+              AllOf(Contains(Pair("main", BbAddrMapIs(_, Not(IsEmpty())))),
+                    Contains(Pair("sample1_func", BbAddrMapIs(_, IsEmpty())))));
+}
+
+// Generates 2 cfg sets, one with "only_for_hot_functions" set to true, the
+// other false and compare the two cfg sets.
+TEST(LlvmPropellerWholeProgramInfo,
+     OnlyGenerateCfgsForHotFunctionsOptimizationShouldNotChangeProfile) {
+  const std::string binary_name =
+      GetAutoFdoTestDataFilePath("propeller_clang_labels.binary");
+  const std::string profile_name =
+      GetAutoFdoTestDataFilePath("propeller_clang_labels.perfdata");
+  const PropellerOptions options =
+      PropellerOptions(PropellerOptionsBuilder()
+                           .SetBinaryName(binary_name)
+                           .AddPerfNames(profile_name)
+                           .SetProfiledBinaryName("clang-12"));
+
+  std::unique_ptr<PropellerWholeProgramInfo> wpi1 =
+      PropellerWholeProgramInfo::Create(options);
+  EXPECT_OK(wpi1->CreateCfgs(CfgCreationMode::kOnlyHotFunctions));
+  std::vector<ControlFlowGraph *> hot_cfgs1 = wpi1->GetHotCfgs();
+
+  std::unique_ptr<PropellerWholeProgramInfo> wpi2 =
+      PropellerWholeProgramInfo::Create(options);
+  EXPECT_OK(wpi2->CreateCfgs(CfgCreationMode::kOnlyHotFunctions));
+  std::vector<ControlFlowGraph *> hot_cfgs2 = wpi2->GetHotCfgs();
+
+  auto compare_node_ptr_attribtues = [](const CFGNode *n1, const CFGNode *n2) {
+    return n1->size() == n2->size() && n1->addr() == n2->addr() &&
+           n1->is_entry() == n2->is_entry() && n1->freq() == n2->freq();
+  };
+
+  auto compare_node_attribtues = [&compare_node_ptr_attribtues](
+                                     const std::unique_ptr<CFGNode> &n1,
+                                     const std::unique_ptr<CFGNode> &n2) {
+    return compare_node_ptr_attribtues(n1.get(), n2.get());
+  };
+
+  auto compare_edge = [&compare_node_ptr_attribtues](const CFGEdge *e1,
+                                                     const CFGEdge *e2) {
+    return compare_node_ptr_attribtues(e1->src(), e2->src()) &&
+           compare_node_ptr_attribtues(e1->sink(), e2->sink()) &&
+           e1->weight() == e2->weight() && e1->IsCall() == e2->IsCall() &&
+           e1->IsReturn() == e2->IsReturn() &&
+           e1->IsFallthrough() == e2->IsFallthrough();
+  };
+
+  auto compare_edges = [&compare_edge](const std::vector<CFGEdge *> &v1,
+                                       const std::vector<CFGEdge *> &v2) {
+    if (v1.size() != v2.size()) return false;
+    // Sort edges by src nodes's addresses and compare them one by one.
+    auto edge_sorter = [](CFGEdge *e1, CFGEdge *e2) {
+      return e1->src()->addr() < e2->src()->addr();
+    };
+    std::vector<CFGEdge *> u1 = v1;
+    std::vector<CFGEdge *> u2(v2);
+    std::sort(u1.begin(), u1.end(), edge_sorter);
+    std::sort(u2.begin(), u2.end(), edge_sorter);
+    return absl::c_equal(u1, u2, compare_edge);
+  };
+
+  auto compare_node = [&compare_node_attribtues, &compare_edges](
+                          const std::unique_ptr<CFGNode> &n1,
+                          const std::unique_ptr<CFGNode> &n2) {
+    return compare_node_attribtues(n1, n2) &&
+           compare_edges(n1->inter_ins(), n2->inter_ins()) &&
+           compare_edges(n1->inter_outs(), n2->inter_outs()) &&
+           compare_edges(n1->intra_ins(), n2->intra_ins()) &&
+           compare_edges(n1->intra_outs(), n2->intra_outs());
+  };
+
+  auto compare_cfg = [&compare_node](ControlFlowGraph *g1,
+                                     ControlFlowGraph *g2) {
+    if (g1->nodes().size() != g2->nodes().size())
+      return false;
+    if (g1->GetEntryNode()->addr() != g2->GetEntryNode()->addr()) return false;
+    // Nodes are already sorted via offset, compare them one by one.
+    return absl::c_equal(g1->nodes(), g2->nodes(), compare_node);
+  };
+
+  EXPECT_EQ(hot_cfgs1.size(), hot_cfgs2.size());
+  EXPECT_TRUE(absl::c_equal(hot_cfgs1, hot_cfgs2, compare_cfg));
+}
+
+TEST(LlvmPropellerWholeProgramInfo, FindBbHandleIndexUsingBinaryAddress) {
+  const PropellerOptions options = PropellerOptions(
+      PropellerOptionsBuilder()
+          .AddPerfNames(
+              GetAutoFdoTestDataFilePath("propeller_clang_labels.perfdata"))
+          .SetBinaryName(
+              GetAutoFdoTestDataFilePath("propeller_clang_labels.binary"))
+          .SetProfiledBinaryName("clang-12")
+          .SetKeepFrontendIntermediateData(true));
+  std::unique_ptr<PropellerWholeProgramInfo> wpi =
+      PropellerWholeProgramInfo::Create(options);
+  ASSERT_OK(wpi->ReadBinaryInfo());
+  EXPECT_THAT(wpi->SelectFunctions(CfgCreationMode::kAllFunctions, nullptr),
+              Not(IsEmpty()));
+  // At address 0x000001b3d0a8, we have the following symbols all of size zero.
+  //   BB.447 BB.448 BB.449 BB.450 BB.451 BB.452 BB.453 BB.454 BB.455
+  //   BB.456 BB.457 BB.458 BB.459 BB.460
+
+  auto bb_index_from_handle_index = [&](int index) {
+    return wpi->bb_handles()[index].bb_index;
+  };
+  EXPECT_THAT(
+      wpi->FindBbHandleIndexUsingBinaryAddress(0x1b3d0a8, BranchDirection::kTo),
+      Optional(ResultOf(bb_index_from_handle_index, 447)));
+  // At address 0x000001b3f5b0: we have the following symbols:
+  //   Func<_ZN5clang18CompilerInvocation14CreateFromArgs...> BB.0 {size: 0x9a}
+  EXPECT_THAT(
+      wpi->FindBbHandleIndexUsingBinaryAddress(0x1b3f5b0, BranchDirection::kTo),
+      Optional(ResultOf(bb_index_from_handle_index, 0)));
+  // At address 0x1e63500: we have the following symbols:
+  //   Func<_ZN4llvm22FoldingSetIteratorImplC2EPPv> BB.0 {size: 0}
+  //                                                BB.1 {size: 0x8}
+  EXPECT_THAT(
+      wpi->FindBbHandleIndexUsingBinaryAddress(0x1e63500, BranchDirection::kTo),
+      Optional(ResultOf(bb_index_from_handle_index, 0)));
+  EXPECT_THAT(wpi->FindBbHandleIndexUsingBinaryAddress(0x1e63500,
+                                                       BranchDirection::kFrom),
+              Optional(ResultOf(bb_index_from_handle_index, 1)));
+}
 }  // namespace

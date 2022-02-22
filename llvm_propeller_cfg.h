@@ -11,9 +11,12 @@
 #include <vector>
 
 #include "base/logging.h"  // For "CHECK".
-#include "llvm_propeller_bbsections.h"
+#include "third_party/abseil/absl/container/flat_hash_map.h"
+#include "third_party/abseil/absl/functional/function_ref.h"
+#include "third_party/abseil/absl/strings/str_format.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Object/ELFTypes.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -52,6 +55,23 @@ class CFGEdge final {
 
   void IncrementWeight(uint64_t increment) { weight_ += increment; }
   void ReplaceSink(CFGNode *sink) { sink_ = sink; }
+
+  static std::string GetDotFormatLabelForEdgeKind(Kind kind) {
+    switch (kind) {
+      case Kind::kBranchOrFallthough:
+        return "N";
+      case Kind::kCall:
+        return "C";
+      case Kind::kRet:
+        return "R";
+    }
+    LOG(FATAL) << "Unknown kind: " << (unsigned int)kind;
+  }
+
+  // Returns a string to be used as the label in the dot format.
+  std::string GetDotFormatLabel() const {
+    return absl::StrCat(GetDotFormatLabelForEdgeKind(kind_), "#", weight_);
+  }
   CFGNode *src_ = nullptr;
   CFGNode *sink_ = nullptr;
   uint64_t weight_ = 0;
@@ -63,7 +83,7 @@ std::ostream& operator<<(std::ostream& os, CFGEdge::Kind kind);
 // All instances of CFGNode are owned by their cfg_.
 class CFGNode final {
  public:
-  explicit CFGNode(uint64_t symbol_ordinal, uint64_t addr, uint64_t bb_index,
+  explicit CFGNode(uint64_t symbol_ordinal, uint64_t addr, int bb_index,
                    uint64_t size, ControlFlowGraph *cfg, uint64_t freq = 0)
       : symbol_ordinal_(symbol_ordinal),
         addr_(addr),
@@ -74,7 +94,7 @@ class CFGNode final {
 
   uint64_t symbol_ordinal() const { return symbol_ordinal_; }
   uint64_t addr() const { return addr_; }
-  uint32_t bb_index() const { return bb_index_; }
+  int bb_index() const { return bb_index_; }
   uint64_t freq() const { return freq_; }
   uint64_t size() const { return size_ ;}
   ControlFlowGraph* cfg() const { return cfg_; }
@@ -85,17 +105,16 @@ class CFGNode final {
   const std::vector<CFGEdge *> &inter_outs() const { return inter_outs_; }
   const std::vector<CFGEdge *> &inter_ins() const { return inter_ins_; }
 
-  template <class Visitor>
-  void ForEachInEdgeRef(Visitor v) {
-    for (auto &edgeList : {intra_ins_, inter_ins_})
-      for (CFGEdge *E : edgeList) v(*E);
+  void ForEachInEdgeRef(absl::FunctionRef<void(CFGEdge &edge)> func) const {
+    for (CFGEdge *edge : intra_ins_) func(*edge);
+    for (CFGEdge *edge : inter_ins_) func(*edge);
   }
 
-  template <class Visitor>
-  void ForEachOutEdgeRef(Visitor v) {
-    for (auto &edgeList : {intra_outs_, inter_outs_})
-      for (CFGEdge *E : edgeList) v(*E);
+  void ForEachOutEdgeRef(absl::FunctionRef<void(CFGEdge &edge)> func) const {
+    for (CFGEdge *edge : intra_outs_) func(*edge);
+    for (CFGEdge *edge : inter_outs_) func(*edge);
   }
+
   bool is_entry() const { return bb_index_ == 0; }
 
   std::string GetName() const;
@@ -104,7 +123,19 @@ class CFGNode final {
   friend class ControlFlowGraph;
   friend class CFGNodeBundle;
 
+  friend void PrintTo(const CFGNode &node, std::ostream *os) {
+    *os << absl::StreamFormat(
+        "CFGNode {symbol_ordinal: %llu, address: %llX, bb_index: %d, "
+        "frequency: "
+        "%llu, size: %X, CFG: %p}",
+        node.symbol_ordinal(), node.addr(), node.bb_index(), node.freq(),
+        node.size(), node.cfg());
+  }
+
   void GrowOnCoallesce(uint64_t size_increment) { size_ += size_increment; }
+
+  // Returns the bb index as a string to be used in the dot format.
+  std::string GetDotFormatLabel() const { return absl::StrCat(bb_index_); }
 
   void set_freq(uint64_t freq) { freq_ = freq; }
   void set_bundle(CFGNodeBundle *bundle) {
@@ -116,7 +147,7 @@ class CFGNode final {
   const uint64_t addr_;
   // Zero-based index of the basic block in the function. A zero value indicates
   // the entry basic block.
-  const uint32_t bb_index_;
+  const int bb_index_;
   uint64_t freq_ = 0;
   uint64_t size_ = 0;
   ControlFlowGraph * const cfg_;
@@ -166,21 +197,11 @@ class ControlFlowGraph {
     for (auto &N : nodes_) v(*N);
   }
 
-  bool WriteAsDotGraph(llvm::StringRef cfgOutName);
-
-  // Create node and take ownership.
-  void CreateNodes(const std::vector<SymbolEntry *> &syms) {
-    DCHECK(nodes_.empty());
-    CHECK_NE(syms[0]->func_ptr, syms[0]);
-
-    // This is for bbaddressmap workflow, the function symbol is excluded from
-    // "syms" vector, all symbols contains in "syms" are basic block symbols.
-    // bbindex starts from 0.
-    int bbidx = 0;
-    for (SymbolEntry *s : syms)
-      nodes_.emplace(
-          new CFGNode(s->ordinal, s->addr, bbidx++, s->size, this));
-  }
+  // Creates a CFGNode for every BBAddrMap entry and associates integer ordinals
+  // to the nodes from ordinal to ordinal+nodes.size()-1. ControlFlowGraph will
+  // take ownership of the created nodes.
+  void CreateNodes(const llvm::object::BBAddrMap &func_bb_addr_map,
+                   uint64_t ordinal);
 
   // Create edge and take ownership. Note: the caller must be responsible for
   // not creating duplicated edges.
@@ -206,9 +227,9 @@ class ControlFlowGraph {
   }
 
   // APIs for test purposes.
-  static std::unique_ptr<ControlFlowGraph> CreateForTest() {
+  static std::unique_ptr<ControlFlowGraph> CreateForTest(llvm::StringRef name) {
     return std::make_unique<ControlFlowGraph>(
-        llvm::SmallVector<llvm::StringRef, 4>());
+        llvm::SmallVector<llvm::StringRef, 4>({name}));
   }
 
   CFGNode *InsertNodeForTest(std::unique_ptr<CFGNode> node) {
@@ -218,6 +239,13 @@ class ControlFlowGraph {
   const CFGNode* GetCoallescedColdNodeForTest() const {
     return coalesced_cold_node_;
   }
+
+  // Writes the dot format of CFG into the given stream. The second argument
+  // specifies a the layout by mapping every hot basic block's bb_index_ to its
+  // position in the layout. Fall-through edges will be colored differently
+  // (red) in the dot format.
+  void WriteDotFormat(std::ostream &os,
+      const absl::flat_hash_map<int, int> &layout_index_map) const;
 
  private:
   friend class MockPropellerWholeProgramInfo;

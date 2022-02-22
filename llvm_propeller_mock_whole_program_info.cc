@@ -2,13 +2,17 @@
 
 #include <fcntl.h>  // for "O_RDONLY"
 
+#include <map>
 #include <string>
 #include <utility>
 
+#include "llvm_propeller_abstract_whole_program_info.h"
 #include "llvm_propeller_cfg.pb.h"
 #include "llvm_propeller_options.pb.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"  // for "typename google::protobuf::io::FileInputStream"
 #include "google/protobuf/text_format.h"
+#include "third_party/abseil/absl/status/status.h"
+#include "third_party/abseil/absl/strings/str_format.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/StringSaver.h"
 
@@ -21,19 +25,23 @@ static std::unique_ptr<CFGNode> CreateNodeFromNodePb(const CFGNodePb &nodepb,
                                    nodepb.freq());
 }
 
-bool MockPropellerWholeProgramInfo::CreateCfgs() {
+absl::Status MockPropellerWholeProgramInfo::CreateCfgs(
+    CfgCreationMode cfg_creation_mode) {
   std::string perf_name = options_.perf_names(0);
   int fd = open(perf_name.c_str(), O_RDONLY);
   if (fd == -1) {
-    LOG(ERROR) << "Failed to open and read '" << perf_name << "'.";
-    return false;
+    return absl::FailedPreconditionError(
+        absl::StrFormat("Failed to open and read profile '%s'.", perf_name));
   }
   typename google::protobuf::io::FileInputStream fis(fd);
   fis.SetCloseOnDelete(true);
   LOG(INFO) << "Reading from '" << perf_name << "'.";
-  if (!google::protobuf::TextFormat::Parse(&fis, &propeller_pb_)) return false;
+  if (!google::protobuf::TextFormat::Parse(&fis, &propeller_pb_)) {
+    return absl::InternalError(
+        absl::StrFormat("Unable to parse profile '%s'", perf_name));
+  }
   CreateCfgsFromProtobuf();
-  return true;
+  return absl::OkStatus();
 }
 
 static CFGEdge::Kind convertFromPBKind(CFGEdgePb::Kind kindpb) {
@@ -59,7 +67,6 @@ void MockPropellerWholeProgramInfo::CreateCfgsFromProtobuf() {
       names.emplace_back(string_saver_->save(name));
     auto cfg = std::make_unique<ControlFlowGraph>(std::move(names));
     ++stats_.cfgs_created;
-    std::vector<SymbolEntry *> symbols;
     for (const auto &nodepb : cfgpb.node()) {
       std::unique_ptr<CFGNode> node = CreateNodeFromNodePb(nodepb, cfg.get());
       ordinal_to_node_map.try_emplace(node->symbol_ordinal(), node.get());

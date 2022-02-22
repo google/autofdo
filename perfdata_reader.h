@@ -3,13 +3,17 @@
 
 #include <map>
 #include <memory>
+#include <optional>
+#include <ostream>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "llvm_propeller_perf_data_provider.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELFObjectFile.h"
+#include "llvm/Object/ELFTypes.h"
 #include "llvm/Object/ObjectFile.h"
 #include "quipper/perf_parser.h"
 
@@ -75,25 +79,16 @@ using BinaryMMaps = std::map<uint64_t, std::set<MMapEntry>>;
 struct BinaryPerfInfo {
   BinaryMMaps binary_mmaps;
   BinaryInfo binary_info;
-  std::unique_ptr<quipper::PerfReader> perf_reader;
-  std::unique_ptr<quipper::PerfParser> perf_parser;
+  std::optional<PerfDataProvider::BufferHandle> perf_data;
 
+  BinaryPerfInfo() = default;
   BinaryPerfInfo(const BinaryPerfInfo &) = delete;
-
-  BinaryPerfInfo() {}
-  BinaryPerfInfo(BinaryPerfInfo &&bpi)
-      : binary_mmaps(std::move(bpi.binary_mmaps)),
-        binary_info(std::move(bpi.binary_info)),
-        perf_reader(std::move(bpi.perf_reader)),
-        perf_parser(std::move(bpi.perf_parser)) {}
+  BinaryPerfInfo(BinaryPerfInfo &&bpi) = default;
 
   void ResetPerfInfo() {
-    perf_parser.reset();
-    perf_reader.reset();
+    perf_data.reset();
     binary_mmaps.clear();
   }
-
-  explicit operator bool() const { return !binary_mmaps.empty(); }
 };
 
 struct LBRAggregation {
@@ -155,7 +150,7 @@ class PerfDataReader {
   // When match_mmap_name is "", SelectBinaryPerfInfo will automatically use the
   // build-id name, if build id is present, otherwise, it falls back to use
   // binary_file_name.
-  bool SelectPerfInfo(const std::string &perf_file,
+  bool SelectPerfInfo(PerfDataProvider::BufferHandle perf_data,
                       const std::string &match_mmap_name,
                       BinaryPerfInfo *binary_perf_info) const;
 
@@ -182,7 +177,8 @@ class PerfDataReader {
  private:
   // Select mmap events from perfdata file by comparing the mmap event's
   // filename against "match_mmap_name".
-  bool SelectMMaps(BinaryPerfInfo *info,
+  bool SelectMMaps(BinaryPerfInfo *info, const quipper::PerfReader &perf_reader,
+                   const quipper::PerfParser &perf_parser,
                    const std::string &match_mmap_name) const;
 };
 
@@ -197,14 +193,17 @@ class ELFFileUtilBase {
 
   virtual std::string GetBuildId() = 0;
 
+  // Reads, decodes and then returns the BB address map section of the binary.
+  virtual absl::StatusOr<std::vector<llvm::object::BBAddrMap>> GetBbAddrMap(
+      const devtools_crosstool_autofdo::BinaryInfo &binary_info) = 0;
+
   virtual bool ReadLoadableSegments(
       devtools_crosstool_autofdo::BinaryInfo *binary_info) = 0;
-
-  virtual llvm::Optional<bool> IsFirstLoadableSegmentExecutable() const = 0;
 
  protected:
   static constexpr llvm::StringRef kBuildIDSectionName = ".note.gnu.build-id";
   static constexpr llvm::StringRef kBuildIdNoteName = "GNU";
+  static constexpr llvm::StringRef kBbAddrMapSectionName = ".llvm_bb_addr_map";
 
   friend std::unique_ptr<ELFFileUtilBase> CreateELFFileUtil(
       llvm::object::ObjectFile *object_file);
@@ -218,11 +217,7 @@ class ELFFileUtil : public ELFFileUtilBase {
         llvm::dyn_cast<llvm::object::ELFObjectFile<ELFT>,
                        llvm::object::ObjectFile>(object);
     if (elf_object)
-#ifdef LLVM_GETELFFILE_RET_REFERENCE
       elf_file_ = &elf_object->getELFFile();
-#else
-      elf_file_ = elf_object->getELFFile();
-#endif
   }
 
   // Get binary build id.
@@ -232,9 +227,8 @@ class ELFFileUtil : public ELFFileUtilBase {
   bool ReadLoadableSegments(
       devtools_crosstool_autofdo::BinaryInfo *binary_info) override;
 
-  // Return whether the first loadable segment is executable or llvm:None if
-  // such cannot be determined.
-  llvm::Optional<bool> IsFirstLoadableSegmentExecutable() const override;
+  absl::StatusOr<std::vector<llvm::object::BBAddrMap>> GetBbAddrMap(
+      const devtools_crosstool_autofdo::BinaryInfo &binary_info) override;
 
  private:
   const llvm::object::ELFFile<ELFT> *elf_file_ = nullptr;
@@ -242,13 +236,6 @@ class ELFFileUtil : public ELFFileUtilBase {
 
 std::unique_ptr<ELFFileUtilBase> CreateELFFileUtil(
     llvm::object::ObjectFile *object_file);
-
-// Return whether the first loadable segment is executable or llvm:None if
-// such cannot be determined. This is a convenient wrapper around the
-// ELFFileUtil::IsFirstLoadableSegmentExecutable() which explicitly requires a
-// llvm::object::ObjectFile instance.
-llvm::Optional<bool> CheckFirstLoadableSegmentIsExecutable(
-    const std::string &binary);
 
 std::ostream &operator<<(std::ostream &os, const MMapEntry &me);
 

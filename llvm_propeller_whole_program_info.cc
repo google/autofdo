@@ -5,16 +5,28 @@
 #include <algorithm>
 #include <cstdint>
 #include <future>  // NOLINT(build/c++11)
+#include <ios>
+#include <iterator>
+#include <memory>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <thread>  // NOLINT(build/c++11)
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
+#include "llvm_propeller_file_perf_data_provider.h"
 #include "llvm_propeller_formatting.h"
 #include "llvm_propeller_options.pb.h"
+#include "llvm_propeller_perf_data_provider.h"
+#include "perfdata_reader.h"
+#include "third_party/abseil/absl/algorithm/container.h"
+#include "third_party/abseil/absl/container/btree_map.h"
+#include "third_party/abseil/absl/container/btree_set.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
+#include "third_party/abseil/absl/status/status.h"
+#include "third_party/abseil/absl/status/statusor.h"
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "third_party/abseil/absl/strings/string_view.h"
 #include "llvm/ADT/Optional.h"
@@ -22,6 +34,7 @@
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Object/ELFObjectFile.h"
+#include "llvm/Object/ELFTypes.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LEB128.h"
@@ -31,151 +44,17 @@ namespace devtools_crosstool_autofdo {
 
 namespace {
 using ::llvm::Expected;
-using ::llvm::Optional;
 using ::llvm::StringRef;
-using ::llvm::object::ObjectFile;
+using SymTabTy =
+    ::devtools_crosstool_autofdo::PropellerWholeProgramInfo::SymTabTy;
+using ::devtools_crosstool_autofdo::AddressFormatter;
+using ::devtools_crosstool_autofdo::BinaryInfo;
+using ::llvm::object::BBAddrMap;
 
-// Section .llvm_bb_addr_map consists of many AddrMapEntry.
-struct AddrMapEntry {
-  struct BbInfo {
-    uint64_t offset;
-    uint64_t size;
-    uint64_t meta;
-  };
-
-  uint64_t func_address;
-  std::vector<BbInfo> bb_info;
-};
-
-// Read a uleb field value and advance *p.
-template <class ValueType>
-bool ReadUlebField(absl::string_view field_name, const uint8_t **p,
-                   const unsigned char *end_mark, ValueType *v) {
-  const char *err = nullptr;
-  unsigned n = 0;
-  *v = llvm::decodeULEB128(*p, &n, end_mark, &err);
-  if (err != nullptr) {
-    LOG(ERROR) << absl::StreamFormat("Read .bb_info %s uleb128 error: %s",
-                                     field_name, err);
-    return false;
-  }
-  *p += n;
-  return true;
-}
-
-// Read one bbaddrmap entry from *p, make sure never move *p beyond end.
-absl::optional<AddrMapEntry> ReadOneEntry(const uint8_t **p,
-                                          const uint8_t * const end) {
-  const uint64_t address = *(reinterpret_cast<const uint64_t *>(*p));
-  *p += sizeof(uint64_t);
-  uint64_t num_blocks = 0, meta = 0, size = 0, offset = 0, previous_offset = 0;
-  if (!ReadUlebField("bb count", p, end, &num_blocks)) return {};
-  std::vector<AddrMapEntry::BbInfo> blocks;
-  for (int ib = 0; ib < num_blocks; ++ib) {
-    previous_offset = offset;
-    if (ReadUlebField("bb offset", p, end, &offset) &&
-        ReadUlebField("bb size", p, end, &size) &&
-        ReadUlebField("bb metadata", p, end, &meta)) {
-      // Check assumption here: bb records appear in the order of "symbol
-      // offset".
-      CHECK(previous_offset <= offset);
-      blocks.push_back({offset, size, meta});
-    }
-  }
-  return AddrMapEntry{address, blocks};
-}
-
-llvm::Optional<llvm::object::SectionRef> FindBbAddrMapSection(
-    const llvm::object::ObjectFile &obj) {
-  for (auto sec : obj.sections()) {
-    Expected<llvm::StringRef> sn = sec.getName();
-    llvm::object::ELFSectionRef esec(sec);
-#if LLVM_VERSION_MAJOR >= 12
-    if (sn && esec.getType() == llvm::ELF::SHT_LLVM_BB_ADDR_MAP &&
-        (*sn) == PropellerWholeProgramInfo::kBbAddrMapSectionName)
-#else
-    if (sn && (*sn) == PropellerWholeProgramInfo::kBbAddrMapSectionName)
-#endif
-      return sec;
-  }
-  return llvm::None;
-}
-}  // namespace
-
-std::unique_ptr<PropellerWholeProgramInfo> PropellerWholeProgramInfo::Create(
-    const PropellerOptions &options) {
-  BinaryPerfInfo bpi;
-  if (!PerfDataReader().SelectBinaryInfo(options.binary_name(),
-                                         &bpi.binary_info))
-    return nullptr;
-
-  Optional<llvm::object::SectionRef> opt_bb_addr_map_section =
-      FindBbAddrMapSection(*(bpi.binary_info.object_file));
-
-  if (!opt_bb_addr_map_section) {
-    LOG(ERROR) << "'" << options.binary_name() << "' does not have '"
-              << kBbAddrMapSectionName << "' section.";
-    return nullptr;
-  }
-  // Do not use std::make_unique, ctor is not public.
-  return std::unique_ptr<PropellerWholeProgramInfo>(
-      new PropellerWholeProgramInfo(options, std::move(bpi),
-                                    *opt_bb_addr_map_section));
-}
-
-SymbolEntry *PropellerWholeProgramInfo::CreateFuncSymbolEntry(
-    uint64_t ordinal, StringRef func_name, SymbolEntry::AliasesTy aliases,
-    int func_bb_num, uint64_t address, uint64_t size) {
-  if (bb_addr_map_.find(func_name) != bb_addr_map_.end()) {
-    LOG(ERROR) << "Found duplicate function symbol '" << func_name.str() << "'@"
-               << AddressFormatter(address)
-               << ", drop the symbol and all its bb symbols.";
-    ++stats_.duplicate_symbols;
-    return nullptr;
-  }
-  // Pre-allocate "func_bb_num" nullptrs in bb_addr_map_[func_name].
-  bb_addr_map_.emplace(std::piecewise_construct,
-                       std::forward_as_tuple(func_name),
-                       std::forward_as_tuple(func_bb_num, nullptr));
-  // Note, funcsym is not put into bb_addr_map_. It's accessible via
-  // bb_addr_map_[func_name].front()->func_ptr.
-  // Put into address_map_.
-  address_map_[address].emplace_back(std::make_unique<SymbolEntry>(
-      ordinal, func_name, aliases, address, size, nullptr, 0));
-  ++stats_.syms_created;
-  return address_map_[address].back().get();
-}
-
-SymbolEntry *PropellerWholeProgramInfo::CreateBbSymbolEntry(
-    uint64_t ordinal, SymbolEntry *parent_func, int bb_index, uint64_t address,
-    uint64_t size, uint32_t metadata) {
-  CHECK(parent_func);
-  // BB symbol. We put it into: bb_addr_map_[parent_func->name][bbid].
-  BbAddrMapTy::iterator iter = bb_addr_map_.find(parent_func->name);
-  if (iter == bb_addr_map_.end()) {
-    LOG(ERROR) << "BB symbol '" << parent_func->name.str() << "." << bb_index
-               << "'@" << AddressFormatter(address)
-               << " appears before its function record, drop the symbol.";
-    return nullptr;
-  }
-  // Note - bbsym does not have a field for bbindex, because the name field in
-  // SymbolEntry is StringRef and in bbinfo workflow, the bbsym's name field is
-  // always "". But bbsym's id number can be calculated from: (bbsym->ordinal -
-  // bbsym->func_ptr->ordinal - 1).
-  auto bb_symbol =
-      std::make_unique<SymbolEntry>(ordinal, "", SymbolEntry::AliasesTy(),
-                                    address, size, parent_func, metadata);
-  CHECK(bb_index < iter->second.size());
-  iter->second[bb_index] = bb_symbol.get();
-  // Put into address_map_.
-  address_map_[address].emplace_back(std::move(bb_symbol));
-  ++stats_.syms_created;
-  return address_map_[address].back().get();
-}
-
-void PropellerWholeProgramInfo::ReadSymbolTable() {
-  for (llvm::object::SymbolRef sr :
-       binary_perf_info_.binary_info.object_file->symbols()) {
+// Returns the binary's function symbols by reading from its symbol table.
+SymTabTy ReadSymbolTable(BinaryInfo &binary_info) {
+  SymTabTy symtab;
+  for (llvm::object::SymbolRef sr : binary_info.object_file->symbols()) {
     llvm::object::ELFSymbolRef symbol(sr);
     uint8_t stt = symbol.getELFType();
     if (stt != llvm::ELF::STT_FUNC) continue;
@@ -186,7 +65,7 @@ void PropellerWholeProgramInfo::ReadSymbolTable() {
     const uint64_t func_size = symbol.getSize();
     if (func_size == 0) continue;
 
-    auto &addr_sym_list = symtab_[*address];
+    auto &addr_sym_list = symtab[*address];
     // Check whether there are already symbols on the same address, if so make
     // sure they have the same size and thus they can be aliased.
     bool check_size_ok = true;
@@ -205,189 +84,104 @@ void PropellerWholeProgramInfo::ReadSymbolTable() {
     }
     if (check_size_ok) addr_sym_list.push_back(sr);
   }
+  return symtab;
 }
 
-bool PropellerWholeProgramInfo::ReadBbAddrMapSection() {
-  llvm::Expected<StringRef> exp_contents = bb_addr_map_section_.getContents();
-  if (!exp_contents) {
-    LOG(ERROR) << "Error accessing '" << kBbAddrMapSectionName
-               << "' section content.";
-    return false;
+// Returns a map from BB-address-map function indexes to their names.
+absl::flat_hash_map<int, llvm::SmallVector<llvm::StringRef, 3>>
+SetFunctionIndexToNamesMap(const SymTabTy &symtab,
+                           const std::vector<BBAddrMap> &bb_addr_map) {
+  absl::flat_hash_map<int, llvm::SmallVector<llvm::StringRef, 3>>
+      function_index_to_names;
+  for (int i = 0; i != bb_addr_map.size(); ++i) {
+    auto iter = symtab.find(bb_addr_map[i].Addr);
+    if (iter == symtab.end()) {
+      LOG(WARNING) << "BB address map for function at "
+                   << absl::StrCat(absl::Hex(bb_addr_map[i].Addr))
+                   << " has no associated symbol table entry!";
+      continue;
+    }
+    llvm::SmallVector<llvm::StringRef, 3> aliases;
+    for (const llvm::object::SymbolRef sr : iter->second)
+      aliases.push_back(llvm::cantFail(sr.getName()));
+    if (!aliases.empty())
+      function_index_to_names.insert({i, std::move(aliases)});
   }
-  StringRef sec_contents = *exp_contents;
-  const unsigned char * p = sec_contents.bytes_begin();
-  const unsigned char * const end = sec_contents.bytes_end();
+  return function_index_to_names;
+}
+}  // namespace
 
-  uint64_t ordinal = 0;
-  std::set<llvm::StringRef> conflicting_symbols;
-  auto remove_conflicting_symbols = [this, &conflicting_symbols]() {
-    uint32_t total_symbols_removed = 0;
-    for (llvm::StringRef conflicting_name : conflicting_symbols) {
-      BbAddrMapTy::iterator i = bb_addr_map_.find(conflicting_name);
-      CHECK(i != bb_addr_map_.end());
-      std::vector<SymbolEntry *> symbols_to_remove(std::move(i->second));
-      bb_addr_map_.erase(i);
-      // "symbols_to_remove" now contains all the BB symbols.
-      CHECK(!symbols_to_remove.empty());
-      // Add function symbol to "symbols_to_remove".
-      symbols_to_remove.push_back(symbols_to_remove.front()->func_ptr);
-      // "symbols_to_remove" contains the function symbol + all its bb symbols.
-      for (SymbolEntry *symbol_to_remove : symbols_to_remove) {
-        CHECK(symbol_to_remove);
-        AddressMapTy::iterator addri =
-            address_map_.find(symbol_to_remove->addr);
-        CHECK(addri != address_map_.end());
-        bool removed = false;
-        llvm::SmallVector<std::unique_ptr<SymbolEntry>, 2> &addrlist =
-            addri->second;
-        for (auto symi = addrlist.begin(), syme = addrlist.end();
-             !removed && symi != syme; ++symi) {
-          if ((*symi).get() == symbol_to_remove) {
-            addrlist.erase(symi);
-            removed = true;
-            break;
-          }
-        }
-        CHECK(removed);
-        if (addrlist.empty())
-          address_map_.erase(addri);
+std::optional<int>
+PropellerWholeProgramInfo::FindBbHandleIndexUsingBinaryAddress(
+    uint64_t address, BranchDirection direction) const {
+  std::vector<BbHandle>::const_iterator it = absl::c_upper_bound(
+      bb_handles_, address, [this](uint64_t addr, const BbHandle &bb_handle) {
+        return addr < GetAddress(bb_handle);
+      });
+  if (it == bb_handles_.begin()) return std::nullopt;
+  it = std::prev(it);
+  if (address > GetAddress(*it)) {
+    if (address >= GetAddress(*it) + GetBBEntry(*it).Size)
+      return std::nullopt;
+    else
+      return it - bb_handles_.begin();
+  }
+  DCHECK_EQ(address, GetAddress(*it));
+  // We might have multiple zero-sized BBs at the same address. If we are
+  // branching to this address, we find and return the first zero-sized BB (from
+  // the same function). If we are branching from this address, we return the
+  // single non-zero sized BB.
+  switch (direction) {
+    case BranchDirection::kTo: {
+      auto prev_it = it;
+      while (prev_it != bb_handles_.begin() &&
+             GetAddress(*--prev_it) == address &&
+             prev_it->function_index == it->function_index) {
+        it = prev_it;
       }
-      total_symbols_removed += symbols_to_remove.size();
+      return it - bb_handles_.begin();
     }
-    LOG(INFO) << "Dropped " << total_symbols_removed
-              << " function and basicblock symbols because of conflicting "
-                 "function name.";
-  };
-  auto check_conflicting_symbols =
-      [this, &conflicting_symbols](
-          uint64_t func_size,
-          uint32_t func_num_blocks,
-          llvm::SmallVector<llvm::object::SymbolRef, 2> &symbol_refs) {
-        bool conflicting_symbols_found = false;
-        for (llvm::object::SymbolRef sr : symbol_refs) {
-          StringRef alias = llvm::cantFail(sr.getName());
-          BbAddrMapTy::iterator i = bb_addr_map_.find(alias);
-          if (i == bb_addr_map_.end()) continue;
-          // Conflicting symbol found, check alias does not have "__uniq" part
-          // and symbol_ref is not local. (bindings could be GLOBALE, LOCAL,
-          // WEAK, etc)
-          if (llvm::object::ELFSymbolRef(sr).getBinding() ==
-              llvm::ELF::STB_GLOBAL) {
-            LOG(INFO) << "Found global symbol '" << alias.str()
-                      << "' conflicting with LOCAL symbol.";
-          }
-          conflicting_symbols_found = true;
-          ++stats_.duplicate_symbols;
-          if (alias.find("__uniq") != std::string::npos) {
-            // duplicate uniq-named symbols found
-            CHECK(!i->second.empty());
-            SymbolEntry *dup_func = i->second.front()->func_ptr;
-            if (dup_func->size == func_size &&
-                i->second.size() == func_num_blocks) {
-              // uniq-named functions found with same size and same number of
-              // basicblocks, we assume they are the same and thus we keep one
-              // copy of them.
-              LOG(WARNING) << "duplicate uniq-named functions '" << alias.str()
-                           << "' with same size and structure found.";
-              continue;
-            } else {
-              LOG(WARNING) << "duplicate uniq-named functions '" << alias.str()
-                           << "' with different size or structure found , drop "
-                              "all of them.";
-            }
-          }
-          conflicting_symbols.insert(alias);
-        }
-        return conflicting_symbols_found;
-      };
-  while (p != end) {
-    // ReadOneEntry moves p ahead ...
-    auto entry = ReadOneEntry(&p, end);
-    // Fail to read bbinfo section in the middle is irrecoverable.
-    if (!entry.has_value()) return false;
-
-    const uint64_t func_address = entry.value().func_address;
-    auto iter = symtab_.find(func_address);
-    // b/169962287 under some circumstances, bb_addr_map's symbol may not have
-    // associated symbols.
-    if (iter == symtab_.end()) {
-      LOG(WARNING) << "Invalid entry inside '" << kBbAddrMapSectionName
-                   << "', at offset: " << std::showbase << std::hex
-                   << p - sec_contents.bytes_begin()
-                   << ". Function address listed: " << std::showbase << std::hex
-                   << func_address;
-      ++stats_.bbaddrmap_function_does_not_have_symtab_entry;
-      continue;
+    case BranchDirection::kFrom: {
+      DCHECK_NE(GetBBEntry(*it).Size, 0);
+      return it - bb_handles_.begin();
     }
-    SymbolEntry::AliasesTy func_aliases;
-    // TODO(b/185956991): remove "drop_this_function" by sec_name after this is
-    // fixed in llvm upstream.
-    bool drop_this_function = false;
-    StringRef dropped_function_section_name;
-    for (llvm::object::SymbolRef &sr : iter->second) {
-      func_aliases.push_back(llvm::cantFail(sr.getName()));
-      StringRef sec_name =
-          llvm::cantFail(llvm::cantFail(sr.getSection())->getName());
-      if (!sec_name.startswith(".text")) {
-        drop_this_function = true;
-        dropped_function_section_name = sec_name;
-        break;
-      }
-    }
-    if (drop_this_function) {
-      LOG(WARNING) << "Skipped symbol in none '.text.*' section '"
-                                 << dropped_function_section_name.str()
-                                 << "': " << func_aliases.front().str();
-      continue;
-    }
-    CHECK(!func_aliases.empty());
-    const uint64_t func_size =
-        llvm::object::ELFSymbolRef(iter->second.front()).getSize();
-    const auto &blocks = entry.value().bb_info;
-    // TODO(b/183514655): revisit this after bug fixes.
-    if (blocks.empty() || (blocks.size() == 1 && blocks.front().size == 0)) {
-      LOG(WARNING) << "Skipped trivial bbentry : " << std::showbase << std::hex
-                   << func_address;
-      continue;
-    }
-    if (check_conflicting_symbols(func_size, blocks.size(), iter->second))
-      continue;
-    SymbolEntry *func_symbol =
-        CreateFuncSymbolEntry(++ordinal, func_aliases.front(), func_aliases,
-                              blocks.size(), func_address, func_size);
-    // Note - func_symbol can be null, skip creating basic block symbols.
-    if (func_symbol == nullptr) continue;
-    // TODO(shenhan): refactoring out the following loop into
-    // "CreateBbSymbolEntries" to avoid passing around multiple parameters to
-    // "CreateSymbolEntry" function.
-    for (int i = 0; i < blocks.size(); ++i) {
-      // In rare cases when we fail to create a BbSymbolEntry, we bail out
-      // because we don't want a in-complete representation of a function.
-      if (!CreateBbSymbolEntry(++ordinal, func_symbol, i,
-                               func_symbol->addr + blocks[i].offset,
-                               blocks[i].size, blocks[i].meta))
-        return false;
-    }
-  }  // end of iterating bb info section.
-  remove_conflicting_symbols();
-  return true;
+      LOG(FATAL) << "Invalid edge direction.";
+  }
 }
 
-bool PropellerWholeProgramInfo::PopulateSymbolMap() {
-  ReadSymbolTable();
-  return ReadBbAddrMapSection();
+std::unique_ptr<PropellerWholeProgramInfo> PropellerWholeProgramInfo::Create(
+    const PropellerOptions &options, MultiStatusProvider *frontend_status) {
+  return Create(options,
+                std::make_unique<FilePerfDataProvider>(std::vector<std::string>(
+                    options.perf_names().begin(), options.perf_names().end())),
+                frontend_status);
 }
+std::unique_ptr<PropellerWholeProgramInfo> PropellerWholeProgramInfo::Create(
+    const PropellerOptions &options,
+    std::unique_ptr<PerfDataProvider> perf_data_provider,
+    MultiStatusProvider *frontend_status) {
+  DefaultStatusProvider *s1 = nullptr, *s2 = nullptr;
+  if (frontend_status) {
+    s1 =
+        new DefaultStatusProvider("read binary and the bb-address-map section");
+    s2 = new DefaultStatusProvider("map profiles to control flow graphs");
+    frontend_status->AddStatusProvider(10, absl::WrapUnique(s1));
+    frontend_status->AddStatusProvider(500, absl::WrapUnique(s2));
+  }
+  BinaryPerfInfo bpi;
+  if (!PerfDataReader().SelectBinaryInfo(options.binary_name(),
+                                         &bpi.binary_info))
+    return nullptr;
+  if (s1) s1->SetDone();
 
-bool PropellerWholeProgramInfo::PopulateSymbolMapWithPromise(
-    std::promise<bool> result_promise) {
-  bool result = PopulateSymbolMap();
-  result_promise.set_value_at_thread_exit(result);
-  return result;
+  // Do not use std::make_unique, ctor is not public.
+  return std::unique_ptr<PropellerWholeProgramInfo>(
+      new PropellerWholeProgramInfo(options, std::move(bpi),
+                                    std::move(perf_data_provider), s2));
 }
 
 // Parse perf data file.
-Optional<LBRAggregation> PropellerWholeProgramInfo::ParsePerfData() {
-  if (!options_.perf_names_size()) return llvm::None;
+absl::StatusOr<LBRAggregation> PropellerWholeProgramInfo::ParsePerfData() {
   std::string match_mmap_name = options_.binary_name();
   if (options_.has_profiled_binary_name())
     // If user specified "--profiled_binary_name", we use it.
@@ -401,21 +195,28 @@ Optional<LBRAggregation> PropellerWholeProgramInfo::ParsePerfData() {
 
   LBRAggregation lbr_aggregation;
 
-  int fi = 0;
   binary_perf_info_.ResetPerfInfo();
-  for (const std::string &perf_file :  options_.perf_names()) {
-    if (perf_file.empty()) continue;
-    LOG(INFO) << "Parsing '" << perf_file << "' [" << ++fi << " of "
-              << options_.perf_names_size() << "] ...";
-    if (!PerfDataReader().SelectPerfInfo(perf_file, match_mmap_name,
+  while (true) {
+    std::optional<PerfDataProvider::BufferHandle> perf_data;
+    auto next = perf_data_provider_->GetNext();
+    if (next.ok())
+      perf_data = std::move(next.value());
+    else
+      return next.status();
+
+    if (!perf_data.has_value()) break;
+
+    std::string description = perf_data->description;
+    LOG(INFO) << "Parsing " << description << " ...";
+    if (!PerfDataReader().SelectPerfInfo(std::move(*perf_data), match_mmap_name,
                                          &binary_perf_info_)) {
-      LOG(WARNING) << "Skipped profile '" << perf_file
-                   << "', because reading file failed or no mmap found.";
+      LOG(WARNING) << "Skipped profile " << description
+                   << ", because reading file failed or no mmap found.";
       continue;
     }
     if (binary_perf_info_.binary_mmaps.empty()) {
-      LOG(WARNING) << "Skipped profile '" << perf_file
-                   << "', because no matching mmap found.";
+      LOG(WARNING) << "Skipped profile " << description
+                   << ", because no matching mmap found.";
       continue;
     }
     stats_.binary_mmap_num += binary_perf_info_.binary_mmaps.size();
@@ -427,9 +228,9 @@ Optional<LBRAggregation> PropellerWholeProgramInfo::ParsePerfData() {
     } else if (options_.perf_names_size() > 1) {
       // If there are multiple perf data files, we must always call
       // ResetPerfInfo regardless of options_.keep_frontend_intermediate_data.
-      LOG(ERROR) << "Usage error: --keep_frontend_intermediate_data is only "
-                    "valid for single profile file input.";
-      return llvm::None;
+      return absl::InvalidArgumentError(
+          "--keep_frontend_intermediate_data is only valid for single profile "
+          "file input.");
     }
   }
   stats_.br_counters_accumulated += std::accumulate(
@@ -441,94 +242,75 @@ Optional<LBRAggregation> PropellerWholeProgramInfo::ParsePerfData() {
   if (stats_.br_counters_accumulated <= 100)
     LOG(WARNING) << "Too few branch records in perf data.";
   if (!stats_.perf_file_parsed) {
-    LOG(ERROR) << "No perf file is parsed, cannot proceed.";
-    return llvm::None;
+    return absl::FailedPreconditionError(
+        "No perf file is parsed, cannot proceed.");
   }
-  return Optional<LBRAggregation>(std::move(lbr_aggregation));
+  return lbr_aggregation;
 }
 
-bool PropellerWholeProgramInfo::DoCreateCfgs(LBRAggregation &&lbr_aggregation) {
-  std::map<const SymbolEntry *, std::vector<SymbolEntry *>, SymbolPtrComparator>
-      largest_alias_syms;
-  for (auto &bb_group : bb_addr_map_) {
-    const SymbolEntry *func_symbol = bb_group.second[0]->func_ptr;
-    std::vector<SymbolEntry *> &syms = bb_group.second;
-    auto [cur_iter, inserted] = largest_alias_syms.emplace(func_symbol, syms);
-    if (!inserted && syms.size() > cur_iter->second.size()) {
-      cur_iter->second = syms;
-    }
-  }
-
-  // Temp map from SymbolEntry -> CFGNode.
-  std::map<const SymbolEntry *, CFGNode *, SymbolPtrComparator> tmp_node_map;
-  // Temp map from SymbolEntry -> ControlFlowGraph.
-  std::map<const SymbolEntry *, std::unique_ptr<ControlFlowGraph>,
-           SymbolPtrComparator>
-      tmp_cfg_map;
-  for (auto& [func_symbol, syms] : largest_alias_syms) {
-    CHECK(!syms.empty());
-    CHECK(func_symbol);
-    CHECK(tmp_cfg_map.find(func_symbol) == tmp_cfg_map.end());
-
-    std::sort(syms.begin(), syms.end(), SymbolPtrComparator());
-    auto cfg = std::make_unique<ControlFlowGraph>(func_symbol->aliases);
-
-    cfg->CreateNodes(syms);
+absl::Status PropellerWholeProgramInfo::DoCreateCfgs(
+    LBRAggregation &&lbr_aggregation,
+    absl::btree_set<int> &&selected_functions) {
+  // Temporary map from symbol ordinal -> CFGNode.
+  absl::flat_hash_map<int, CFGNode *> node_map;
+  // Temporary map from function index -> ControlFlowGraph.
+  absl::btree_map<int, std::unique_ptr<ControlFlowGraph>> cfg_map;
+  uint64_t ordinal = 0;
+  for (int func_index : selected_functions) {
+    const BBAddrMap &func_bb_addr_map = bb_addr_map_[func_index];
+    CHECK(!func_bb_addr_map.BBEntries.empty());
+    auto cfg = std::make_unique<ControlFlowGraph>(
+        function_index_to_names_map_[func_index]);
+    cfg->CreateNodes(func_bb_addr_map, ordinal);
+    CHECK_EQ(cfg->nodes().size(), func_bb_addr_map.BBEntries.size());
+    ordinal += cfg->nodes().size();
     stats_.nodes_created += cfg->nodes().size();
-    // Setup mapping from syms <-> nodes.
-    DCHECK_EQ(cfg->nodes().size(), syms.size());
-    std::vector<SymbolEntry *>::iterator symsi = syms.begin();
-    for (const auto &nptr : cfg->nodes()) {
-      CHECK((*symsi)->ordinal == nptr.get()->symbol_ordinal());
-      tmp_node_map[*(symsi++)] = nptr.get();
-    }
-    tmp_cfg_map.emplace(func_symbol, std::move(cfg));
+    // Setup mapping from symbol ordinals <-> nodes
+    for (const std::unique_ptr<CFGNode> &node : cfg->nodes())
+      node_map.insert({node->symbol_ordinal(), node.get()});
+    cfg_map.emplace(func_index, std::move(cfg));
     ++stats_.cfgs_created;
   }
-  if (!CreateEdges(lbr_aggregation, tmp_node_map))
-    return false;
+  if (!CreateEdges(lbr_aggregation, node_map))
+    return absl::InternalError("Unable to create edges from LBR profile.");
 
-  for (auto &cfgi : tmp_cfg_map) {
-    std::unique_ptr<ControlFlowGraph> cfg_ptr = std::move(cfgi.second);
-    cfg_ptr->FinishCreatingControlFlowGraph();
-    cfgs_.emplace(std::piecewise_construct,
-                  std::forward_as_tuple(cfgi.first->name),
-                  std::forward_as_tuple(std::move(cfg_ptr)));
+  for (auto &[func_index, cfg] : cfg_map) {
+    cfg->FinishCreatingControlFlowGraph();
+    cfgs_.insert(
+        {function_index_to_names_map_[func_index].front(), std::move(cfg)});
   }
 
   // Release / cleanup.
   if (!options_.keep_frontend_intermediate_data()) {
     binary_perf_info_.binary_mmaps.clear();
     lbr_aggregation = LBRAggregation();
-    // Release ownership and delete SymbolEntry instances.
-    address_map_.clear();
+    // Release ownership and delete symbols and BBAddrMap entries.
     symtab_.clear();
+    function_index_to_names_map_.clear();
     bb_addr_map_.clear();
   }
-
-  return true;
+  return absl::OkStatus();
 }
 
 CFGEdge *PropellerWholeProgramInfo::InternalCreateEdge(
-    const SymbolEntry *from_sym, const SymbolEntry *to_sym, uint64_t weight,
+    int from_bb_ordinal, int to_bb_ordinal, uint64_t weight,
     CFGEdge::Kind edge_kind,
-    const std::map<const SymbolEntry *, CFGNode *, SymbolPtrComparator>
-        &tmp_node_map,
-    std::map<SymbolPtrPair, CFGEdge *, SymbolPtrPairComparator> *tmp_edge_map) {
+    const absl::flat_hash_map<int, CFGNode *> &tmp_node_map,
+    absl::flat_hash_map<std::pair<int, int>, CFGEdge *> *tmp_edge_map) {
   CFGEdge *edge = nullptr;
-  auto i = tmp_edge_map->find(std::make_pair(from_sym, to_sym));
+  auto i = tmp_edge_map->find(std::make_pair(from_bb_ordinal, to_bb_ordinal));
   if (i != tmp_edge_map->end()) {
     edge = i->second;
     if (edge->kind() != edge_kind) {
       LOG(WARNING) << "Edges with same src and sink have different type: "
                    << CFGEdgeNameFormatter(edge) << " has type " << edge_kind
                    << " and " << edge->kind();
-      stats_.edges_with_same_src_sink_but_different_type++;
+      ++stats_.edges_with_same_src_sink_but_different_type;
     }
     edge->IncrementWeight(weight);
   } else {
-    auto from_ni = tmp_node_map.find(from_sym),
-         to_ni = tmp_node_map.find(to_sym);
+    auto from_ni = tmp_node_map.find(from_bb_ordinal),
+         to_ni = tmp_node_map.find(to_bb_ordinal);
     if (from_ni == tmp_node_map.end() || to_ni == tmp_node_map.end())
       return nullptr;
     CFGNode *from_node = from_ni->second;
@@ -537,7 +319,7 @@ CFGEdge *PropellerWholeProgramInfo::InternalCreateEdge(
     edge = from_node->cfg()->CreateEdge(from_node, to_node, weight, edge_kind);
     ++stats_.edges_created;
     tmp_edge_map->emplace(std::piecewise_construct,
-                          std::forward_as_tuple(from_sym, to_sym),
+                          std::forward_as_tuple(from_bb_ordinal, to_bb_ordinal),
                           std::forward_as_tuple(edge));
   }
   return edge;
@@ -549,15 +331,14 @@ CFGEdge *PropellerWholeProgramInfo::InternalCreateEdge(
 // to_node>, and finally create a CFGEdge for such CFGNode pair.
 bool PropellerWholeProgramInfo::CreateEdges(
     const LBRAggregation &lbr_aggregation,
-    const std::map<const SymbolEntry *, CFGNode *, SymbolPtrComparator>
-        &tmp_node_map) {
+    const absl::flat_hash_map<int, CFGNode *> &tmp_node_map) {
   // Temp map that records which CFGEdges are created, so we do not re-create
   // edges. Note this is necessary: although
   // "branch_counters_" have no duplicated <from_addr, to_addr> pairs, the
-  // translated <from_sym, to_sym> may have duplicates.
-  std::map<SymbolPtrPair, CFGEdge *, SymbolPtrPairComparator> tmp_edge_map;
+  // translated <from_bb, to_bb> may have duplicates.
+  absl::flat_hash_map<std::pair<int, int>, CFGEdge *> tmp_edge_map;
 
-  std::map<SymbolPtrPair, uint64_t, SymbolPtrPairComparator>
+  absl::flat_hash_map<std::pair<int, int>, uint64_t>
       tmp_bb_fallthrough_counters;
 
   uint64_t weight_on_dubious_edges = 0;
@@ -569,61 +350,57 @@ bool PropellerWholeProgramInfo::CreateEdges(
     uint64_t from = bcnt.first.first;
     uint64_t to = bcnt.first.second;
     uint64_t weight = bcnt.second;
-    const SymbolEntry *from_sym = FindSymbolUsingBinaryAddress(from);
-    const SymbolEntry *to_sym = FindSymbolUsingBinaryAddress(to);
-    if (!from_sym || !to_sym) continue;
+    std::optional<int> from_bb_index =
+        FindBbHandleIndexUsingBinaryAddress(from, BranchDirection::kFrom);
+    std::optional<int> to_bb_index =
+        FindBbHandleIndexUsingBinaryAddress(to, BranchDirection::kTo);
+    if (!to_bb_index.has_value()) continue;
 
-    if (!from_sym->IsReturnBlock() &&
-        ((to_sym->IsBasicBlock() && to_sym->addr != to) ||
-         (!to_sym->IsBasicBlock() && to_sym->func_ptr->addr != to))) {
-      // Jump is not a return and its target is not the beginning of a
-      // function or a basic block
-      weight_on_dubious_edges += weight;
-    }
-    total_weight_created += weight;
-
-    // TODO(b/162192070): for bbaddrmap workflow, enable the following:
-    // CHECK(from_sym->IsBasicBlock());
-    // CHECK(to_sym->IsBasicBlock());
-
+    BbHandle to_bb_handle = bb_handles_[*to_bb_index];
+    BbHandle from_bb_handle = from_bb_index.has_value()
+                                  ? bb_handles_[*from_bb_index]
+                                  : BbHandle(-1, -1);
     // This is to handle the case when a call is the last instr of a basicblock,
     // and a return to the beginning of the next basic block, change the to_sym
     // to the basic block just before and add fallthrough between the two
     // symbols. After this code executes, "to" can never be the beginning
     // of a basic block for returns.
-    if ((from_sym->IsReturnBlock() || to_sym->func_ptr != from_sym->func_ptr) &&
-        to_sym->func_ptr->addr != to &&  // Not a call
+    // We also account for returns from external library functions which happen
+    // when from_sym is null.
+    if ((!from_bb_index.has_value() || GetBBEntry(from_bb_handle).HasReturn ||
+         to_bb_handle.function_index != from_bb_handle.function_index) &&
+        GetFunctionEntry(to_bb_handle).Addr != to &&  // Not a call
         // Jump to the beginning of the basicblock
-        to == to_sym->addr) {
-      auto to_address_iter = address_map_.find(to);
-      if (to_address_iter != address_map_.end() &&
-          to_address_iter != address_map_.begin()) {
-        auto prev_iter = std::prev(to_address_iter);
-        if (!prev_iter->second.empty()) {
-          const SymbolEntry *callsite_sym = prev_iter->second.back().get();
-          if (callsite_sym) {
-            // Account for the fall-through between callSiteSym and toSym.
-            tmp_bb_fallthrough_counters[std::make_pair(callsite_sym, to_sym)] +=
-                weight;
-            // Reassign toSym to be the actuall callsite symbol entry.
-            to_sym = callsite_sym;
-          } else {
-            LOG(WARNING) << "*** Warning: Could not find the right "
-                            "call site sym for : "
-                         << to_sym->name.str();
-          }
-        }
+        to == GetAddress(to_bb_handle)) {
+      if (to_bb_handle.bb_index != 0) {
+        // Account for the fall-through between callSiteSym and toSym.
+        tmp_bb_fallthrough_counters[{*to_bb_index - 1, *to_bb_index}] += weight;
+        // Reassign to_bb to be the actuall callsite symbol entry.
+        --*to_bb_index;
+      } else {
+        LOG(WARNING) << "*** Warning: Could not find the right "
+                        "call site sym for : "
+                     << GetName(to_bb_handle);
       }
     }
+    if (!from_bb_index.has_value()) continue;
+    if (!GetBBEntry(from_bb_handle).HasReturn &&
+        GetAddress(to_bb_handle) != to) {
+      // Jump is not a return and its target is not the beginning of a function
+      // or a basic block.
+      weight_on_dubious_edges += weight;
+    }
+    total_weight_created += weight;
 
     CFGEdge::Kind edge_kind = CFGEdge::Kind::kBranchOrFallthough;
-    if (to_sym->func_ptr->addr == to)
+    if (GetFunctionEntry(to_bb_handle).Addr == to) {
       edge_kind = CFGEdge::Kind::kCall;
-    else if (to != to_sym->addr || from_sym->IsReturnBlock())
+    } else if (to != GetAddress(to_bb_handle) ||
+               GetBBEntry(from_bb_handle).HasReturn) {
       edge_kind = CFGEdge::Kind::kRet;
-
-    InternalCreateEdge(from_sym, to_sym, weight, edge_kind, tmp_node_map,
-                       &tmp_edge_map);
+    }
+    InternalCreateEdge(from_bb_index.value(), to_bb_index.value(), weight,
+                       edge_kind, tmp_node_map, &tmp_edge_map);
   }
 
   if (weight_on_dubious_edges / static_cast<double>(total_weight_created) >
@@ -656,161 +433,288 @@ bool PropellerWholeProgramInfo::CreateEdges(
 // 3. create edges and apply weights for the above path.
 void PropellerWholeProgramInfo::CreateFallthroughs(
     const LBRAggregation &lbr_aggregation,
-    const std::map<const SymbolEntry *, CFGNode *, SymbolPtrComparator>
-        &tmp_node_map,
-    std::map<SymbolPtrPair, uint64_t, SymbolPtrPairComparator>
+    const absl::flat_hash_map<int, CFGNode *> &tmp_node_map,
+    absl::flat_hash_map<std::pair<int, int>, uint64_t>
         *tmp_bb_fallthrough_counters,
-    std::map<SymbolPtrPair, CFGEdge *, SymbolPtrPairComparator> *tmp_edge_map) {
+    absl::flat_hash_map<std::pair<int, int>, CFGEdge *> *tmp_edge_map) {
   for (auto &i : lbr_aggregation.fallthrough_counters) {
-    uint64_t cnt = i.second;
-    auto *from_sym = FindSymbolUsingBinaryAddress(i.first.first);
-    auto *to_sym = FindSymbolUsingBinaryAddress(i.first.second);
-    if (from_sym && to_sym)
-      (*tmp_bb_fallthrough_counters)[std::make_pair(from_sym, to_sym)] += cnt;
+    const uint64_t cnt = i.second;
+    // A fallthrough from A to B implies a branch to A followed by a branch
+    // from B. Therefore we respectively use BranchDirection::kTo and
+    // BranchDirection::kFrom for A and B when calling
+    // `FindBbHandleIndexUsingBinaryAddress` to find their associated blocks.
+    auto from_index = FindBbHandleIndexUsingBinaryAddress(i.first.first,
+                                                          BranchDirection::kTo);
+    auto to_index = FindBbHandleIndexUsingBinaryAddress(i.first.second,
+                                                        BranchDirection::kFrom);
+    if (from_index && to_index)
+      (*tmp_bb_fallthrough_counters)[{*from_index, *to_index}] += cnt;
   }
 
   for (auto &i : *tmp_bb_fallthrough_counters) {
-    std::vector<const SymbolEntry *> path;
-    const SymbolEntry *fallthrough_from = i.first.first,
-                      *fallthrough_to = i.first.second;
+    int fallthrough_from = i.first.first, fallthrough_to = i.first.second;
     uint64_t weight = i.second;
     if (fallthrough_from == fallthrough_to ||
-        !CalculateFallthroughBBs(*fallthrough_from, *fallthrough_to, &path))
+        !CanFallThrough(fallthrough_from, fallthrough_to))
       continue;
 
-    path.push_back(fallthrough_to);
-    auto *from_sym = fallthrough_from;
-    CHECK_NE(from_sym, nullptr);
-    for (auto *to_sym : path) {
-      CHECK_NE(to_sym, nullptr);
+    for (int sym = fallthrough_from; sym <= fallthrough_to - 1; ++sym) {
       auto *fallthrough_edge = InternalCreateEdge(
-          from_sym, to_sym, weight, CFGEdge::Kind::kBranchOrFallthough,
+          sym, sym + 1, weight, CFGEdge::Kind::kBranchOrFallthough,
           tmp_node_map, tmp_edge_map);
       if (!fallthrough_edge) break;
-      from_sym = to_sym;
     }
   }
 }
 
-// Calculate fallthrough basicblocks between <from_sym, to_sym>. All symbols
-// that situate between the end of from_sym and the beginning of to_sym are
-// put into "path". Note: all symbols involved here belong to the same
-// function, because there are no fallthroughs across function boundary.
-bool PropellerWholeProgramInfo::CalculateFallthroughBBs(
-    const SymbolEntry &from, const SymbolEntry &to,
-    std::vector<const SymbolEntry *> *path) {
-  path->clear();
+bool PropellerWholeProgramInfo::CanFallThrough(int from, int to) {
   if (from == to) return true;
-  if (from.addr > to.addr) {
+  BbHandle from_bb = bb_handles_[from];
+  BbHandle to_bb = bb_handles_[to];
+  if (GetAddress(from_bb) > GetAddress(to_bb)) {
     LOG(WARNING) << "*** Internal error: fallthrough path start address is "
-                  "larger than end address. ***";
+                    "larger than end address. ***";
     return false;
   }
-  if (!from.CanFallThrough()) {
-    LOG(WARNING) << "*** Skipping non-fallthrough ***"
-                 << SymbolNameFormatter(from);
+  if (!GetBBEntry(from_bb).CanFallThrough) {
+    LOG(WARNING) << "*** Skipping non-fallthrough ***" << GetName(from_bb);
     return false;
   }
-  auto p = address_map_.find(from.addr), q = address_map_.find(to.addr),
-       e = address_map_.end();
-  if (p == e || q == e) {
-    LOG(FATAL) << "*** Internal error: invalid symbol in fallthrough pair. ***";
-    return false;
-  }
-  q = std::next(q);
-  if (from.func_ptr != to.func_ptr) {
+
+  if (from_bb.function_index != to_bb.function_index) {
     LOG(ERROR)
-        << "fallthrough (" << SymbolNameFormatter(from) << " -> "
-        << SymbolNameFormatter(to)
+        << "fallthrough (" << GetName(from_bb) << " -> " << GetName(to_bb)
         << ") does not start and end within the same function.";
     return false;
   }
-  auto func = from.func_ptr;
-  auto i = p;
-  for (++i; i != q && i != e; ++i) {
-    if (i->second.empty()) continue;
-    if (i->second.size() == 1) {  // 99% of the cases.
-      SymbolEntry *s1 = i->second.front().get();
-      if (*s1 == to)
-        break;
-      // (b/62827958) Sometimes LBR contains duplicate entries in the beginning
-      // of the stack which may result in false fallthrough paths. We discard
-      // the fallthrough path if any intermediate block (except the destination
-      // block) does not fall through (source block is checked before entering
-      // this loop).
-      if (!s1->CanFallThrough()) {
-        LOG(WARNING) << "*** Skipping non-fallthrough ***"
-                 << SymbolNameFormatter(*s1);
-        return false;
-      }
-      if (s1->func_ptr == func) {
-        path->push_back(s1);
-        continue;
-      } else {
-        LOG(ERROR) << "Found symbol " << SymbolNameFormatter(s1)
-                   << " in the path of (" << SymbolNameFormatter(from) << " -> "
-                   << SymbolNameFormatter(to)
-                   << ") that is in a different function.";
-        return false;
-      }
-    }
-    // Handling multiple symbols with the same address.
-    // One particular case is while calculating fallthroughs for (71.BB.foo
-    // -> 73.BB.foo) while 73.BB.foo and 72.BB.foo have the same address, like
-    // below:
-    //     0x10 71.BB.foo
-    //     0x15 xx.BB.foo
-    //     0x20 72.BB.foo 73.BB.foo
-    // In this case, we shall only include xx.BB.foo and 72.BB.foo, but
-    // leave 73.BB.foo alone.
-
-    // TODO(b/154263650, rahmanl): only include symbols that meets
-    // SymbolEntry::isFallThroughBlock(). This information is accessible only
-    // after we have bbinfo implemented.
-    std::vector<SymbolEntry *> candidates;
-    uint64_t last_ordinal = 0;
-    for (auto &se : i->second) {
-      CHECK(last_ordinal == 0 || last_ordinal < se->ordinal);
-      last_ordinal = se->ordinal;
-      if (*se != to)
-        candidates.push_back(se.get());
-    }
-    for (auto *sptr : candidates) CHECK(sptr->ordinal);
-    std::sort(candidates.begin(), candidates.end(), SymbolPtrComparator());
-    // find the first that is not from the same function
-    std::vector<SymbolEntry *>::iterator i1 = candidates.begin(),
-                                         ie = candidates.end();
-    while (i1 != ie && (*i1)->IsBasicBlock() && (*i1)->func_ptr == func) ++i1;
-    if (i1 != ie) candidates.erase(i1, ie);
-    if (candidates.empty()) {
-      LOG(ERROR) << "failed to find a BB for "
-                 << "fallthrough (" << SymbolNameFormatter(from) << " -> "
-                 << SymbolNameFormatter(to) << ").";
+  for (int i = from_bb.bb_index; i != to_bb.bb_index; ++i) {
+    BbHandle bb_sym(from_bb.function_index, i);
+    // (b/62827958) Sometimes LBR contains duplicate entries in the beginning
+    // of the stack which may result in false fallthrough paths. We discard
+    // the fallthrough path if any intermediate block (except the destination
+    // block) does not fall through (source block is checked before entering
+    // this loop).
+    if (!GetBBEntry(bb_sym).CanFallThrough) {
+      LOG(WARNING) << "*** Skipping non-fallthrough ***" << GetName(bb_sym);
       return false;
     }
-    path->insert(path->end(), candidates.begin(), candidates.end());
   }
-  if (path->size() >= 200)
-    LOG(WARNING)
-        << "More than 200 BBs along fallthrough (" << SymbolNameFormatter(from)
-        << " -> " << SymbolNameFormatter(to) << "): " << std::dec
-        << path->size() << " BBs.";
+  // Warn about unusually-long fallthroughs.
+  if (to - from >= 200) {
+    LOG(WARNING) << "More than 200 BBs along fallthrough (" << GetName(from_bb)
+                 << " -> " << GetName(to_bb) << "): " << std::dec
+                 << to - from + 1 << " BBs.";
+  }
   return true;
 }
 
-bool PropellerWholeProgramInfo::CreateCfgs() {
-  std::promise<bool> read_symbols_promise;
-  std::future<bool> future_result = read_symbols_promise.get_future();
-  std::thread populate_symbol_map_thread(
-      &PropellerWholeProgramInfo::PopulateSymbolMapWithPromise, this,
-      std::move(read_symbols_promise));
+// For each lbr record addr1->addr2, find function1/2 that contain addr1/addr2
+// and add function1/2's index into the returned set.
+absl::btree_set<int> PropellerWholeProgramInfo::CalculateHotFunctions(
+    const LBRAggregation &lbr_aggregation) {
+  absl::btree_set<int> hot_functions;
+  auto add_to_hot_functions = [this, &hot_functions](uint64_t binary_address) {
+    auto it =
+        absl::c_upper_bound(bb_addr_map_, binary_address,
+                            [](uint64_t addr, const BBAddrMap &func_entry) {
+                              return addr < func_entry.Addr;
+                            });
+    if (it == bb_addr_map_.begin()) return;
+    it = std::prev(it);
+    // We know the address is bigger than or equal to the function address. Make
+    // sure that it doesn't point beyond the last basic block.
+    if (binary_address >=
+        it->Addr + it->BBEntries.back().Offset + it->BBEntries.back().Size)
+      return;
+    hot_functions.insert(it - bb_addr_map_.begin());
+  };
+  for (const auto &bcnt : lbr_aggregation.branch_counters) {
+    add_to_hot_functions(bcnt.first.first);
+    add_to_hot_functions(bcnt.first.second);
+  }
+  stats_.hot_functions = hot_functions.size();
+  return hot_functions;
+}
 
-  Optional<LBRAggregation> opt_lbr_aggregation = ParsePerfData();
-  populate_symbol_map_thread.join();
-  if (!future_result.get() || !opt_lbr_aggregation) return false;
+void PropellerWholeProgramInfo::DropNonSelectedFunctions(
+    const absl::btree_set<int> &selected_functions) {
+  for (int i = 0; i != bb_addr_map_.size(); ++i) {
+    if (selected_functions.contains(i)) continue;
+    bb_addr_map_[i].BBEntries.clear();
+    bb_addr_map_[i].BBEntries.shrink_to_fit();
+    if (!options_.keep_frontend_intermediate_data())
+      symtab_.erase(bb_addr_map_[i].Addr);
+  }
+}
+
+void PropellerWholeProgramInfo::FilterNoNameFunctions(
+    absl::btree_set<int> &selected_functions) const {
+  for (auto it = selected_functions.begin(); it != selected_functions.end();) {
+    if (!function_index_to_names_map_.contains(*it)) {
+      LOG(WARNING) << "Hot function at address: 0x"
+                   << absl::StrCat(absl::Hex(bb_addr_map_[*it].Addr))
+                   << " does not have an associated symbol name.";
+      it = selected_functions.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void PropellerWholeProgramInfo::FilterNonTextFunctions(
+    absl::btree_set<int> &selected_functions) const {
+  for (auto func_it = selected_functions.begin();
+       func_it != selected_functions.end();) {
+    int function_index = *func_it;
+    llvm::object::SymbolRef symbol_ref =
+        symtab_.at(bb_addr_map_[function_index].Addr).front();
+    StringRef section_name =
+        llvm::cantFail(llvm::cantFail(symbol_ref.getSection())->getName());
+    if (section_name.startswith(".text")) {
+      ++func_it;
+    } else {
+      LOG(WARNING)
+          << "Skipped symbol in none '.text.*' section '" << section_name.str()
+          << "': "
+          << function_index_to_names_map_.at(function_index).front().str();
+      func_it = selected_functions.erase(func_it);
+    }
+  }
+}
+
+// Without '-funique-internal-linkage-names', if multiple functions have the
+// same name, even though we can correctly map their profiles, we cannot apply
+// those profiles back to their object files.
+// This function removes all such functions which have the same name as other
+// functions in the binary.
+int PropellerWholeProgramInfo::FilterDuplicateNameFunctions(
+    absl::btree_set<int> &selected_functions) const {
+  int duplicate_symbols = 0;
+  absl::flat_hash_map<StringRef, std::vector<int>> name_to_function_index;
+  for (int func_index : selected_functions) {
+    for (StringRef name : function_index_to_names_map_.at(func_index))
+      name_to_function_index[name].push_back(func_index);
+  }
+
+  for (auto [name, func_indices] : name_to_function_index) {
+    if (func_indices.size() <= 1) continue;
+    duplicate_symbols += func_indices.size() - 1;
+    // Sometimes, duplicated uniq-named symbols are essentially identical
+    // copies. In such cases, we can still keep one copy.
+    // TODO(rahmanl): Why does this work? If we remove other copies, we cannot
+    // map their profiles either.
+    if (name.contains(".__uniq.")) {
+      // duplicate uniq-named symbols found
+      const BBAddrMap &func_addr_map = bb_addr_map_[func_indices.front()];
+      // If the uniq-named functions have the same structure, we assume
+      // they are the same and thus we keep one copy of them.
+      bool same_structure = absl::c_all_of(func_indices, [&](int i) {
+        return absl::c_equal(func_addr_map.BBEntries, bb_addr_map_[i].BBEntries,
+                             [](const llvm::object::BBAddrMap::BBEntry &e1,
+                                const llvm::object::BBAddrMap::BBEntry &e2) {
+                               return e1.Offset == e2.Offset &&
+                                      e1.Size == e2.Size;
+                             });
+      });
+      if (same_structure) {
+        LOG(WARNING) << func_indices.size()
+                     << " duplicate uniq-named functions '" << name.str()
+                     << "' with same size and structure found, keep one copy.";
+        for (int i = 1; i < func_indices.size(); ++i)
+          selected_functions.erase(func_indices[i]);
+        continue;
+      }
+      LOG(WARNING) << "duplicate uniq-named functions '" << name.str()
+                   << "' with different size or structure found , drop "
+                      "all of them.";
+    }
+    for (auto func_idx : func_indices) selected_functions.erase(func_idx);
+  }
+  return duplicate_symbols;
+}
+
+absl::btree_set<int> PropellerWholeProgramInfo::SelectFunctions(
+    CfgCreationMode cfg_creation_mode, const LBRAggregation *lbr_aggregation) {
+  absl::btree_set<int> selected_functions;
+
+  if (cfg_creation_mode == CfgCreationMode::kOnlyHotFunctions) {
+    CHECK_NE(lbr_aggregation, nullptr);
+    selected_functions = CalculateHotFunctions(*lbr_aggregation);
+  } else {
+    for (int i = 0; i != bb_addr_map_.size(); ++i) selected_functions.insert(i);
+  }
+
+  FilterNoNameFunctions(selected_functions);
+  FilterNonTextFunctions(selected_functions);
+  stats_.duplicate_symbols += FilterDuplicateNameFunctions(selected_functions);
+  DropNonSelectedFunctions(selected_functions);
+
+  std::optional<uint64_t> last_function_address;
+  for (int function_index : selected_functions) {
+    const auto &function_bb_addr_map = bb_addr_map_[function_index];
+    if (last_function_address.has_value())
+      CHECK_GT(function_bb_addr_map.Addr, *last_function_address);
+    for (int bb_index = 0; bb_index != function_bb_addr_map.BBEntries.size();
+         ++bb_index)
+      bb_handles_.push_back({function_index, bb_index});
+    last_function_address = function_bb_addr_map.Addr;
+  }
+
+  return selected_functions;
+}
+
+absl::Status PropellerWholeProgramInfo::ReadBinaryInfo() {
+  BinaryInfo &binary_info = binary_perf_info_.binary_info;
+  LOG(INFO) << "Started reading the binary info from: "
+            << binary_info.file_name;
+  symtab_ = ReadSymbolTable(binary_info);
+
+  auto bb_addr_map_status = CreateELFFileUtil(binary_info.object_file.get())
+    ->GetBbAddrMap(binary_info);
+  if (bb_addr_map_status.ok())
+    bb_addr_map_ = std::move(bb_addr_map_status.value());
+  else
+    return bb_addr_map_status.status();
+  
+  function_index_to_names_map_ =
+      SetFunctionIndexToNamesMap(symtab_, bb_addr_map_);
+  stats_.bbaddrmap_function_does_not_have_symtab_entry +=
+      bb_addr_map_.size() - function_index_to_names_map_.size();
+  LOG(INFO) << "Finished reading the binary info from: "
+            << binary_info.file_name;
+  return absl::OkStatus();
+}
+
+// "CreateCfgs" steps:
+//   1.a ReadSymbolTable
+//   1.b ParsePerfData
+//   2. CalculateHotFunctions or mark all functions as hot
+//   3. ReadBbAddrMap
+//   4. DoCreateCfgs
+absl::Status PropellerWholeProgramInfo::CreateCfgs(
+    CfgCreationMode cfg_creation_mode) {
+  std::thread read_binary_info_thread(
+      &PropellerWholeProgramInfo::ReadBinaryInfo, this);
+  absl::StatusOr<LBRAggregation> lbr_aggregation = ParsePerfData();
+
+  read_binary_info_thread.join();
+
+  if (status_provider_) status_provider_->SetProgress(20);
+
+  if (cfg_creation_mode == CfgCreationMode::kOnlyHotFunctions &&
+      !lbr_aggregation.ok()) {
+    return lbr_aggregation.status();
+  }
+
+  absl::btree_set<int> selected_functions = SelectFunctions(
+      cfg_creation_mode, lbr_aggregation.ok() ? &*lbr_aggregation : nullptr);
+  if (status_provider_) status_provider_->SetProgress(50);
 
   // This must be done only after both PopulateSymbolMaps and ParsePerfData
   // finish. Note: opt_lbr_aggregation is released afterwards.
-  return DoCreateCfgs(std::move(*opt_lbr_aggregation));
+  absl::Status status =
+      DoCreateCfgs(std::move(*lbr_aggregation), std::move(selected_functions));
+  if (status_provider_) status_provider_->SetDone();
+  return status;
 }
 }  // namespace devtools_crosstool_autofdo

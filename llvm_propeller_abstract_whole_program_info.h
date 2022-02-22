@@ -4,32 +4,44 @@
 #if defined(HAVE_LLVM)
 
 #include <map>
+#include <memory>
+#include <vector>
 
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_statistics.h"
 #include "llvm/ADT/StringRef.h"
 
+#include "third_party/abseil/absl/status/status.h"
+
 namespace devtools_crosstool_autofdo {
+
+// Struct for specifying whether CFGs must be created for all or only for hot
+// functions.
+enum class CfgCreationMode {
+  kAllFunctions,
+  kOnlyHotFunctions,
+};
 
 // This is the data interface between the frontend (protobuf / binary+perf) and
 // the code layout algorith. The main data carried here:
 //   cfgs() - ControlFlowGraphs indexed by name
-//   address_map() - SymbolEntries ownership and indexed by address.
 //   options() - frontend options
 class AbstractPropellerWholeProgramInfo {
  public:
   // Ownership of cfgs. Cfgs are indexed with primary name as key only.
   using CFGMapTy = std::map<llvm::StringRef, std::unique_ptr<ControlFlowGraph>>;
-  // Ownership of SymbolEntries. Symbol ordinal -> SymbolEntry ptr.
-  using OrdinalMapTy = std::map<uint64_t, std::unique_ptr<SymbolEntry>>;
 
   explicit AbstractPropellerWholeProgramInfo(const PropellerOptions &options)
       : options_(options) {}
 
   virtual ~AbstractPropellerWholeProgramInfo() {}
 
-  virtual bool CreateCfgs() = 0;
+  // CreateCfgs now can calculate a list of hot functions from profiles and only
+  // create CFGs for hot functions, this greatly reduces memory
+  // consumption. `cfg_creation_mode=kAllFunctions` will disable this
+  // optimization and create CFGs for all functions, which is useful in testing.
+  virtual absl::Status CreateCfgs(CfgCreationMode cfg_creation_mode) = 0;
 
   const CFGMapTy &cfgs() const { return cfgs_; }
   const PropellerOptions &options() const { return options_; }

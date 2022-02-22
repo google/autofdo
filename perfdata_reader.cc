@@ -1,19 +1,23 @@
 #include "perfdata_reader.h"
 
 #include <functional>
+#include <list>
 #include <string>
 #include <utility>
 
+#include "llvm_propeller_perf_data_provider.h"
+#include "third_party/abseil/absl/status/status.h"
+#include "third_party/abseil/absl/strings/str_cat.h"
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FormatAdapters.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Path.h"
 #include "quipper/perf_parser.h"
 #include "quipper/perf_reader.h"
-
-#include <list>
 
 namespace {
 // Convert binary data stored in data[...] into text representation.
@@ -31,6 +35,8 @@ std::string BinaryDataToAscii(const std::string &data) {
 
 namespace devtools_crosstool_autofdo {
 
+using ::llvm::object::BBAddrMap;
+
 // TODO(shenhan): remove the following code once it is upstreamed.
 template <class ELFT>
 std::string ELFFileUtil<ELFT>::GetBuildId() {
@@ -43,11 +49,7 @@ std::string ELFFileUtil<ELFT>::GetBuildId() {
   for (const typename ELFT::Shdr &shdr :
        llvm::cantFail(elf_file_->sections())) {
     llvm::Expected<llvm::StringRef> section_name =
-#ifdef LLVM_GETELFFILE_RET_REFERENCE
-          elf_file_->getSectionName(shdr);
-#else
-          elf_file_->getSectionName(&shdr);
-#endif
+        elf_file_->getSectionName(shdr);
     if (!section_name || shdr.sh_type != llvm::ELF::SHT_NOTE ||
         *section_name != kBuildIDSectionName)
       continue;
@@ -75,6 +77,31 @@ std::string ELFFileUtil<ELFT>::GetBuildId() {
                     "the first one will be returned";
   }
   return build_ids.front();
+}
+
+template <class ELFT>
+absl::StatusOr<std::vector<llvm::object::BBAddrMap>>
+ELFFileUtil<ELFT>::GetBbAddrMap(
+    const devtools_crosstool_autofdo::BinaryInfo &binary_info) {
+  if (!elf_file_) return absl::FailedPreconditionError("ELF file is null");
+  for (const typename ELFT::Shdr &sec : llvm::cantFail(elf_file_->sections())) {
+    if (sec.sh_type != llvm::ELF::SHT_LLVM_BB_ADDR_MAP) continue;
+    llvm::Expected<std::vector<BBAddrMap>> bb_addr_map =
+        elf_file_->decodeBBAddrMap(sec);
+    if (!bb_addr_map) {
+      return absl::InternalError(
+          llvm::formatv("Failed to read the {0} section {1} from {2}: {3}.",
+                        kBbAddrMapSectionName,
+                        llvm::cantFail(elf_file_->getSectionName(sec)),
+                        binary_info.file_name,
+                        llvm::fmt_consume(bb_addr_map.takeError()))
+              .str());
+    }
+    return *bb_addr_map;
+  }
+  return absl::FailedPreconditionError(
+      absl::StrFormat("'%s' does not have the '%s' section.",
+                      binary_info.file_name, kBbAddrMapSectionName));
 }
 
 template <class ELFT>
@@ -106,45 +133,6 @@ bool ELFFileUtil<ELFT>::ReadLoadableSegments(
     return false;
   }
   return true;
-}
-
-template <class ELFT>
-llvm::Optional<bool> ELFFileUtil<ELFT>::IsFirstLoadableSegmentExecutable()
-    const {
-  if (!elf_file_) return false;
-  auto program_headers = elf_file_->program_headers();
-  if (!program_headers) return llvm::None;
-
-  for (const typename ELFT::Phdr &phdr : *program_headers)
-    if (phdr.p_type == llvm::ELF::PT_LOAD)
-      return (phdr.p_flags & llvm::ELF::PF_X);
-
-  // None loadable segment found, so return true;
-  LOG(ERROR) << "No loadable segments found in elf";
-  return llvm::None;
-}
-
-llvm::Optional<bool> CheckFirstLoadableSegmentIsExecutable(
-    const std::string &binary) {
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> file =
-      llvm::MemoryBuffer::getFile(binary);
-  if (!file) {
-    LOG(ERROR) << "Failed to read file '" << binary << "'.";
-    return llvm::None;
-  }
-  llvm::Expected<std::unique_ptr<llvm::object::ObjectFile>> obj =
-      llvm::object::ObjectFile::createELFObjectFile(
-          llvm::MemoryBufferRef(*(*file)));
-  if (!obj) {
-    LOG(ERROR) << "Not a valid ELF file '" << binary << "'.";
-    return llvm::None;
-  }
-  auto elf_util = devtools_crosstool_autofdo::CreateELFFileUtil(obj->get());
-  if (!elf_util) {
-    LOG(ERROR) << "Cannot create ELFFileUtil for '" << binary << "'.";
-    return llvm::None;
-  }
-  return elf_util->IsFirstLoadableSegmentExecutable();
 }
 
 std::unique_ptr<ELFFileUtilBase> CreateELFFileUtil(
@@ -261,34 +249,40 @@ bool PerfDataReader::SelectBinaryInfo(const std::string &binary_file_name,
 
   return elf_file_util->ReadLoadableSegments(binary_info);
 }
-bool PerfDataReader::SelectPerfInfo(const std::string &perf_file,
+bool PerfDataReader::SelectPerfInfo(PerfDataProvider::BufferHandle perf_data,
                                     const std::string &match_mmap_name,
                                     BinaryPerfInfo *binary_perf_info) const {
   // "binary_info" must already be initialized.
   if (!(binary_perf_info->binary_info.file_content)) return false;
-  auto perf_reader = std::make_unique<quipper::PerfReader>();
-  if (!perf_reader->ReadFile(perf_file)) {
-    LOG(ERROR) << "Failed to read perf data file: " << perf_file;
+
+  quipper::PerfReader perf_reader;
+  // Ignore SAMPLE events for now to reduce memory usage. They will be needed
+  // only in AggregateLBR, which will do a separate pass over the profiles.
+  perf_reader.SetEventTypesToSkipWhenSerializing({quipper::PERF_RECORD_SAMPLE});
+  if (!perf_reader.ReadFromPointer(perf_data.buffer->getBufferStart(),
+                                   perf_data.buffer->getBufferSize())) {
+    LOG(ERROR) << "Failed to read perf data file: " << perf_data.description;
     return false;
   }
 
-  auto perf_parser = std::make_unique<quipper::PerfParser>(perf_reader.get());
-  if (!perf_parser->ParseRawEvents()) {
+  quipper::PerfParser perf_parser(&perf_reader);
+  if (!perf_parser.ParseRawEvents()) {
     LOG(ERROR) << "Failed to parse perf raw events for perf file: '"
-               << perf_file << "'.";
+               << perf_data.description << "'.";
     return false;
   }
 
-  binary_perf_info->perf_reader = std::move(perf_reader);
-  binary_perf_info->perf_parser = std::move(perf_parser);
+  binary_perf_info->perf_data = std::move(perf_data);
 
-  return SelectMMaps(binary_perf_info, match_mmap_name);
+  return SelectMMaps(binary_perf_info, perf_reader, perf_parser,
+                     match_mmap_name);
 }
 
 // Find the set of file names in perf.data file which has the same build id as
 // found in "binary_file_name".
 llvm::Optional<std::set<std::string>> FindFileNameInPerfDataWithFileBuildId(
-    const std::string &binary_file_name, BinaryPerfInfo *info) {
+    const std::string &binary_file_name, const quipper::PerfReader &perf_reader,
+    BinaryPerfInfo *info) {
   if (info->binary_info.build_id.empty()) {
     LOG(INFO) << "No Build Id found in '" << binary_file_name << "'.";
     return llvm::None;
@@ -296,8 +290,8 @@ llvm::Optional<std::set<std::string>> FindFileNameInPerfDataWithFileBuildId(
   LOG(INFO) << "Build Id found in '" << binary_file_name
             << "': " << info->binary_info.build_id;
   std::set<std::string> buildid_names;
-  if (PerfDataReader().GetBuildIdNames(
-          *(info->perf_reader), info->binary_info.build_id, &buildid_names)) {
+  if (PerfDataReader().GetBuildIdNames(perf_reader, info->binary_info.build_id,
+                                       &buildid_names)) {
     for (const std::string &fn : buildid_names)
       LOG(INFO) << "Build Id '" << info->binary_info.build_id
                 << "' has filename '" << fn << "'.";
@@ -306,25 +300,48 @@ llvm::Optional<std::set<std::string>> FindFileNameInPerfDataWithFileBuildId(
   return llvm::None;
 }
 
+// Select mmaps from perf.data.
+// a) match_mmap_name == "" && binary has buildid:
+//    the perf.data mmaps are selected using binary's buildid, if there is no
+//    match, select fails.
+// b) match_mmap_name == "" && binary does not has buildid:
+//    select fails.
+// c) match_mmap_name != ""
+//    the perf.data mmap is selected using match_mmap_name
 bool PerfDataReader::SelectMMaps(BinaryPerfInfo *info,
+                                 const quipper::PerfReader &perf_reader,
+                                 const quipper::PerfParser &perf_parser,
                                  const std::string &match_mmap_name) const {
   std::unique_ptr<MMapSelector> mmap_selector;
-  std::string match_fn = match_mmap_name;
+  const std::string &match_fn = match_mmap_name;
   // If match_mmap_name is "", we try to use build-id name in matching.
   if (match_mmap_name.empty()) {
     if (auto fn_set = FindFileNameInPerfDataWithFileBuildId(
-            info->binary_info.file_name, info)) {
+            info->binary_info.file_name, perf_reader, info)) {
       mmap_selector = std::make_unique<MMapSelector>(*fn_set);
     } else {
-      mmap_selector = std::make_unique<MMapSelector>(
-          std::set<std::string>({info->binary_info.file_name}));
+      // No filenames have been found either because the input binary
+      // has no build-id or no matching build-id found in perf.data.
+      if (info->binary_info.build_id.empty()) {
+        LOG(ERROR)
+            << info->binary_info.file_name << " has no build-id. "
+            << "Use '--profiled_binary_name' to force name matching.";
+        return false;
+      }
+      LOG(ERROR)
+            << info->binary_info.file_name << " has build-id '"
+            << info->binary_info.build_id
+            << "', however, this build-id is not found in the perf "
+               "build-id list. Use '--profiled_binary_name' to force name "
+               "matching.";
+      return false;
     }
   } else {
     mmap_selector = std::make_unique<MMapSelector>(
         std::set<std::string>({match_mmap_name}));
   }
 
-  for (const auto &pe : info->perf_parser->parsed_events()) {
+  for (const auto &pe : perf_parser.parsed_events()) {
     quipper::PerfDataProto_PerfEvent *event_ptr = pe.event_ptr;
     if (event_ptr->event_type_case() !=
         quipper::PerfDataProto_PerfEvent::kMmapEvent)
@@ -420,19 +437,14 @@ uint64_t PerfDataReader::RuntimeAddressToBinaryAddress(
 
 void PerfDataReader::AggregateLBR(const BinaryPerfInfo &binary_perf_info,
                                   LBRAggregation *result) const {
-  for (const auto &pe : binary_perf_info.perf_parser->parsed_events()) {
-    quipper::PerfDataProto_PerfEvent *event_ptr = pe.event_ptr;
-    if (event_ptr->event_type_case() !=
-        quipper::PerfDataProto_PerfEvent::kSampleEvent)
-      continue;
-    auto &event = event_ptr->sample_event();
+  auto process_event = [&](const quipper::PerfDataProto::SampleEvent &event) {
     if (!event.has_pid() || binary_perf_info.binary_mmaps.find(event.pid()) ==
                                 binary_perf_info.binary_mmaps.end())
-      continue;
+      return;
 
     uint64_t pid = event.pid();
     const auto &brstack = event.branch_stack();
-    if (brstack.empty()) continue;
+    if (brstack.empty()) return;
     uint64_t last_from = kInvalidAddress;
     uint64_t last_to = kInvalidAddress;
     for (int p = brstack.size() - 1; p >= 0; --p) {
@@ -450,8 +462,23 @@ void PerfDataReader::AggregateLBR(const BinaryPerfInfo &binary_perf_info,
         result->fallthrough_counters[std::make_pair(last_to, from)]++;
       last_to = to;
       last_from = from;
-    }  // End of iterating one br record
-  }    // End of iterating all br records.
+    }
+  };
+
+  quipper::PerfReader perf_reader;
+  // We don't need to serialise anything here, so let's exclude all major event
+  // types.
+  perf_reader.SetEventTypesToSkipWhenSerializing(
+      {quipper::PERF_RECORD_SAMPLE, quipper::PERF_RECORD_MMAP,
+       quipper::PERF_RECORD_FORK, quipper::PERF_RECORD_COMM});
+  perf_reader.SetSampleCallback(process_event);
+  CHECK(binary_perf_info.perf_data.has_value());
+  if (!perf_reader.ReadFromPointer(
+          binary_perf_info.perf_data->buffer->getBufferStart(),
+          binary_perf_info.perf_data->buffer->getBufferSize())) {
+    LOG(FATAL) << "Failed to read perf data file: "
+               << binary_perf_info.perf_data->description;
+  }
 }
 
 bool PerfDataReader::GetBuildIdNames(const quipper::PerfReader &perf_reader,

@@ -4,17 +4,19 @@
 #include <iterator>
 #include <memory>
 #include <tuple>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include "llvm_propeller_bbsections.h"
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_chain_cluster_builder.h"
+#include "llvm_propeller_node_chain_assembly.h"
 #include "llvm_propeller_node_chain_builder.h"
 #include "third_party/abseil/absl/algorithm/container.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/functional/function_ref.h"
+#include "third_party/abseil/absl/strings/str_cat.h"
+#include "third_party/abseil/absl/strings/str_join.h"
+#include "third_party/abseil/absl/strings/string_view.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -70,14 +72,18 @@ CFGScoreMapTy CodeLayout::ComputeOptLayoutScores(
   });
 }
 
-CodeLayoutResult CodeLayout::OrderAll() {
+std::vector<FunctionClusterInfo> CodeLayout::OrderAll() {
   // Build optimal node chains for eac CFG.
   // TODO(rahmanl) Call NodeChainBuilder(cfgs_).BuildChains() for interp
   std::vector<std::unique_ptr<NodeChain>> built_chains;
   for (auto *cfg : cfgs_) {
-    auto chains = NodeChainBuilder(code_layout_scorer_, cfg).BuildChains();
+    auto chains =
+        NodeChainBuilder(code_layout_scorer_, *cfg, stats_).BuildChains();
     std::move(chains.begin(), chains.end(), std::back_inserter(built_chains));
   }
+
+  LOG(INFO) << stats_.DebugString();
+
   // Further cluster the constructed chains to get the global order of all
   // nodes.
   auto clusters = ChainClusterBuilder(std::move(built_chains)).BuildClusters();
@@ -85,12 +91,13 @@ CodeLayoutResult CodeLayout::OrderAll() {
   // Order clusters consistent with the original ordering.
   // TODO(rahmanl): Order clusters in decreasing order of their exec density.
   absl::c_sort(clusters,
-            [](auto &lhs, auto &rhs) { return lhs->id() < rhs->id(); });
+               [](auto &lhs, auto &rhs) { return lhs->id() < rhs->id(); });
 
   CFGScoreMapTy orig_score_map = ComputeOrigLayoutScores();
   CFGScoreMapTy opt_score_map = ComputeOptLayoutScores(clusters);
 
-  CodeLayoutResult layout_clusters;
+  // Mapping from the function ordinal to the layout cluster info.
+  absl::flat_hash_map<uint64_t, FunctionClusterInfo> function_cluster_info_map;
 
   ControlFlowGraph *cfg = nullptr;
   unsigned layout_index = 0;
@@ -101,7 +108,7 @@ CodeLayoutResult CodeLayout::OrderAll() {
   // clusters of bar.
   unsigned cold_cluster_layout_index = 0;
 
-  auto func_cluster_info_it = layout_clusters.end();
+  auto func_cluster_info_it = function_cluster_info_map.end();
 
   // Iterate over all CFG nodes in order and add them to the cluster layout
   // information.
@@ -113,14 +120,15 @@ CodeLayoutResult CodeLayout::OrderAll() {
         cfg = n.cfg();
         uint64_t func_symbol_ordinal = cfg->GetEntryNode()->symbol_ordinal();
         bool inserted = false;
-        std::tie(func_cluster_info_it, inserted) = layout_clusters.insert(
-            {func_symbol_ordinal,
-             {.cfg = cfg,
-              // We populate the clusters vector later.
-              .clusters = {},
-              .original_score = orig_score_map.at(cfg),
-              .optimized_score = opt_score_map.at(cfg),
-              .cold_cluster_layout_index = cold_cluster_layout_index}});
+        std::tie(func_cluster_info_it, inserted) =
+            function_cluster_info_map.insert(
+                {func_symbol_ordinal,
+                 {.cfg = cfg,
+                  // We populate the clusters vector later.
+                  .clusters = {},
+                  .original_score = orig_score_map.at(cfg),
+                  .optimized_score = opt_score_map.at(cfg),
+                  .cold_cluster_layout_index = cold_cluster_layout_index}});
         if (inserted) ++cold_cluster_layout_index;
         // Start a new cluster and increment the global layout index.
         func_cluster_info_it->second.clusters.emplace_back(layout_index++);
@@ -129,18 +137,32 @@ CodeLayoutResult CodeLayout::OrderAll() {
           n.bb_index());
     });
   }
+  std::vector<FunctionClusterInfo> all_function_cluster_info;
+  all_function_cluster_info.reserve(function_cluster_info_map.size());
+  for (auto &[unused, func_cluster_info] : function_cluster_info_map) {
+    all_function_cluster_info.push_back(std::move(func_cluster_info));
+  }
+
   // For each function cluster info, sort the BB clusters in increasing order of
   // their first basic block index to make sure they appear in a fixed order in
   // the cluster file which is independent from the global cluster ordering.
   // TODO(rahmanl): Test the cluster order once we have interproc-reordering.
-  for (auto &[unused, func_cluster_info] : layout_clusters)
+  for (auto &func_cluster_info : all_function_cluster_info) {
     std::sort(func_cluster_info.clusters.begin(),
               func_cluster_info.clusters.end(),
-              [](const FuncLayoutClusterInfo::BBCluster &a,
-                 const FuncLayoutClusterInfo::BBCluster &b) {
+              [](const FunctionClusterInfo::BBCluster &a,
+                 const FunctionClusterInfo::BBCluster &b) {
                 return a.bb_indexes.front() < b.bb_indexes.front();
               });
+  }
+  // For determinism, order the function cluster info elements in
+  // lexicographical order of their (primary) function name.
+  std::sort(all_function_cluster_info.begin(), all_function_cluster_info.end(),
+            [](const FunctionClusterInfo &a, const FunctionClusterInfo &b) {
+              return a.cfg->GetPrimaryName().compare(b.cfg->GetPrimaryName()) <
+                     0;
+            });
 
-  return layout_clusters;
+  return all_function_cluster_info;
 }
 }  // namespace devtools_crosstool_autofdo

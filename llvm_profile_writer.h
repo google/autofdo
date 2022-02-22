@@ -27,7 +27,6 @@ class LLVMProfileWriter : public ProfileWriter {
 
  private:
   llvm::sampleprof::SampleProfileFormat format_;
-  bool compress_;
   std::unique_ptr<llvm::sampleprof::SampleProfileWriter> sample_prof_writer_;
 
   DISALLOW_COPY_AND_ASSIGN(LLVMProfileWriter);
@@ -47,6 +46,8 @@ class LLVMProfileBuilder : public SymbolTraverser {
       const StringIndexMap &name_table,
       llvm::sampleprof::SampleProfileWriter *sample_profile_writer);
 
+// LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT is defined when llvm version is before
+// https://reviews.llvm.org/rGb9db70369b7799887b817e13109801795e4d70fc
 #ifndef LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT
   const llvm::sampleprof::SampleProfileMap &ConvertProfiles(
       const SymbolMap &symbol_map);
@@ -71,6 +72,8 @@ class LLVMProfileBuilder : public SymbolTraverser {
   llvm::StringRef GetNameRef(const std::string &str);
 
  private:
+// LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT is defined when llvm version is before
+// https://reviews.llvm.org/rGb9db70369b7799887b817e13109801795e4d70fc
 #ifndef LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT
   llvm::sampleprof::SampleProfileMap profiles_;
 #else

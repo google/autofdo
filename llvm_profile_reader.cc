@@ -1,5 +1,7 @@
 #include "llvm_profile_reader.h"
 
+#include <memory>
+
 #include "symbol_map.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/ProfileData/SampleProfReader.h"
@@ -19,19 +21,24 @@ bool LLVMProfileReader::ReadFromFile(const std::string &filename) {
 #endif
   llvm::LLVMContext C;
 #if LLVM_VERSION_MAJOR >= 12
+  llvm::sampleprof::FunctionSamples::ProfileIsFS = false;
   auto reader_or_err = llvm::sampleprof::SampleProfileReader::create(
       filename, C, discriminator_pass);
 #else
   auto reader_or_err =
       llvm::sampleprof::SampleProfileReader::create(filename, C);
 #endif
-  if (reader_or_err.getError()) {
+  if (!reader_or_err) {
+    LOG(ERROR) << "Cannot create a SampleProfileReader: "
+               << reader_or_err.getError().message();
     return false;
   }
 
   std::unique_ptr<llvm::sampleprof::SampleProfileReader> reader =
       std::move(reader_or_err.get());
-  if (reader->read() != llvm::sampleprof_error::success) {
+  std::error_code read_error = reader->read();
+  if (read_error != llvm::sampleprof_error::success) {
+    LOG(ERROR) << "Cannot read profile: " << read_error.message();
     return false;
   }
 
@@ -42,7 +49,7 @@ bool LLVMProfileReader::ReadFromFile(const std::string &filename) {
   auto reader_sym_list = reader->getProfileSymbolList();
   if (reader_sym_list) {
     auto prof_sym_list =
-        absl::make_unique<llvm::sampleprof::ProfileSymbolList>();
+        std::make_unique<llvm::sampleprof::ProfileSymbolList>();
     prof_sym_list->merge(*reader_sym_list);
     SetProfileSymbolList(std::move(prof_sym_list));
   }
@@ -51,6 +58,9 @@ bool LLVMProfileReader::ReadFromFile(const std::string &filename) {
     SourceStack stack;
     ReadFromFunctionSamples(stack, name_profile.second);
   }
+#if LLVM_VERSION_MAJOR >= 12
+  profile_is_fs_ = llvm::sampleprof::FunctionSamples::ProfileIsFS;
+#endif
   return true;
 }
 

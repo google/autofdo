@@ -312,6 +312,7 @@ function (config_with_llvm)
     absl::flags
     absl::flags_parse
     absl::status
+    absl::statusor
     absl::str_format
     absl::strings
     create_llvm_prof_object
@@ -319,11 +320,14 @@ function (config_with_llvm)
     llvm_profile_reader
     llvm_profile_writer
     llvm_propeller_objects
+    llvm_propeller_perf_data_provider
     perfdata_reader
     profile_creator
     quipper_perf
     sample_reader
+    status_provider
     symbol_map
+    status_provider
     LLVMDebugInfoDWARF
     LLVMSupport)
 
@@ -364,19 +368,27 @@ function (config_with_llvm)
     LLVMProfileData)
   add_test(NAME llvm_profile_writer_test COMMAND llvm_profile_writer_test)
 
-  add_library(llvm_propeller_objects OBJECT 
+  add_library(status_provider OBJECT
+    status_provider.cc
+    status_consumer_registry.cc)
+
+  add_library(llvm_propeller_perf_data_provider OBJECT
+    llvm_propeller_file_perf_data_provider.cc)
+
+  add_library(llvm_propeller_objects OBJECT
     llvm_propeller_cfg.cc
     llvm_propeller_chain_cluster_builder.cc 
     llvm_propeller_code_layout.cc
     llvm_propeller_code_layout_scorer.cc
     llvm_propeller_formatting.cc
     llvm_propeller_node_chain.cc
+    llvm_propeller_node_chain_assembly.cc
     llvm_propeller_node_chain_builder.cc
     llvm_propeller_options_builder.cc
     ${LLVM_PROPELLER_OPTIONS_PROTO_CC}
     llvm_propeller_profile_writer.cc
     llvm_propeller_whole_program_info.cc)
-  add_dependencies(llvm_propeller_objects llvm_profile_writer)
+  add_dependencies(llvm_propeller_objects absl::statusor llvm_profile_writer status_provider)
 
   add_executable(instruction_map_test addr2line.cc instruction_map.cc instruction_map_test.cc)
   target_link_libraries(instruction_map_test
@@ -417,6 +429,7 @@ function (config_with_llvm)
     absl::flags
     absl::flags_parse
     absl::status
+    absl::statusor
     absl::str_format
     absl::strings
     glog
@@ -427,10 +440,12 @@ function (config_with_llvm)
     llvm_propeller_cfg_proto
     llvm_propeller_mock_whole_program_info
     llvm_propeller_objects
+    llvm_propeller_perf_data_provider
     perfdata_reader
     profile_creator
     quipper_perf
     sample_reader
+    status_provider
     symbol_map
     LLVMDebugInfoDWARF
     LLVMSupport )
@@ -442,9 +457,11 @@ function (config_with_llvm)
     absl::flags
     absl::flags_parse
     absl::status
+    absl::statusor
     absl::str_format
     absl::strings
     glog
+    gmock
     gtest
     gtest_main
     llvm_profile_reader
@@ -452,10 +469,12 @@ function (config_with_llvm)
     llvm_propeller_cfg_proto
     llvm_propeller_mock_whole_program_info
     llvm_propeller_objects
+    llvm_propeller_perf_data_provider
     perfdata_reader
     profile_creator
     quipper_perf
     sample_reader
+    status_provider
     symbol_map
     LLVMDebugInfoDWARF
     LLVMSupport )
@@ -467,8 +486,10 @@ function (config_with_llvm)
     absl::flags
     absl::flags_parse
     absl::status
+    absl::statusor
     absl::str_format
     absl::strings
+    gmock
     glog
     gtest
     gtest_main
@@ -477,10 +498,12 @@ function (config_with_llvm)
     llvm_propeller_cfg_proto
     llvm_propeller_mock_whole_program_info
     llvm_propeller_objects
+    llvm_propeller_perf_data_provider
     perfdata_reader
     profile_creator
     quipper_perf
     sample_reader
+    status_provider
     symbol_map
     LLVMDebugInfoDWARF
     LLVMSupport )

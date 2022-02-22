@@ -57,14 +57,14 @@ TEST(SymbolMapTest, SymbolMap) {
   symbol_map.AddSourceCount("foo", stack, 150, 2);
   const devtools_crosstool_autofdo::Symbol *symbol =
       symbol_map.map().find("foo")->second;
-  ASSERT_TRUE(symbol != NULL);
+  ASSERT_TRUE(symbol != nullptr);
   EXPECT_EQ(symbol->pos_counts.size(), 1);
   EXPECT_EQ(symbol->callsites.size(), 1);
   EXPECT_EQ(symbol->EntryCount(), 150);
   const devtools_crosstool_autofdo::Symbol *bar =
       symbol->callsites.find(std::make_pair(tuple2.Offset(false), "bar"))
           ->second;
-  ASSERT_TRUE(bar != NULL);
+  ASSERT_TRUE(bar != nullptr);
   EXPECT_EQ(bar->total_count, 100);
   EXPECT_EQ(bar->callsites.size(), 0);
   EXPECT_EQ(bar->pos_counts.size(), 1);
@@ -361,14 +361,41 @@ TEST(SymbolMapTest, FSDiscriminator) {
                         "test.binary");
   // Check if the use_fs_discriminaor is correctly set to false.
   EXPECT_FALSE(devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator);
+  // Check if the use_base_only_in_fs_discriminator is correctly set.
+  EXPECT_FALSE(devtools_crosstool_autofdo::SourceInfo::
+                   use_base_only_in_fs_discriminator);
 
   absl::SetFlag(&FLAGS_use_fs_discriminator, false);
   SymbolMap symbol_map2(FLAGS_test_srcdir + kTestDataDir +
                         "test.fs.binary");
   // Check if the use_fs_discriminaor is correctly set.
   EXPECT_TRUE(devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator);
+  // Check if the use_base_only_in_fs_discriminaor is correctly set.
+  EXPECT_FALSE(devtools_crosstool_autofdo::SourceInfo::
+                   use_base_only_in_fs_discriminator);
 }
 
+TEST(SymbolMapTest, FSDiscriminatorUseBaseOnly) {
+  absl::SetFlag(&FLAGS_use_fs_discriminator, false);
+  absl::SetFlag(&FLAGS_use_base_only_in_fs_discriminator, true);
+  SymbolMap symbol_map1(FLAGS_test_srcdir + kTestDataDir +
+                        "test.binary");
+  // Check if the use_fs_discriminaor is correctly set to false.
+  EXPECT_FALSE(devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator);
+  // Check if the use_base_only_in_fs_discriminaor is correctly set.
+  EXPECT_TRUE(devtools_crosstool_autofdo::SourceInfo::
+                  use_base_only_in_fs_discriminator);
+
+  absl::SetFlag(&FLAGS_use_fs_discriminator, false);
+  absl::SetFlag(&FLAGS_use_base_only_in_fs_discriminator, true);
+  SymbolMap symbol_map2(FLAGS_test_srcdir + kTestDataDir +
+                        "test.fs.binary");
+  // Check if the use_fs_discriminaor is correctly set.
+  EXPECT_TRUE(devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator);
+  // Check if the use_base_only_in_fs_discriminaor is correctly set.
+  EXPECT_TRUE(devtools_crosstool_autofdo::SourceInfo::
+                  use_base_only_in_fs_discriminator);
+}
 TEST(SymbolMapTest, RemoveSymsMatchingRegex) {
   SymbolMap symbol_map;
   absl::node_hash_set<std::string> names;
@@ -398,6 +425,71 @@ TEST(SymbolMapTest, RemoveSymsMatchingRegex) {
   EXPECT_EQ(map.find("_ZNK4llvm4SCEV7getTypeEv")->second->total_count, 0);
   EXPECT_EQ(map.find("_ZNK4llvm11SCEVMulExpr7getTypeEv")->second->total_count,
             0);
+}
+
+TEST(SymbolMapTest, throttleInlineInstancesAtSameLocation) {
+  SymbolMap symbol_map;
+  absl::node_hash_set<std::string> names;
+  devtools_crosstool_autofdo::LLVMProfileReader reader(&symbol_map, names);
+  reader.ReadFromFile(FLAGS_test_srcdir + kTestDataDir +
+                      "throttle_inline_instances.textprof");
+
+  const devtools_crosstool_autofdo::NameSymbolMap &map = symbol_map.map();
+
+  devtools_crosstool_autofdo::Symbol *foo_symbol = map.find("foo")->second;
+  devtools_crosstool_autofdo::CallsiteMap &foo_cs_map = foo_symbol->callsites;
+  EXPECT_EQ(foo_cs_map.size(), 5);
+
+  devtools_crosstool_autofdo::SourceInfo tuple1("foo", "", "", 0, 2, 1);
+  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo1")) !=
+              foo_cs_map.end());
+  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo2")) !=
+              foo_cs_map.end());
+  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo3")) !=
+              foo_cs_map.end());
+  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo4")) !=
+              foo_cs_map.end());
+  devtools_crosstool_autofdo::SourceInfo tuple2("foo", "", "", 0, 2, 4);
+  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple2.Offset(false), "hoo")) !=
+              foo_cs_map.end());
+  devtools_crosstool_autofdo::Symbol *hoo_symbol =
+      foo_cs_map.find(std::make_pair(tuple2.Offset(false), "hoo"))->second;
+  devtools_crosstool_autofdo::CallsiteMap &hoo_cs_map = hoo_symbol->callsites;
+  EXPECT_EQ(hoo_cs_map.size(), 4);
+
+  devtools_crosstool_autofdo::SourceInfo tuple3("hoo", "", "", 0, 3, 2);
+  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar1")) !=
+              hoo_cs_map.end());
+  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar2")) !=
+              hoo_cs_map.end());
+  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar3")) !=
+              hoo_cs_map.end());
+  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar4")) !=
+              hoo_cs_map.end());
+
+  absl::SetFlag(&FLAGS_inline_instances_at_same_loc_cutoff, 2);
+  symbol_map.throttleInlineInstancesAtSameLocation();
+
+  EXPECT_EQ(foo_cs_map.size(), 3);
+  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo1")) ==
+              foo_cs_map.end());
+  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo2")) ==
+              foo_cs_map.end());
+  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo3")) !=
+              foo_cs_map.end());
+  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo4")) !=
+              foo_cs_map.end());
+  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple2.Offset(false), "hoo")) !=
+              foo_cs_map.end());
+  EXPECT_EQ(hoo_cs_map.size(), 2);
+  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar1")) ==
+              hoo_cs_map.end());
+  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar2")) !=
+              hoo_cs_map.end());
+  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar3")) !=
+              hoo_cs_map.end());
+  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar4")) ==
+              hoo_cs_map.end());
 }
 
 }  // namespace

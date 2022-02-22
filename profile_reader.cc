@@ -111,7 +111,8 @@ bool AutoFDOProfileReader::ReadFromFile(const std::string &output_file) {
 
   // Read tags
   CHECK_EQ(gcov_read_unsigned(), GCOV_DATA_MAGIC) << output_file;
-  absl::SetFlag(&FLAGS_gcov_version, gcov_read_unsigned());
+  CHECK_EQ(gcov_read_unsigned(), absl::GetFlag(FLAGS_gcov_version))
+      << output_file;
   gcov_read_unsigned();
 
   ReadNameTable();

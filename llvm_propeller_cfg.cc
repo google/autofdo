@@ -4,6 +4,7 @@
 #include <numeric>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "base/logging.h"
 
@@ -15,6 +16,17 @@ std::string CFGNode::GetName() const {
     bb_name += std::to_string(bb_index_);
   }
   return bb_name;
+}
+
+void ControlFlowGraph::CreateNodes(
+    const llvm::object::BBAddrMap &func_bb_addr_map, uint64_t ordinal) {
+  CHECK(nodes_.empty());
+  int bb_index = 0;
+  for (const auto &bb_entry : func_bb_addr_map.BBEntries) {
+    nodes_.insert(std::make_unique<CFGNode>(
+        ordinal++, func_bb_addr_map.Addr + bb_entry.Offset, bb_index++,
+        bb_entry.Size, this));
+  }
 }
 
 CFGEdge *ControlFlowGraph::CreateEdge(CFGNode *from, CFGNode *to,
@@ -124,6 +136,28 @@ void ControlFlowGraph::CoalesceColdNodes() {
     }
   }
 }
+
+void ControlFlowGraph::WriteDotFormat(std::ostream &os,
+    const absl::flat_hash_map<int, int> &layout_index_map) const {
+  os << "digraph {\n";
+  os << "label=\"" << GetPrimaryName().str() << "\"\n";
+  os << "forcelabels=true;\n";
+  for (const auto &node : nodes_) {
+    os << node->GetDotFormatLabel() << " [xlabel=\"" << node->freq_ << "#"
+       << node->size_ << "\"];\n";
+  }
+  for (const auto &edge : intra_edges_) {
+    bool layout_edge = layout_index_map.at(edge->sink_->bb_index()) -
+                           layout_index_map.at(edge->src_->bb_index()) ==
+                       1;
+    os << edge->src_->GetDotFormatLabel() << " -> " <<
+                  edge->sink_->GetDotFormatLabel() << "[ label=\"" <<
+                  edge->GetDotFormatLabel() << "\", color =\"" <<
+                  (layout_edge ? "red" : "black") << "\"];\n";
+  }
+  os << "}\n";
+}
+
 std::ostream& operator<<(std::ostream& os, CFGEdge::Kind kind) {
   switch (kind) {
     case CFGEdge::Kind::kBranchOrFallthough:

@@ -1,3 +1,4 @@
+#include "llvm_propeller_abstract_whole_program_info.h"
 #include "llvm_propeller_protobuf.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/flags/parse.h"
@@ -26,6 +27,7 @@ DEFINE_bool(ignore_build_id, false,
             "Ignore build id, use file name to match data in perfdata file. "
             "Same as the option in create_llvm_prof.");
 
+using ::devtools_crosstool_autofdo::CfgCreationMode;
 using ::devtools_crosstool_autofdo::PropellerOptions;
 using ::devtools_crosstool_autofdo::PropellerOptionsBuilder;
 using ::devtools_crosstool_autofdo::PropellerWholeProgramInfo;
@@ -58,7 +60,7 @@ int main(int argc, char **argv) {
   std::unique_ptr<PropellerWholeProgramInfo> whole_program_info =
       PropellerWholeProgramInfo::Create(options);
 
-  if (!whole_program_info->CreateCfgs()) {
+  if (!whole_program_info->CreateCfgs(CfgCreationMode::kAllFunctions).ok()) {
     LOG(ERROR) << "Could not create cfs for whole program.";
     return 1;
   }

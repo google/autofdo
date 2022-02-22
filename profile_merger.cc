@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
     // TODO(dehao): merge profile reader/writer into a single class
     for (int i = 1; i < argc; i++) {
       readers[i - 1] =
-          absl::make_unique<AutoFDOProfileReader>(&symbol_map, true);
+          std::make_unique<AutoFDOProfileReader>(&symbol_map, true);
       readers[i - 1]->ReadFromFile(argv[i]);
     }
 
@@ -176,12 +176,22 @@ int main(int argc, char **argv) {
         new LLVMProfileReaderPtr[argc - 1]);
     llvm::sampleprof::ProfileSymbolList prof_sym_list;
 
+#if LLVM_VERSION_MAJOR >= 12
+    // Here we check if all profiles use fs-discriminators.
+    int numFSDProfiles = 0;
+#endif
+
     for (int i = 1; i < argc; i++) {
-      auto reader = absl::make_unique<LLVMProfileReader>(
+      auto reader = std::make_unique<LLVMProfileReader>(
           &symbol_map, names,
           absl::GetFlag(FLAGS_merge_special_syms) ? nullptr : &special_syms);
-      reader->ReadFromFile(argv[i]);
+      CHECK(reader->ReadFromFile(argv[i])) << "when reading " << argv[i];
 
+#if LLVM_VERSION_MAJOR >= 12
+      if (reader->ProfileIsFS()) {
+        numFSDProfiles++;
+      }
+#endif
       if (absl::GetFlag(FLAGS_include_symbol_list) &&
           absl::GetFlag(FLAGS_format) == "extbinary") {
         // Merge profile symbol list if it exists.
@@ -198,11 +208,11 @@ int main(int argc, char **argv) {
     } else if (absl::GetFlag(FLAGS_format) == "binary") {
       writer.reset(new LLVMProfileWriter(llvm::sampleprof::SPF_Binary));
     } else if (absl::GetFlag(FLAGS_format) == "compactbinary") {
-      writer = absl::make_unique<LLVMProfileWriter>(
+      writer = std::make_unique<LLVMProfileWriter>(
           llvm::sampleprof::SPF_Compact_Binary);
     } else if (absl::GetFlag(FLAGS_format) == "extbinary") {
-      writer = absl::make_unique<LLVMProfileWriter>(
-          llvm::sampleprof::SPF_Ext_Binary);
+      writer =
+          std::make_unique<LLVMProfileWriter>(llvm::sampleprof::SPF_Ext_Binary);
     } else {
       LOG(ERROR) << "--format=" << absl::GetFlag(FLAGS_format)
                  << " is not supported. "
@@ -212,15 +222,23 @@ int main(int argc, char **argv) {
     bool has_prof_sym_list = (prof_sym_list.size() > 0);
     if (!verifyProperFlags(has_prof_sym_list)) return 1;
 
-    auto sample_profile_writer =
+    auto *sample_profile_writer =
         writer->CreateSampleWriter(absl::GetFlag(FLAGS_output_file));
     if (!sample_profile_writer) return 1;
 #if LLVM_VERSION_MAJOR >= 12
+    if (numFSDProfiles != 0 && numFSDProfiles != argc - 1) {
+      LOG(WARNING) << "Merging a profile with FSDiscriminator enabled"
+                   << " with a profile with FSDiscriminator disabled,"
+                   << " the result profile will have FSDiscriminator enabled.";
+    }
     // If resetSecLayout is needed, it should be called just after the
     // sample_profile_writer is created because resetSecLayout will reset
     // all the section flags in the extbinary profile.
     if (absl::GetFlag(FLAGS_split_layout)) {
       sample_profile_writer->resetSecLayout(llvm::sampleprof::CtxSplitLayout);
+    }
+    if (absl::GetFlag(FLAGS_use_fs_discriminator) || numFSDProfiles != 0) {
+      devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator = true;
     }
 #endif
 #if LLVM_VERSION_MAJOR >= 11
@@ -241,6 +259,12 @@ int main(int argc, char **argv) {
     if (!strip_symbols_regex.empty()) {
       symbol_map.RemoveSymsMatchingRegex(strip_symbols_regex);
     }
+
+    // Throw away the colder inline instances if there are too many of them
+    // at the same location after profile merging. This is to control ThinLTO
+    // importing cost. This is placed here so that it can be used in the
+    // standalone tool as well.
+    symbol_map.throttleInlineInstancesAtSameLocation();
 
     writer->setSymbolMap(&symbol_map);
     if (!writer->WriteToFile(absl::GetFlag(FLAGS_output_file))) {

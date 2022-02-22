@@ -42,6 +42,11 @@ bool LLVMProfileBuilder::Write(
       SourceInfo::use_fs_discriminator;
 #endif
 
+  if (profiles.empty()) {
+    LOG(WARNING) << "Got an empty profile map. The output file might still "
+                    "be not empty (e.g., containing symbol list in binary "
+                    "format) but might be not helpful as a profile";
+  }
   // Write all the gathered profiles to the output file.
   if (std::error_code EC = sample_profile_writer->write(profiles)) {
     LOG(ERROR) << "Error writing profile output to '" << output_filename
@@ -53,6 +58,8 @@ bool LLVMProfileBuilder::Write(
   return true;
 }
 
+// LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT is defined when llvm version is before
+// https://reviews.llvm.org/rGb9db70369b7799887b817e13109801795e4d70fc
 #ifndef LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT
 const llvm::sampleprof::SampleProfileMap &LLVMProfileBuilder::ConvertProfiles(
     const SymbolMap &symbol_map) {
@@ -150,7 +157,7 @@ llvm::StringRef LLVMProfileBuilder::GetNameRef(const std::string &str) {
     LOG(WARNING) << "Unexpected character '.' in function name: " << ret->first
                << ". Likely thin LTO .llvm.<hash> suffix has not been cleared.";
   }
-  return llvm::StringRef(ret->first.c_str());
+  return llvm::StringRef(ret->first);
 }
 
 llvm::sampleprof::SampleProfileWriter *LLVMProfileWriter::CreateSampleWriter(

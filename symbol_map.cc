@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <set>
 
 #include "base/commandlineflags.h"
@@ -42,7 +43,14 @@ ABSL_FLAG(bool, use_discriminator_multiply_factor, true,
 #if defined(HAVE_LLVM)
 ABSL_FLAG(bool, use_fs_discriminator, false,
           "Tell the symbol map whether to use FS discriminators.");
+ABSL_FLAG(bool, use_base_only_in_fs_discriminator, false,
+          "Tell the symbol map to only use base discriminators in fsprofile.");
 #endif
+ABSL_FLAG(uint64_t, inline_instances_at_same_loc_cutoff, -1,
+          "Cut off value to control the number of inline instances at the "
+          "same location. Many inline instances at the same location can "
+          "introduce excessive thinlto importing cost without an "
+          "apparent benefit. ");
 
 namespace {
 // Prints some blank space for identation.
@@ -129,7 +137,7 @@ void Symbol::Merge(const Symbol *other) {
   // Traverses all callsite, recursively Merge the callee symbol.
   for (const auto &callsite_symbol : other->callsites) {
     std::pair<CallsiteMap::iterator, bool> ret = callsites.insert(
-        CallsiteMap::value_type(callsite_symbol.first, NULL));
+        CallsiteMap::value_type(callsite_symbol.first, nullptr));
     // If the callsite does not exist in the current symbol, create a
     // new callee symbol with the clone's function name.
     if (ret.second) {
@@ -144,8 +152,8 @@ struct CallsiteLessThan {
   bool operator()(const Callsite& c1, const Callsite& c2) const {
     if (c1.first != c2.first)
       return c1.first < c2.first;
-    if ((c1.second == NULL || c2.second == NULL))
-      return c1.second == NULL;
+    if ((c1.second == nullptr || c2.second == nullptr))
+      return c1.second == nullptr;
     return strcmp(c1.second, c2.second) < 0;
   }
 };
@@ -304,7 +312,7 @@ void SymbolMap::ElideSuffixesAndMerge() {
   std::vector<std::string> suffix_elide_set;
   for (auto &name_symbol : map_) {
     std::string orig_name = GetOriginalName(name_symbol.first.c_str());
-    if (orig_name != name_symbol.first.c_str())
+    if (orig_name != name_symbol.first)
       suffix_elide_set.push_back(name_symbol.first.c_str());
   }
   for (const auto &name : suffix_elide_set) {
@@ -315,10 +323,10 @@ void SymbolMap::ElideSuffixesAndMerge() {
     map_.erase(iter);
 
     std::pair<NameSymbolMap::iterator, bool> ret =
-        map_.insert(NameSymbolMap::value_type(orig_name, NULL));
+        map_.insert(NameSymbolMap::value_type(orig_name, nullptr));
     if (ret.second || sym == ret.first->second) {
       unique_symbols_.push_back(
-          absl::make_unique<Symbol>(ret.first->first.c_str(), "", "", 0));
+          std::make_unique<Symbol>(ret.first->first.c_str(), "", "", 0));
       ret.first->second = unique_symbols_.back().get();
     }
 
@@ -332,10 +340,10 @@ void SymbolMap::ElideSuffixesAndMerge() {
 
 void SymbolMap::AddSymbol(const std::string &name) {
   std::pair<NameSymbolMap::iterator, bool> ret = map_.insert(
-      NameSymbolMap::value_type(name, NULL));
+      NameSymbolMap::value_type(name, nullptr));
   if (ret.second) {
     unique_symbols_.push_back(
-        absl::make_unique<Symbol>(ret.first->first.c_str(), "", "", 0));
+        std::make_unique<Symbol>(ret.first->first.c_str(), "", "", 0));
     ret.first->second = unique_symbols_.back().get();
     NameAliasMap::const_iterator alias_iter = name_alias_map_.find(name);
     if (alias_iter != name_alias_map_.end()) {
@@ -408,7 +416,7 @@ const bool SymbolMap::GetSymbolInfoByAddr(uint64_t addr,
 const std::string *SymbolMap::GetSymbolNameByStartAddr(uint64_t addr) const {
   AddressSymbolMap::const_iterator ret = address_symbol_map_.find(addr);
   if (ret == address_symbol_map_.end()) {
-    return NULL;
+    return nullptr;
   }
   return &ret->second.first;
 }
@@ -442,9 +450,14 @@ class SymbolReader : public ElfReader::SymbolSink {
 };
 
 
+// TODO(shenhan): cl/394265532 not pulled in.
 void SymbolMap::BuildSymbolMap() {
   ElfReader elf_reader(binary_);
   base_addr_ = elf_reader.VaddrOfFirstLoadSegment();
+#if defined(HAVE_LLVM)
+  SourceInfo::use_fs_discriminator = false;
+  SourceInfo::use_base_only_in_fs_discriminator = false;
+#endif
   SymbolReader symbol_reader(&name_alias_map_, &address_symbol_map_);
   symbol_reader.filter = [](const char *name, uint64 address, uint64 size,
                             int binding, int type, int section) {
@@ -457,38 +470,9 @@ void SymbolMap::BuildSymbolMap() {
   if (symbol_reader.use_fs_discriminaor() ||
       absl::GetFlag(FLAGS_use_fs_discriminator))
     SourceInfo::use_fs_discriminator = true;
+  if (absl::GetFlag(FLAGS_use_base_only_in_fs_discriminator))
+    SourceInfo::use_base_only_in_fs_discriminator = true;
 #endif
-}
-
-void SymbolMap::UpdateSymbolMap(
-    const Addr2line *addr2line,
-    const std::map<uint64_t, uint64_t> &sampled_functions) {
-  for (const auto &addr_size : sampled_functions) {
-    std::string name = address_symbol_map_.find(addr_size.first)->second.first;
-    SourceStack stack;
-    addr2line->GetInlineStack(addr_size.first, &stack);
-    if (!stack.empty()) {
-      // Map from symbol name to "Symbol *".
-      auto ret = map_.insert(std::make_pair(name, nullptr));
-      if (ret.second) {
-        unique_symbols_.push_back(absl::make_unique<Symbol>());
-        ret.first->second = unique_symbols_.back().get();
-      }
-      ret.first->second->info = stack[stack.size() - 1];
-    }
-  }
-}
-
-std::string Symbol::ModuleName() const {
-  // This is a special case in Google3, though tcmalloc.cc has a suffix of .cc,
-  // it's actually no a module, but included by tcmalloc_or_debug.cc, which is
-  // a pure wrapper. Thus when a function is found to belong to module
-  // tcmalloc.cc, it should be reattributed to the wrapper module.
-  if (info.RelativePath() == "./tcmalloc/tcmalloc.cc") {
-    return "tcmalloc/tcmalloc_or_debug.cc";
-  } else {
-    return info.RelativePath();
-  }
 }
 
 void SymbolMap::AddSymbolEntryCount(const std::string &symbol_name,
@@ -519,7 +503,7 @@ Symbol *SymbolMap::TraverseInlineStack(const std::string &symbol_name,
         symbol->callsites.insert(CallsiteMap::value_type(
             Callsite(src[i].Offset(use_discriminator_encoding),
                      src[i - 1].func_name),
-            NULL));
+            nullptr));
     if (ret.second) {
       ret.first->second = new Symbol(src[i - 1].func_name,
                                      src[i - 1].dir_name,
@@ -592,7 +576,7 @@ void Symbol::ComputeTotalCountIncl(const NameSymbolMap &nsmap,
       uint64_t callee_time =
           static_cast<uint64_t>(static_cast<float>(callee->total_count_incl) /
                                 calltimes * target_count.second);
-      for (auto parent_sym : *stacksyms)
+      for (auto *parent_sym : *stacksyms)
         parent_sym->total_count_incl += callee_time;
     }
   }
@@ -727,7 +711,7 @@ struct SCCNode {
 
 std::ostream &operator<<(std::ostream &os, const SCCNode &node) {
   os << "node<";
-  for (auto sym : node.syms) {
+  for (auto *sym : node.syms) {
     if (sym == *(node.syms.begin()))
       os << sym->name();
     else
@@ -741,8 +725,8 @@ class CallGraph {
  public:
   CallGraph() = default;
   ~CallGraph() {
-    for (auto node : nodes) delete node;
-    for (auto node : delete_nodes) delete node;
+    for (auto *node : nodes) delete node;
+    for (auto *node : delete_nodes) delete node;
   }
   using NodeStack = std::vector<SCCNode *>;
   using SCCMap = absl::flat_hash_map<SCCNode *, SCCNode *>;
@@ -772,7 +756,7 @@ void CallGraph::TopoVisit(SCCNode *node,
   if (node->post_visited) return;
   if (node->pre_visited) LOG(FATAL) << "Found a Loop";
   node->pre_visited = 1;
-  for (auto callee : node->callees) TopoVisit(callee, workingset, sorted);
+  for (auto *callee : node->callees) TopoVisit(callee, workingset, sorted);
   node->post_visited = 1;
   workingset->erase(node);
   sorted->push_back(node);
@@ -814,7 +798,7 @@ void CallGraph::StrongConnect(SCCNode *node, unsigned index, NodeStack *stack,
   index++;
   stack->push_back(node);
 
-  for (auto callee : node->callees) {
+  for (auto *callee : node->callees) {
     if (!callee->index) {
       StrongConnect(callee, index, stack, sccmap);
       node->lowlink = std::min(node->lowlink, callee->lowlink);
@@ -838,21 +822,21 @@ void CallGraph::StrongConnect(SCCNode *node, unsigned index, NodeStack *stack,
 // each SCCNode only contains one symbol. After CollapseSCC, each SCCNode
 // contains all the symbols belong to the same SCC.
 void CallGraph::CollapseSCC(SCCMap *sccmap) {
-  for (auto node : nodes) {
-    auto sccroot = (*sccmap)[node];
+  for (auto *node : nodes) {
+    auto *sccroot = (*sccmap)[node];
     if (node != sccroot) {
       sccroot->syms.insert(node->syms.begin(), node->syms.end());
-      for (auto callee : node->callees) {
+      for (auto *callee : node->callees) {
         if ((*sccmap)[callee] != sccroot)
           sccroot->callees.insert((*sccmap)[callee]);
       }
       delete_nodes.insert(node);
     } else {
       absl::flat_hash_set<SCCNode *> to_erase;
-      for (auto callee : node->callees) {
+      for (auto *callee : node->callees) {
         if (callee != (*sccmap)[callee]) to_erase.insert(callee);
       }
-      for (auto erase_node : to_erase) {
+      for (auto *erase_node : to_erase) {
         node->callees.erase(erase_node);
         node->callees.insert((*sccmap)[erase_node]);
       }
@@ -860,14 +844,14 @@ void CallGraph::CollapseSCC(SCCMap *sccmap) {
     }
   }
   for (auto pair : sym_scc_map) pair.second = (*sccmap)[pair.second];
-  for (auto node : delete_nodes) nodes.erase(node);
+  for (auto *node : delete_nodes) nodes.erase(node);
 }
 
 void CallGraph::FindAndCollapseSCC() {
   unsigned index = 1;
   NodeStack stack;
   SCCMap sccmap;
-  for (auto node : nodes) {
+  for (auto *node : nodes) {
     if (!node->index) StrongConnect(node, index, &stack, &sccmap);
   }
   CollapseSCC(&sccmap);
@@ -875,9 +859,9 @@ void CallGraph::FindAndCollapseSCC() {
 
 void CallGraph::Dump() {
   LOG(INFO) << "====== Dump CallGraph: ======";
-  for (auto node : nodes) {
+  for (auto *node : nodes) {
     LOG(INFO) << *node << " calls";
-    for (auto callee : node->callees) {
+    for (auto *callee : node->callees) {
       LOG(INFO) << "  " << *callee;
     }
     LOG(INFO) << "\n";
@@ -927,16 +911,16 @@ void SymbolMap::ComputeTotalCountIncl() {
   // Compute the total_count_incl. Every symbol in the same SCC node has the
   // same total_count_incl.
   std::vector<Symbol *> stacksyms;
-  for (auto node : sorted) {
+  for (auto *node : sorted) {
     unsigned scc_total_count_incl = 0;
-    for (auto sym : node->syms) {
+    for (auto *sym : node->syms) {
       sym->total_count_incl = sym->total_count;
       stacksyms.push_back(sym);
       sym->ComputeTotalCountIncl(map_, &stacksyms, &node->syms);
       stacksyms.pop_back();
       scc_total_count_incl += sym->total_count_incl;
     }
-    for (auto sym : node->syms) sym->total_count_incl = scc_total_count_incl;
+    for (auto *sym : node->syms) sym->total_count_incl = scc_total_count_incl;
   }
 }
 
@@ -1150,49 +1134,10 @@ std::map<uint64_t, uint64_t> SymbolMap::GetSampledSymbolStartAddressSizeMap(
       continue;
     }
     const auto &iter = map_.find(addr_symbol.second.first);
-    if (iter != map_.end() && iter->second != NULL
+    if (iter != map_.end() && iter->second != nullptr
         && iter->second->total_count > 0) {
       ret[addr_symbol.first] = addr_symbol.second.second;
     }
-  }
-  return ret;
-}
-
-// SymbolMap has already been read from the old profile. This function traverses
-// symbol map to calculate the functions that have samples.
-std::map<uint64_t, uint64_t> SymbolMap::GetLegacySymbolStartAddressSizeMap()
-    const {
-  std::set<std::string> names;
-  // Traverse all top level symbols, including all inlined symbols. If the
-  // symbol's total count is non-zero, it has samples and should be included
-  // in the return value.
-  for (const auto &s : unique_symbols_) {
-    if (s->total_count == 0) {
-      continue;
-    }
-    std::vector<const Symbol *> queue;
-    queue.push_back(s.get());
-    while (!queue.empty()) {
-      const Symbol *s = queue.back();
-      queue.pop_back();
-      if (s->total_count == 0) {
-        continue;
-      }
-      names.insert(s->info.func_name);
-      for (const auto &pos_symbol : s->callsites) {
-        queue.push_back(pos_symbol.second);
-      }
-    }
-  }
-  std::map<uint64_t, uint64_t> ret;
-  for (const std::string &name : names) {
-    const auto &iter = name_addr_map_.find(name);
-    if (iter == name_addr_map_.end()) {
-      continue;
-    }
-    const auto &a_s_iter = address_symbol_map_.find(iter->second);
-    CHECK(a_s_iter != address_symbol_map_.end());
-    ret[a_s_iter->first] = a_s_iter->second.second;
   }
   return ret;
 }
@@ -1330,7 +1275,7 @@ void Symbol::PopulateSymbolRetainingHotInlineStacks(Symbol &other,
     } else {
       // Copy samples to dest callsite and recurse.
       std::pair<CallsiteMap::iterator, bool> ret = callsites.insert(
-          CallsiteMap::value_type(callsite_symbol.first, NULL));
+          CallsiteMap::value_type(callsite_symbol.first, nullptr));
       // If the callsite does not exist in the current symbol, create a new
       // callee symbol with the clone's function name.
       if (ret.second) {
@@ -1426,7 +1371,7 @@ bool SymbolMap::EnsureEntryInFuncForSymbol(const std::string &func_name,
 // Removes a symbol by setting total and head count to zero.
 void SymbolMap::RemoveSymbol(const std::string &name) {
   for (const auto &name_symbol : map()) {
-    if (name == name_symbol.first.c_str()) {
+    if (name == name_symbol.first) {
       name_symbol.second->total_count = 0;
       name_symbol.second->head_count = 0;
     }
@@ -1491,5 +1436,74 @@ llvm::StringSet<> SymbolMap::collectNamesInProfile() {
   return names;
 }
 #endif
+
+void SymbolMap::throttleInlineInstancesAtSameLocation() {
+  if (absl::GetFlag(FLAGS_inline_instances_at_same_loc_cutoff) == -1) return;
+
+  std::vector<Symbol *> symbols;
+  for (const auto &name_symbol : map_) {
+    if (name_symbol.second->total_count > 0) {
+      symbols.push_back(name_symbol.second);
+    }
+  }
+
+  while (!symbols.empty()) {
+    Symbol *symbol = symbols.back();
+    symbols.pop_back();
+
+    // No need to sort the callsites if there are not many.
+    if (symbol->callsites.size() <=
+        absl::GetFlag(FLAGS_inline_instances_at_same_loc_cutoff))
+      continue;
+
+    std::vector<std::pair<Callsite, Symbol *>> sorted_callsites;
+    sorted_callsites.insert(sorted_callsites.begin(), symbol->callsites.begin(),
+                            symbol->callsites.end());
+    // Sort all the callsites first by locations then by hotness.
+    std::stable_sort(sorted_callsites.begin(), sorted_callsites.end(),
+                     [&](const auto &a, const auto &b) {
+                       // Compare the locations of the callsites first
+                       if (a.first.first != b.first.first)
+                         return a.first.first < b.first.first;
+                       if (a.second == nullptr || b.second == nullptr)
+                         return a.second != nullptr;
+                       // If the locations are the same, compare the hotness of
+                       // the callsites.
+                       return a.second->total_count > b.second->total_count;
+                     });
+
+    uint64_t num_inline_instances_at_same_loc = 0;
+    std::vector<std::pair<Callsite, Symbol *>> to_removed_callsites;
+    for (auto cur_iter = sorted_callsites.begin();
+         cur_iter != sorted_callsites.end(); cur_iter++) {
+      // If the number of inline instances at the same location is equal to
+      // or above the cutoff value, save it in to_removed_callsites and erase
+      // it later.
+      if (num_inline_instances_at_same_loc >=
+          absl::GetFlag(FLAGS_inline_instances_at_same_loc_cutoff))
+        to_removed_callsites.push_back(*cur_iter);
+
+      // If next callsite in sorted_callsites is at a different location, reset
+      // num_inline_instances_at_same_loc to 0.
+      auto next_iter = std::next(cur_iter);
+      if (next_iter != sorted_callsites.end() &&
+          next_iter->first.first != cur_iter->first.first) {
+        num_inline_instances_at_same_loc = 0;
+      } else {
+        num_inline_instances_at_same_loc++;
+      }
+    }
+
+    // Remove those to_removed_callsites from symbol->callsites.
+    for (const auto &callsite_sym : to_removed_callsites) {
+      delete callsite_sym.second;
+      symbol->callsites.erase(callsite_sym.first);
+    }
+
+    // Add the callsite symbols in symbol->callsites into the working set.
+    for (const auto &pos_callsite : symbol->callsites)
+      symbols.push_back(pos_callsite.second);
+  }
+}
 
 }  // namespace devtools_crosstool_autofdo

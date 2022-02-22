@@ -35,7 +35,11 @@ ABSL_DECLARE_FLAG(bool, use_discriminator_encoding);
 #if defined(HAVE_LLVM)
 // Whether to use FS discriminator.
 ABSL_DECLARE_FLAG(bool, use_fs_discriminator);
+// Whether to only use base discriminator in fsprofile.
+ABSL_DECLARE_FLAG(bool, use_base_only_in_fs_discriminator);
 #endif
+
+ABSL_DECLARE_FLAG(uint64_t, inline_instances_at_same_loc_cutoff);
 
 namespace devtools_crosstool_autofdo {
 
@@ -96,7 +100,7 @@ struct CallsiteEqual {
   bool operator()(const Callsite& c1, const Callsite& c2) const {
     if (c1.first != c2.first)
       return false;
-    if ((c1.second == NULL || c2.second == NULL))
+    if ((c1.second == nullptr || c2.second == nullptr))
       return c1.second == c2.second;
     return strcmp(c1.second, c2.second) == 0;
   }
@@ -182,13 +186,6 @@ class Symbol {
 
   // Update each count with count * ratio inside current symbol.
   void UpdateWithRatio(double ratio);
-
-  // Returns the module name of the symbol. Module name is the source file
-  // that the symbol belongs to. It is an attribute of the actual symbol.
-  std::string ModuleName() const;
-
-  // Returns true if the symbol is from a header file.
-  bool IsFromHeader() const;
 
   void ComputeTotalCountIncl(const NameSymbolMap &nsmap,
                              std::vector<Symbol *> *stacksyms,
@@ -325,14 +322,6 @@ class SymbolMap {
     return working_set_;
   }
 
-  uint64_t GetSymbolStartAddr(const std::string &name) const {
-    const auto &iter = name_addr_map_.find(name);
-    if (iter == name_addr_map_.end()) {
-      return 0;
-    }
-    return iter->second;
-  }
-
   void UpdateWorkingSet(int i, uint32_t num_counters, uint64_t min_counter) {
     if (working_set_[i].num_counters == 0) {
       working_set_[i].num_counters = num_counters;
@@ -351,7 +340,7 @@ class SymbolMap {
     if (ret != map_.end()) {
       return ret->second;
     } else {
-      return NULL;
+      return nullptr;
     }
   }
 
@@ -446,7 +435,7 @@ class SymbolMap {
                                  uint64_t *end_addr) const;
 
   // Returns a pointer to the symbol name for a given start address. Returns
-  // NULL if no such symbol exists.
+  // nullptr if no such symbol exists.
   const std::string *GetSymbolNameByStartAddr(uint64_t address) const;
 
   // Returns the overlap between two symbol maps. For two profiles, if
@@ -472,23 +461,10 @@ class SymbolMap {
   //         number.
   void ComputeWorkingSets();
 
-  // Traverses all symbols that has been sampled (appears in sampled_functions).
-  // Uses addr2line to derive  symbol's source info and update the symbol.
-  void UpdateSymbolMap(const Addr2line *addr2line,
-                       const std::map<uint64_t, uint64_t> &sampled_functions);
-
   // Returns a map from start addresses of functions that have been sampled to
   // the size of the function.
   std::map<uint64_t, uint64_t> GetSampledSymbolStartAddressSizeMap(
       const std::set<uint64_t> &sampled_addrs) const;
-
-  // Returns a map from start addresses of functions that have been sampled in
-  // the old profile that has already been loaded, to the size of the function.
-  // This function is used by profile_update, which takes the old profile as
-  // input, and use the debug/module info in the new binary to update the old
-  // profile's module info. For the efficiency consideration, we only need to
-  // read debug info for the symbols that has been sampled in the old profile.
-  std::map<uint64_t, uint64_t> GetLegacySymbolStartAddressSizeMap() const;
 
   void ComputeTotalCountIncl();
   void BuildCallGraph(CallGraph *callgraph);
@@ -516,6 +492,13 @@ class SymbolMap {
   llvm::StringSet<> collectNamesInProfile();
 #endif
 
+  // There can be multiple inline instances at the same callsite location.
+  // An example is multiple call targets can be inlined for the same indirect
+  // call. If there are too many inline instances in the profile for the same
+  // location, that can introduce excessive cost in ThinLTO importing without
+  // apparent performance benefit, and we better use some throttling.
+  void throttleInlineInstancesAtSameLocation();
+
  private:
   // Reads from the binary's elf section to build the symbol map.
   void BuildSymbolMap();
@@ -525,8 +508,8 @@ class SymbolMap {
 
   // Reads from address_symbol_map_ and update name_addr_map_.
   void BuildNameAddressMap() {
-    for (const auto &addr_symbol : address_symbol_map_) {
-      name_addr_map_[addr_symbol.second.first] = addr_symbol.first;
+    for (const auto &[addr, symbol] : address_symbol_map_) {
+      name_addr_map_[symbol.first] = addr;
     }
   }
 
