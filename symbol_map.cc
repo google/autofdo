@@ -65,7 +65,7 @@ void PrintSourceLocation(uint32_t start_line, uint64_t offset, int ident) {
   }
 }
 
-static const char *selectedSuffixes[] = {".cold", ".llvm."};
+static const char *selectedSuffixes[] = {".cold", ".llvm.", ".lto_priv.", ".part.", ".isra."};
 
 std::string getPrintName(const char *name) {
   char tmp_buf[1024];
@@ -291,6 +291,12 @@ std::string SymbolMap::GetOriginalName(const char *name) const {
       if (suffix == ".cold")
         StripLastOccurrenceOf(cand, suffix);
       else if (suffix == ".llvm.")
+        StripSuffixWithTwoDots(cand, suffix);
+      else if (suffix == ".lto_priv.")
+        StripSuffixWithTwoDots(cand, suffix);
+      else if (suffix == ".part.")
+        StripSuffixWithTwoDots(cand, suffix);
+      else if (suffix == ".isra.")
         StripSuffixWithTwoDots(cand, suffix);
     }
     return cand;
