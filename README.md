@@ -30,7 +30,7 @@ To build autofdo tool for gcc, no llvm installation is needed.
     $ mkdir build
     $ cd build
     $ # Note: "-DCMAKE_INSTALL_PREFIX=." must be used, because there is a bug in the basil cmakelist.
-    $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=. -DLLVM_PATH=/path/to/llvm/install ../   
+    $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=. -DLLVM_PATH=/path/to/llvm/install ../
     $ ninja
     $ ninja test
 ```
@@ -43,7 +43,7 @@ To build autofdo tool for gcc, no llvm installation is needed.
     $ mkdir build
     $ cd build
     $ # Note: "-DCMAKE_INSTALL_PREFIX=." must be used, because there is a bug in the basil cmakelist.
-    $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=. ../   
+    $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=. ../
     $ ninja
 ```
 
@@ -55,7 +55,7 @@ To build autofdo tool for gcc, no llvm installation is needed.
     $ ./contrib/download_prerequisites
 ```
 3. config, build and install gcc
-```  
+```
     $ cd gcc-release-11.2.0
     $ mkdir build
     $ cd build
