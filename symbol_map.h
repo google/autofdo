@@ -23,8 +23,10 @@
 #include "third_party/abseil/absl/flags/declare.h"
 
 #if defined(HAVE_LLVM)
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ProfileData/SampleProf.h"
 #endif
+
 // Macros from gcc (profile.c)
 #define NUM_GCOV_WORKING_SETS 128
 #define WORKING_SET_INSN_PER_BB 10

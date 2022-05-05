@@ -23,6 +23,10 @@
 #include <regex>
 #include "util/symbolize/elf_reader.h"
 
+#if defined(HAVE_LLVM)
+#include "llvm/ADT/StringSet.h"
+#endif
+
 ABSL_FLAG(int32_t, dump_cutoff_percent, 2,
           "functions that has total count lower than this percentage of "
           "the max function count will not show in the dump");
