@@ -703,9 +703,14 @@ bool fillELFPhdr(llvm::object::ELFObjectFileBase *ebFile,
                  map<uint64_t, ProgSegLoad> &phdrLoadMap) {
   ELFObjectFile<ELFT> *eobj = dyn_cast<ELFObjectFile<ELFT>>(ebFile);
   if (!eobj) return false;
+#if LLVM_VERSION_MAJOR >= 12
+  const ELFFile<ELFT>& efile = eobj->getELFFile();
+  auto program_headers = efile.program_headers();
+#else
   const ELFFile<ELFT> *efile = eobj->getELFFile();
   if (!efile) return false;
   auto program_headers = efile->program_headers();
+#endif
   if (!program_headers) return false;
   for (const typename ELFT::Phdr &phdr : *program_headers) {
     if (phdr.p_type != llvm::ELF::PT_LOAD ||
