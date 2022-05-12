@@ -115,6 +115,7 @@ libquipper_a_SOURCES = \
 	third_party/perf_data_converter/src/quipper/perf_parser.cc \
 	third_party/perf_data_converter/src/quipper/perf_reader.cc \
 	third_party/perf_data_converter/src/quipper/perf_serializer.cc \
+	third_party/perf_data_converter/src/quipper/perf_buildid.cc \
 	third_party/perf_data_converter/src/quipper/sample_info_reader.cc \
 	third_party/perf_data_converter/src/quipper/huge_page_deducer.cc
 nodist_libquipper_a_SOURCES = $(protoc_outputs)
