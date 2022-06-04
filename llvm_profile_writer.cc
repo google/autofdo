@@ -60,8 +60,13 @@ bool LLVMProfileBuilder::Write(const string &output_filename,
   return true;
 }
 
+#ifndef LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT
+const llvm::sampleprof::SampleProfileMap &LLVMProfileBuilder::ConvertProfiles(
+    const SymbolMap &symbol_map) {
+#else
 const llvm::StringMap<llvm::sampleprof::FunctionSamples>
     &LLVMProfileBuilder::ConvertProfiles(const SymbolMap &symbol_map) {
+#endif
   Start(symbol_map);
   return GetProfiles();
 }
