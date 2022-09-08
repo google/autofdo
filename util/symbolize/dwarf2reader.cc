@@ -25,31 +25,13 @@
 #include "base/logging.h"
 #include "symbolize/bytereader.h"
 #include "symbolize/bytereader-inl.h"
+#include "symbolize/dwarf2enums.h"
 #include "symbolize/elf_reader.h"
 #include "symbolize/line_state_machine.h"
+#include "symbolize/addr2line_inlinestack.h"
+#include "symbolize/index_helper.h"
 
 namespace devtools_crosstool_autofdo {
-
-// Read a DWARF2/3 initial length field from START, using READER, and
-// report the length in LEN.  Return the actual initial length.
-
-static uint64 ReadInitialLength(const char* start,
-                                ByteReader* reader, size_t* len) {
-  const uint64 initial_length = reader->ReadFourBytes(start);
-  start += 4;
-
-  // In DWARF2/3, if the initial length is all 1 bits, then the offset
-  // size is 8 and we need to read the next 8 bytes for the real length.
-  if (initial_length == 0xffffffff) {
-    reader->SetOffsetSize(8);
-    *len = 12;
-    return reader->ReadOffset(start);
-  } else {
-    reader->SetOffsetSize(4);
-    *len = 4;
-  }
-  return initial_length;
-}
 
 CompilationUnit::CompilationUnit(const string& path,
                                  const SectionMap& sections, uint64 offset,
@@ -59,9 +41,8 @@ CompilationUnit::CompilationUnit(const string& path,
       string_buffer_(NULL), string_buffer_length_(0),
       str_offsets_buffer_(NULL), str_offsets_buffer_length_(0),
       addr_buffer_(NULL), addr_buffer_length_(0),
-      is_split_dwarf_(false), dwo_id_(0), dwo_name_(),
-      skeleton_dwo_id_(0), ranges_base_(0), addr_base_(0),
-      have_checked_for_dwp_(false), dwp_path_(),
+      is_split_dwarf_(false), dwo_name_(),
+      skeleton_dwo_id_(0), have_checked_for_dwp_(false), dwp_path_(),
       dwp_byte_reader_(NULL), dwp_reader_(NULL), malformed_(false) {}
 
 CompilationUnit::CompilationUnit(const string& path, const string& dwp_path,
@@ -72,9 +53,8 @@ CompilationUnit::CompilationUnit(const string& path, const string& dwp_path,
       string_buffer_(NULL), string_buffer_length_(0),
       str_offsets_buffer_(NULL), str_offsets_buffer_length_(0),
       addr_buffer_(NULL), addr_buffer_length_(0),
-      is_split_dwarf_(false), dwo_id_(0), dwo_name_(),
-      skeleton_dwo_id_(0), ranges_base_(0), addr_base_(0),
-      have_checked_for_dwp_(false), dwp_path_(dwp_path),
+      is_split_dwarf_(false), dwo_name_(),
+      skeleton_dwo_id_(0), have_checked_for_dwp_(false), dwp_path_(dwp_path),
       dwp_byte_reader_(NULL), dwp_reader_(NULL), malformed_(false) {}
 
 CompilationUnit::~CompilationUnit() {
@@ -92,14 +72,10 @@ CompilationUnit::~CompilationUnit() {
 
 void CompilationUnit::SetSplitDwarf(const char* addr_buffer,
                                     uint64 addr_buffer_length,
-                                    uint64 addr_base,
-                                    uint64 ranges_base,
                                     uint64 dwo_id) {
   is_split_dwarf_ = true;
   addr_buffer_ = addr_buffer;
   addr_buffer_length_ = addr_buffer_length;
-  addr_base_ = addr_base;
-  ranges_base_ = ranges_base;
   skeleton_dwo_id_ = dwo_id;
 }
 
@@ -132,7 +108,6 @@ void CompilationUnit::ReadAbbrevs() {
                                       header_.abbrev_offset;
   const char* abbrevptr = abbrev_start;
   const uint64 abbrev_length = iter->second.second - header_.abbrev_offset;
-
   while (1) {
     CompilationUnit::Abbrev abbrev;
     size_t len;
@@ -167,7 +142,19 @@ void CompilationUnit::ReadAbbrevs() {
       const enum DwarfAttribute name =
         static_cast<enum DwarfAttribute>(nametemp);
       const enum DwarfForm form = static_cast<enum DwarfForm>(formtemp);
-      abbrev.attributes.push_back(std::make_pair(name, form));
+      uint32 value = 0;
+      if (form == DW_FORM_implicit_const) {
+          DCHECK(abbrevptr < abbrev_start + abbrev_length);
+          value = reader_->ReadUnsignedLEB128(abbrevptr, &len);
+          abbrevptr += len;
+      }
+
+      AttributeSpec spec;
+      spec.name = name;
+      spec.form = form;
+      spec.value = value;
+
+      abbrev.attributes.push_back(spec);
     }
     CHECK(abbrev.number == abbrevs_->size());
     abbrevs_->push_back(abbrev);
@@ -180,14 +167,13 @@ const char* CompilationUnit::SkipDIE(const char* start,
   for (AttributeList::const_iterator i = abbrev.attributes.begin();
        i != abbrev.attributes.end();
        i++)  {
-    start = SkipAttribute(start, i->second);
+    start = SkipAttribute(start, i->form);
   }
   return start;
 }
 
 // Skips a single attribute form's data.
-const char* CompilationUnit::SkipAttribute(const char* start,
-                                                    enum DwarfForm form) {
+const char* CompilationUnit::SkipAttribute(const char* start, enum DwarfForm form) {
   size_t len;
 
   switch (form) {
@@ -197,28 +183,42 @@ const char* CompilationUnit::SkipAttribute(const char* start,
       start += len;
       return SkipAttribute(start, form);
       break;
-
+    case DW_FORM_implicit_const:
     case DW_FORM_flag_present:
       return start;
       break;
-
     case DW_FORM_data1:
     case DW_FORM_flag:
     case DW_FORM_ref1:
+    case DW_FORM_strx1:
+    case DW_FORM_addrx1:
       return start + 1;
       break;
     case DW_FORM_ref2:
     case DW_FORM_data2:
+    case DW_FORM_strx2:
+    case DW_FORM_addrx2:
       return start + 2;
+      break;
+    case DW_FORM_strx3:
+    case DW_FORM_addrx3:
+      return start + 3;
       break;
     case DW_FORM_ref4:
     case DW_FORM_data4:
+    case DW_FORM_strx4:
+    case DW_FORM_addrx4:
+    case DW_FORM_ref_sup4:
       return start + 4;
       break;
     case DW_FORM_ref8:
     case DW_FORM_ref_sig8:
     case DW_FORM_data8:
+    case DW_FORM_ref_sup8:
       return start + 8;
+      break;
+    case DW_FORM_data16:
+      return start + 16;
       break;
     case DW_FORM_string:
       return start + strlen(start) + 1;
@@ -227,10 +227,13 @@ const char* CompilationUnit::SkipAttribute(const char* start,
     case DW_FORM_ref_udata:
     case DW_FORM_GNU_str_index:
     case DW_FORM_GNU_addr_index:
+    case DW_FORM_strx:
+    case DW_FORM_addrx:
+    case DW_FORM_loclistx:
+    case DW_FORM_rnglistx:
       reader_->ReadUnsignedLEB128(start, &len);
       return start + len;
       break;
-
     case DW_FORM_sdata:
       reader_->ReadSignedLEB128(start, &len);
       return start + len;
@@ -247,7 +250,6 @@ const char* CompilationUnit::SkipAttribute(const char* start,
         return start + reader_->OffsetSize();
       }
       break;
-
     case DW_FORM_block1:
       return start + 1 + reader_->ReadOneByte(start);
       break;
@@ -264,6 +266,7 @@ const char* CompilationUnit::SkipAttribute(const char* start,
     }
       break;
     case DW_FORM_strp:
+    case DW_FORM_strp_sup:
     case DW_FORM_sec_offset:
         return start + reader_->OffsetSize();
       break;
@@ -272,6 +275,80 @@ const char* CompilationUnit::SkipAttribute(const char* start,
   }
   LOG(FATAL) << "Unhandled form type";
   return NULL;
+}
+
+void CompilationUnit::ReadDebugOffsetTableHeader(const char* str_offset_ptr,
+                                                 uint64 str_offset_length) {
+  const char* headerptr = str_offsets_buffer_ = str_offset_ptr;
+  str_offsets_buffer_length_ = str_offset_length;
+  size_t initial_length_size;
+
+  if (headerptr + 4 >= str_offset_ptr + str_offset_length) {
+    malformed_ = true;
+    return;
+  }
+
+  const uint64 initial_length = reader_->ReadInitialLength(headerptr, &initial_length_size);
+  headerptr += initial_length_size;
+
+  uint16 version = reader_->ReadTwoBytes(headerptr);
+  if (header_.version != version) {
+    malformed_ = true;
+    return;
+  }
+  headerptr += 2;
+
+  // discard the padding.
+  headerptr += 2;
+
+  handler_->set_str_offset_base(headerptr - str_offsets_buffer_);
+
+
+  if(str_offsets_buffer_length_ < 0) {
+    malformed_ = true;
+    return;
+  }                                                 
+}
+
+void CompilationUnit::ReadDebugAddressTableHeader(const char* addr_ptr,
+                                                 uint64 addr_length) {
+  const char* headerptr = addr_buffer_ = addr_ptr;
+  addr_buffer_length_ = addr_length;
+  size_t initial_length_size;
+
+  if (headerptr + 4 >= addr_ptr + addr_length) {
+    malformed_ = true;
+    return;
+  }
+
+  const uint64 initial_length = reader_->ReadInitialLength(headerptr, &initial_length_size);
+  headerptr += initial_length_size;
+
+  uint16 version = reader_->ReadTwoBytes(headerptr);
+  headerptr += 2;
+  if (header_.version != version) {
+    malformed_ = true;
+    return;
+  }
+  
+  uint8 address_size = reader_->ReadOneByte(headerptr);
+  headerptr += 1;
+
+  if (address_size != header_.address_size) {
+    LOG(WARNING) << "Address size in .debug_addr header is " << address_size << " while address size in .debug_info header is " << header_.address_size;
+    malformed_ = true;
+    return;
+  }
+
+  uint8 segment_selector_size = reader_->ReadOneByte(headerptr);
+  headerptr += 1;
+
+  handler_->set_addr_base(headerptr - addr_buffer_);
+
+  if(addr_buffer_length_ < 0) {
+    malformed_ = true;
+    return;
+  }   
 }
 
 // Read a DWARF2/3 header.
@@ -287,8 +364,7 @@ void CompilationUnit::ReadHeader() {
     malformed_ = true;
     return;
   }
-  const uint64 initial_length = ReadInitialLength(headerptr, reader_,
-                                                  &initial_length_size);
+  const uint64 initial_length = reader_->ReadInitialLength(headerptr, &initial_length_size);
   headerptr += initial_length_size;
   header_.length = initial_length;
   if (header_.length == 0
@@ -298,30 +374,53 @@ void CompilationUnit::ReadHeader() {
   }
 
   header_.version = reader_->ReadTwoBytes(headerptr);
-  if (header_.version < 2 || header_.version > 4) {
+  if (header_.version < 2 || header_.version > 5) {
     malformed_ = true;
     return;
   }
   headerptr += 2;
 
-  if (headerptr + reader_->OffsetSize() >= buffer_ + buffer_length_) {
-    malformed_ = true;
-    return;
+  if (header_.version == 5) {
+      if (headerptr + 1 >= buffer_ + buffer_length_) {
+          malformed_ = true;
+          return;
+      }
+      header_.unit_type = reader_->ReadOneByte(headerptr);
+      if (header_.unit_type != DwarfUnitType::DW_UT_compile &&
+          header_.unit_type != DwarfUnitType::DW_UT_skeleton &&
+          header_.unit_type != DwarfUnitType::DW_UT_split_compile) 
+      {
+          LOG(INFO) << "Only full compilation unit and skeleton unit types are supported.";
+          malformed_ = true;
+          return;
+      }
+      headerptr += 1;
   }
-  header_.abbrev_offset = reader_->ReadOffset(headerptr);
-  headerptr += reader_->OffsetSize();
 
-  if (headerptr + 1 >= buffer_ + buffer_length_) {
-    malformed_ = true;
-    return;
+  if (header_.version == 5) {
+      if (!ReadAddressSize(&headerptr)) {
+          return;
+      }
+
+      if (!ReadAbbrevOffset(&headerptr)) {
+          return;
+      }
+
+      if (header_.unit_type == DwarfUnitType::DW_UT_skeleton ||
+          header_.unit_type == DwarfUnitType::DW_UT_split_compile) {
+        header_.dwo_id = reader_->ReadEightBytes(headerptr);
+        headerptr += 8;
+      }
   }
-  header_.address_size = reader_->ReadOneByte(headerptr);
-  if (header_.address_size != 4 && header_.address_size != 8) {
-    malformed_ = true;
-    return;
+  else {
+      if (!ReadAbbrevOffset(&headerptr)) {
+          return;
+      }
+
+      if (!ReadAddressSize(&headerptr)) {
+          return;
+      }
   }
-  reader_->SetAddressSize(header_.address_size);
-  headerptr += 1;
 
   after_header_ = headerptr;
 
@@ -333,6 +432,31 @@ void CompilationUnit::ReadHeader() {
     malformed_ = true;
     return;
   }
+}
+
+bool CompilationUnit::ReadAddressSize(const char** headerptr) {
+    if (*headerptr + 1 >= buffer_ + buffer_length_) {
+        malformed_ = true;
+        return false;
+    }
+    header_.address_size = reader_->ReadOneByte(*headerptr);
+    if (header_.address_size != 4 && header_.address_size != 8) {
+        malformed_ = true;
+        return false;
+    }
+    reader_->SetAddressSize(header_.address_size);
+    *headerptr = *headerptr + 1;
+    return true;
+}
+
+bool CompilationUnit::ReadAbbrevOffset(const char** headerptr) {
+    if (*headerptr + reader_->OffsetSize() >= buffer_ + buffer_length_) {
+        malformed_ = true;
+        return false;
+    }
+    header_.abbrev_offset = reader_->ReadOffset(*headerptr);
+    *headerptr = *headerptr + reader_->OffsetSize();
+    return true;
 }
 
 uint64 CompilationUnit::Start(uint64 offset) {
@@ -356,12 +480,8 @@ uint64 CompilationUnit::Start(uint64 offset) {
   after_header_ = NULL;
   malformed_ = false;
 
-  dwo_id_ = 0;
   dwo_name_ = NULL;
   skeleton_dwo_id_ = 0;
-
-  ranges_base_ = 0;
-  addr_base_ = 0;
 
   return Start();
 }
@@ -424,15 +544,33 @@ uint64 CompilationUnit::Start() {
   // Set the string offsets section if we have one.
   iter = sections_.find(".debug_str_offsets");
   if (iter != sections_.end()) {
-    str_offsets_buffer_ = iter->second.first;
-    str_offsets_buffer_length_ = iter->second.second;
+    if (header_.version == 5) {
+      ReadDebugOffsetTableHeader(iter->second.first, iter->second.second);
+    }
+    else {
+      str_offsets_buffer_ = iter->second.first;
+      str_offsets_buffer_length_ = iter->second.second;      
+    }
+  }
+
+  if (malformed()) {
+    return iter->second.second;;
   }
 
   // Set the address section if we have one.
   iter = sections_.find(".debug_addr");
   if (iter != sections_.end()) {
-    addr_buffer_ = iter->second.first;
-    addr_buffer_length_ = iter->second.second;
+    if (header_.version == 5) {
+      ReadDebugAddressTableHeader(iter->second.first, iter->second.second);
+    }
+    else {
+      addr_buffer_ = iter->second.first;
+      addr_buffer_length_ = iter->second.second;      
+    }
+  }
+
+  if (malformed()) {
+    return iter->second.second;;
   }
 
   // Now that we have our abbreviations, start processing DIE's.
@@ -456,7 +594,7 @@ uint64 CompilationUnit::Start() {
 // This is all boring data manipulation and calling of the handler.
 const char* CompilationUnit::ProcessAttribute(
     uint64 dieoffset, const char* start, enum DwarfAttribute attr,
-    enum DwarfForm form) {
+    enum DwarfForm form, uint32 value) {
   size_t len;
 
   switch (form) {
@@ -499,6 +637,13 @@ const char* CompilationUnit::ProcessAttribute(
                                          reader_->ReadEightBytes(start));
       return start + 8;
       break;
+    case DW_FORM_data16:
+      // It is possible to implement 128bit constant using 
+      // a ReadSixteenBytes function and "typedef __int128 uint128".
+      // But not all compilers support __int128.
+      LOG(WARNING) << "We don't support 128bit as constant."; 
+      return start + 16;
+      break;      
     case DW_FORM_string: {
       const char* str = start;
       ProcessAttributeString(dieoffset, attr, form,
@@ -542,7 +687,6 @@ const char* CompilationUnit::ProcessAttribute(
                                          reader_->ReadOffset(start));
       return start + reader_->OffsetSize();
       break;
-
     case DW_FORM_block1: {
       uint64 datalen = reader_->ReadOneByte(start);
       ProcessAttributeBuffer(dieoffset, attr, form, start + 1,
@@ -574,48 +718,117 @@ const char* CompilationUnit::ProcessAttribute(
     }
     case DW_FORM_strp: {
       CHECK(string_buffer_ != NULL);
-
       const uint64 offset = reader_->ReadOffset(start);
-      if (offset >= string_buffer_length_) {
-        LOG(WARNING) << "offset is out of range.  offset=" << offset
-                     << " string_buffer_length_=" << string_buffer_length_;
-        return NULL;
-      }
-
-      const char* str = string_buffer_ + offset;
       ProcessAttributeString(dieoffset, attr, form,
-                                       str);
+                             get_string_with_offsets(string_buffer_, string_buffer_length_, offset));
       return start + reader_->OffsetSize();
       break;
     }
+    case DW_FORM_strx1:
+    case DW_FORM_strx2:
+    case DW_FORM_strx3:
+    case DW_FORM_strx4:
+    case DW_FORM_strx:
     case DW_FORM_GNU_str_index: {
       CHECK(string_buffer_ != NULL);
       CHECK(str_offsets_buffer_ != NULL);
-
-      uint64 str_index = reader_->ReadUnsignedLEB128(start, &len);
+      uint64 str_index = 0;
+      size_t len = 0;
+        switch (form) {
+          case DW_FORM_strx1: {
+            str_index = reader_->ReadOneByte(start);
+            len += 1;
+            break; 
+          }
+          case DW_FORM_strx2: {
+            str_index = reader_->ReadTwoBytes(start);
+            len += 2;
+            break;  
+          }
+          case DW_FORM_strx3: {
+            str_index = reader_->ReadThreeBytes(start);
+            len += 3;
+            break;    
+          }
+          case DW_FORM_strx4: {
+            str_index = reader_->ReadFourBytes(start);
+            len += 4;
+            break;
+          }
+          case DW_FORM_strx:
+          case DW_FORM_GNU_str_index: {
+            str_index = reader_->ReadUnsignedLEB128(start, &len);
+            break;
+          }
+        }
       const char* offset_ptr =
-          str_offsets_buffer_ + str_index * reader_->OffsetSize();
+            get_offset_pointer_in_str_offsets_table(str_index,
+                                                    str_offsets_buffer_,
+                                                    handler_->get_str_offset_base(),
+                                                    reader_->OffsetSize(),
+                                                    header_.version);
       const uint64 offset = reader_->ReadOffset(offset_ptr);
-      if (offset >= string_buffer_length_) {
-        LOG(WARNING) << "offset is out of range.  offset=" << offset
-                     << " string_buffer_length_=" << string_buffer_length_;
-        return NULL;
-      }
-
-      const char* str = string_buffer_ + offset;
       ProcessAttributeString(dieoffset, attr, form,
-                                       str);
+                             get_string_with_offsets(string_buffer_, string_buffer_length_, offset));
+      return start + len;
+      break; 
+    }
+    case DW_FORM_rnglistx: {
+      uint64 rng_index = reader_->ReadUnsignedLEB128(start, &len);
+      ProcessAttributeUnsigned(dieoffset, attr, form, rng_index);
       return start + len;
       break;
     }
+    case DW_FORM_addrx1: 
+    case DW_FORM_addrx2: 
+    case DW_FORM_addrx3: 
+    case DW_FORM_addrx4:
+    case DW_FORM_addrx: 
     case DW_FORM_GNU_addr_index: {
       CHECK(addr_buffer_ != NULL);
-      uint64 addr_index = reader_->ReadUnsignedLEB128(start, &len);
-      const char* addr_ptr =
-          addr_buffer_ + addr_base_ + addr_index * reader_->AddressSize();
-      ProcessAttributeUnsigned(dieoffset, attr, form,
-                                         reader_->ReadAddress(addr_ptr));
-      return start + len;
+      uint64 addr_index = 0;
+      size_t len;
+      switch (form) {
+        case DW_FORM_addrx1: {
+          addr_index = reader_->ReadOneByte(start);
+          len += 1;
+            break;
+        }
+        case DW_FORM_addrx2: {
+          uint64 addr_index = reader_->ReadTwoBytes(start);
+          len += 2;
+            break;
+        }
+        case DW_FORM_addrx3: {
+          addr_index = reader_->ReadThreeBytes(start);
+          len += 3;
+            break;
+        }
+        case DW_FORM_addrx4: {
+          addr_index = reader_->ReadFourBytes(start);
+          len += 4;
+            break;
+        }
+        case DW_FORM_GNU_addr_index: 
+        case DW_FORM_addrx: {
+          addr_index = reader_->ReadUnsignedLEB128(start, &len);
+          break;
+        }
+      }
+      uint64 v = reader_->ReadAddress(
+                          get_address_pointer_from_address_table(addr_buffer_,
+                                                                handler_->get_addr_base(),
+                                                                addr_index,
+                                                                reader_->AddressSize())
+                          );
+      ProcessAttributeUnsigned(dieoffset, attr, form, v);
+      return start + 1;
+      break;  
+    }
+    case DW_FORM_implicit_const: {
+      CHECK(header_.version == 5);
+      ProcessAttributeSigned(dieoffset, attr, form, value);
+      return start;
       break;
     }
     default:
@@ -625,13 +838,24 @@ const char* CompilationUnit::ProcessAttribute(
   return NULL;
 }
 
+void CompilationUnit::ProcessAttributeUnsigned(uint64 offset,
+                                                enum DwarfAttribute attr,
+                                                enum DwarfForm form,
+                                                uint64 data) {
+    if (attr == DW_AT_GNU_dwo_id) // In DWARF 5, this attribute has moved to header field.
+      header_.dwo_id = data;
+    handler_->ProcessAttributeUnsigned(offset, attr, form, data);
+  }
+
 const char* CompilationUnit::ProcessDIE(uint64 dieoffset,
                                         const char* start,
                                         const Abbrev& abbrev) {
   for (AttributeList::const_iterator i = abbrev.attributes.begin();
        i != abbrev.attributes.end();
        i++)  {
-    start = ProcessAttribute(dieoffset, start, i->first, i->second);
+      start = ProcessAttribute (
+          dieoffset, start, i->name, i->form,
+          i->form == DwarfForm::DW_FORM_implicit_const ? i->value : 0);
     if (start == NULL) {
       break;
     }
@@ -642,7 +866,7 @@ const char* CompilationUnit::ProcessDIE(uint64 dieoffset,
   // compilation unit.
   if (abbrev.tag == DW_TAG_compile_unit
       && is_split_dwarf_
-      && dwo_id_ != skeleton_dwo_id_) {
+      && header_.dwo_id != skeleton_dwo_id_) {
     LOG(WARNING) << "dwo_id 0x" << std::hex << skeleton_dwo_id_
                  << " does not match .dwo file '" << path_ << "'.";
     return NULL;
@@ -690,7 +914,9 @@ void CompilationUnit::ProcessDIEs() {
 
     const Abbrev& abbrev = abbrevs_->at(abbrev_num);
     const enum DwarfTag tag = abbrev.tag;
+
     if (!handler_->StartDIE(absolute_offset, tag, abbrev.attributes)) {
+
       dieptr = SkipDIE(dieptr, abbrev);
     } else {
       dieptr = ProcessDIE(absolute_offset, dieptr, abbrev);
@@ -745,13 +971,12 @@ void CompilationUnit::ProcessSplitDwarf() {
   if (dwp_reader_ != NULL) {
     // If we have a .dwp file, read the debug sections for the requested CU.
     SectionMap sections;
-    dwp_reader_->ReadDebugSectionsForCU(dwo_id_, &sections);
+    dwp_reader_->ReadDebugSectionsForCU(header_.dwo_id, &sections);
     if (!sections.empty()) {
       found_in_dwp = true;
       CompilationUnit dwp_comp_unit(dwp_path_, sections, 0,
                                     dwp_byte_reader_, handler_);
-      dwp_comp_unit.SetSplitDwarf(addr_buffer_, addr_buffer_length_, addr_base_,
-                                  ranges_base_, dwo_id_);
+      dwp_comp_unit.SetSplitDwarf(addr_buffer_, addr_buffer_length_, header_.dwo_id);
       dwp_comp_unit.Start();
       if (dwp_comp_unit.malformed())
         LOG(WARNING) << "File '" << dwp_path_ << "' has mangled "
@@ -768,10 +993,32 @@ void CompilationUnit::ProcessSplitDwarf() {
         reader.SetAddressSize(width);
         SectionMap sections;
         ReadDebugSectionsFromDwo(&elf, &sections);
+
+        auto iter = sections.find(".debug_rnglists");
+        size_t debug_ranges_size = 0;
+        const char *debug_ranges_data = NULL;
+        if (iter != sections.end()) {
+          debug_ranges_data = iter->second.first;
+          debug_ranges_size = iter->second.second;
+          const bool is_rnglists_section = true;
+          AddressRangeList *debug_ranges = 
+                new AddressRangeList(debug_ranges_data,
+                                      debug_ranges_size,
+                                      &reader,
+                                      is_rnglists_section,
+                                      addr_buffer_, 
+                                      addr_buffer_length_);
+          InlineStackHandler *inlinestackhandler = dynamic_cast<InlineStackHandler*>(handler_);
+          if(!inlinestackhandler)  {
+            LOG(FATAL) << "It is not possbile to process the .debug_rnglists sections in seperate .dwo files without InlineStackHandler.";
+          }
+          inlinestackhandler->set_address_range_list(debug_ranges);
+        }
+
+        
         CompilationUnit dwo_comp_unit(dwo_name_, sections, 0, &reader,
                                       handler_);
-        dwo_comp_unit.SetSplitDwarf(addr_buffer_, addr_buffer_length_,
-                                    addr_base_, ranges_base_, dwo_id_);
+        dwo_comp_unit.SetSplitDwarf(addr_buffer_, addr_buffer_length_, header_.dwo_id);
         dwo_comp_unit.Start();
         if (dwo_comp_unit.malformed())
           LOG(WARNING) << "File '" << dwo_name_ << "' has mangled "
@@ -791,7 +1038,8 @@ void CompilationUnit::ReadDebugSectionsFromDwo(ElfReader* elf_reader,
     ".debug_abbrev",
     ".debug_info",
     ".debug_str_offsets",
-    ".debug_str"
+    ".debug_str",
+    ".debug_rnglists"
   };
   for (int i = 0; i < arraysize(section_names); ++i) {
     string base_name = section_names[i];
@@ -989,21 +1237,28 @@ uint32 DwpReader::LookupCUv2(uint64 dwo_id) {
 
 LineInfo::LineInfo(const char* buffer, uint64 buffer_length,
                    ByteReader* reader, LineInfoHandler* handler):
-    handler_(handler), reader_(reader), buffer_(buffer),
-    buffer_length_(buffer_length), str_buffer_(NULL),
-    str_buffer_length_(0), after_header_(NULL),
+    handler_(handler), reader_(reader),
+    buffer_(buffer), buffer_length_(buffer_length),
+    line_str_buffer_(NULL), line_str_buffer_length_(0),
+    str_buffer_(NULL), str_buffer_length_(0),
+    str_offsets_buffer_(NULL), str_offsets_buffer_length_(0), str_offset_base_(0),
+    after_header_(NULL),
     logicals_start_(NULL), actuals_start_(NULL),
     malformed_(false) {
   header_.std_opcode_lengths = NULL;
 }
 
 LineInfo::LineInfo(const char* buffer, uint64 buffer_length,
+                   const char* line_str_buffer, uint64 line_str_buffer_length,
                    const char* str_buffer, uint64 str_buffer_length,
-                   ByteReader* reader, LineInfoHandler* handler):
+                   const char* str_offsets_buffer, uint64 str_offsets_buffer_length, 
+                   uint64 str_offset_base, ByteReader* reader, LineInfoHandler* handler):
     handler_(handler), reader_(reader), buffer_(buffer),
-    buffer_length_(buffer_length), str_buffer_(str_buffer),
-    str_buffer_length_(str_buffer_length), after_header_(NULL),
-    logicals_start_(NULL), actuals_start_(NULL),
+    buffer_length_(buffer_length), line_str_buffer_(line_str_buffer),
+    line_str_buffer_length_(line_str_buffer_length), str_buffer_(str_buffer),
+    str_buffer_length_(str_buffer_length), str_offsets_buffer_(str_offsets_buffer),
+    str_offsets_buffer_length_(str_offsets_buffer_length), str_offset_base_(str_offset_base),
+    after_header_(NULL), logicals_start_(NULL), actuals_start_(NULL),
     malformed_(false) {
   header_.std_opcode_lengths = NULL;
 }
@@ -1062,23 +1317,96 @@ bool LineInfo::ReadTypesAndForms(const char** lineptr,
 
 bool LineInfo::ReadStringForm(uint32 form, const char** dirname,
     const char** lineptr) {
-  if (form == DW_FORM_string) {
-    *dirname = *lineptr;
-    if (!AdvanceLinePtr(strlen(*dirname) + 1, lineptr)) {
-      return false;
+
+  switch (form) {
+    case DW_FORM_string: {
+      *dirname = *lineptr;
+      if (!AdvanceLinePtr(strlen(*dirname) + 1, lineptr)) {
+        return false;
+      }
+      break;
     }
-  } else if (form == DW_FORM_line_strp) {
-    uint64 offset = reader_->ReadOffset(*lineptr);
-    if (!AdvanceLinePtr(reader_->OffsetSize(), lineptr)) {
-      return false;
+    case DW_FORM_line_strp: {
+      uint64 offset = reader_->ReadOffset(*lineptr);
+      if (!AdvanceLinePtr(reader_->OffsetSize(), lineptr)) {
+        return false;
+      }
+      if (line_str_buffer_ == NULL) {
+        return false;
+      }
+      *dirname = line_str_buffer_ + offset;
+      break;
     }
-    if (str_buffer_ == NULL) {
-      return false;
+    case DW_FORM_strx1:
+    case DW_FORM_strx2:
+    case DW_FORM_strx3:
+    case DW_FORM_strx4:
+    case DW_FORM_strx: {
+      CHECK(str_buffer_ != NULL);
+      CHECK(str_offsets_buffer_ != NULL);
+      size_t len = 0;
+      uint64 str_index = 0;
+      switch (form) {
+        case DW_FORM_strx1: {
+          str_index = reader_->ReadOneByte(*lineptr);
+          len += 1;
+          break;
+        }
+        case DW_FORM_strx2: {
+          str_index = reader_->ReadTwoBytes(*lineptr);
+          len += 2;
+          break;
+        }
+        case DW_FORM_strx3: {
+          str_index = reader_->ReadThreeBytes(*lineptr);
+          len += 3;
+          break;
+        }
+        case DW_FORM_strx4: {
+          str_index = reader_->ReadFourBytes(*lineptr);
+          len += 4;
+          break;
+        }
+        case DW_FORM_strx: {
+          str_index = reader_->ReadUnsignedLEB128(*lineptr, &len);
+          break;
+        }
+      }
+      if (!AdvanceLinePtr(len, lineptr)) {
+        return false;
+      }
+      const char* offset_ptr =
+            get_offset_pointer_in_str_offsets_table(str_index,
+                                                    str_offsets_buffer_,
+                                                    str_offset_base_,
+                                                    reader_->OffsetSize(),
+                                                    header_.version);
+      const uint64 offset = reader_->ReadOffset(offset_ptr);
+      const char* string = get_string_with_offsets(str_buffer_, str_buffer_length_, offset);
+      if(string)
+        *dirname = string;
+      else
+        return false;
+      break;
     }
-    *dirname = str_buffer_ + offset;
-  } else {
-    return false;
+    case DW_FORM_strp: {
+      if(!str_buffer_ || !str_buffer_length_) 
+        return false;
+      const uint64 offset = reader_->ReadOffset(*lineptr);
+      if (!AdvanceLinePtr(reader_->OffsetSize(), lineptr)) {
+        return false;
+      }
+      const char* string = get_string_with_offsets(str_buffer_, str_buffer_length_, offset);
+      if(string)
+        *dirname = string;
+      else
+        return false;
+      break;
+    }
+    default:
+      return false;
   }
+
   return true;
 }
 
@@ -1089,6 +1417,16 @@ bool LineInfo::ReadUnsignedForm(uint32 form, uint64* value,
   if (form == DW_FORM_udata) {
     *value = reader_->ReadUnsignedLEB128(*lineptr, &len);
     if (!AdvanceLinePtr(len, lineptr)) {
+      return false;
+    }
+  } else if (form == DW_FORM_data1) {
+    *value = reader_->ReadOneByte(*lineptr);
+    if (!AdvanceLinePtr(1, lineptr)) {
+      return false;
+    }
+  } else if (form == DW_FORM_data2) {
+    *value = reader_->ReadTwoBytes(*lineptr);
+    if (!AdvanceLinePtr(2, lineptr)) {
       return false;
     }
   } else {
@@ -1104,14 +1442,13 @@ void LineInfo::ReadHeader() {
   size_t initial_length_size;
   const char* end_of_prologue_length;
 
-  const uint64 initial_length = ReadInitialLength(lineptr, reader_,
-                                                  &initial_length_size);
+  const uint64 initial_length = reader_->ReadInitialLength(lineptr, &initial_length_size);
 
   if (!AdvanceLinePtr(initial_length_size, &lineptr)) {
     return;
   }
-  header_.total_length = initial_length;
-  if (buffer_ + initial_length_size + header_.total_length
+  header_.unit_length = initial_length;
+  if (buffer_ + initial_length_size + header_.unit_length
       > buffer_ + buffer_length_) {
     malformed_ = true;
     return;
@@ -1127,13 +1464,27 @@ void LineInfo::ReadHeader() {
   if (!AdvanceLinePtr(2, &lineptr)) {
     return;
   }
-  if ((header_.version < 2 || header_.version > 4)
+  if ((header_.version < 2 || header_.version > 5)
       && header_.version != VERSION_TWO_LEVEL) {
     malformed_ = true;
     return;
   }
 
-  header_.prologue_length = reader_->ReadOffset(lineptr);
+  // Read DWARF5 Specific field
+  if (header_.version == 5) {
+
+      header_.address_size = reader_->ReadOneByte(lineptr);
+      if (!AdvanceLinePtr(1, &lineptr)) {
+        return;
+      }
+
+      header_.segment_selector_size = reader_->ReadOneByte (lineptr);
+      if (!AdvanceLinePtr (1, &lineptr)) {
+        return;
+      }
+  }
+
+  header_.header_length = reader_->ReadOffset(lineptr);
   if (!AdvanceLinePtr(reader_->OffsetSize(), &lineptr)) {
     return;
   }
@@ -1184,7 +1535,8 @@ void LineInfo::ReadHeader() {
     }
   }
 
-  if (header_.version != VERSION_TWO_LEVEL) {
+  if (header_.version != VERSION_TWO_LEVEL 
+      && header_.version != 5) {
     // It is legal for the directory entry table to be empty.
     if (*lineptr) {
       uint32 dirindex = 1;
@@ -1236,7 +1588,93 @@ void LineInfo::ReadHeader() {
     }
     header_.logicals_offset = 0;
     header_.actuals_offset = 0;
-  } else {
+  } 
+  else if (header_.version == 5) {
+    // Read the DWARF-5 directory table.
+    {
+      static const uint32 kMaxTypes = 4;
+      uint32 content_types[kMaxTypes];
+      uint32 content_forms[kMaxTypes];
+      uint32 format_count;
+      size_t len;
+
+      if (!ReadTypesAndForms(&lineptr, content_types, content_forms,
+          kMaxTypes, &format_count)) {
+        malformed_ = true;
+        return;
+      }
+      uint32 entry_count = reader_->ReadUnsignedLEB128(lineptr, &len);
+      if (!AdvanceLinePtr(len, &lineptr)) {
+        return;
+      }
+      for (uint32 row = 1; row <= entry_count; ++row) {
+        const char* dirname = NULL;
+        for (uint32 col = 0; col < format_count; ++col) {
+          if (content_types[col] == DW_LNCT_path) {
+            if (!ReadStringForm(content_forms[col], &dirname, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else {
+            malformed_ = true;
+            return;
+          }
+        }
+        if (dirname == NULL) {
+          malformed_ = true;
+          return;
+        }
+        handler_->DefineDir(dirname, row);
+      }
+    }
+
+    // Read the DWARF-5 filename table.
+    {
+      static const uint32 kMaxTypes = 4;
+      uint32 content_types[kMaxTypes];
+      uint32 content_forms[kMaxTypes];
+      uint32 format_count;
+      size_t len;
+
+      if (!ReadTypesAndForms(&lineptr, content_types, content_forms,
+          kMaxTypes, &format_count)) {
+        malformed_ = true;
+        return;
+      }
+      uint32 entry_count = reader_->ReadUnsignedLEB128(lineptr, &len);
+      if (!AdvanceLinePtr(len, &lineptr)) {
+        return;
+      }
+      for (uint32 row = 1; row <= entry_count; ++row) {
+        const char* filename = NULL;
+        uint64 dirindex = 0;
+        uint64 mod_time = 0;
+        uint64 filelength = 0;
+        for (uint32 col = 0; col < format_count; ++col) {
+          if (content_types[col] == DW_LNCT_path) {
+            if (!ReadStringForm(content_forms[col], &filename, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else if (content_types[col] == DW_LNCT_directory_index) {
+            if (!ReadUnsignedForm(content_forms[col], &dirindex, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else {
+            malformed_ = true;
+            return;
+          }
+        }
+        if (filename == NULL) {
+          malformed_ = true;
+          return;
+        }
+        handler_->DefineFile(filename, row, dirindex, mod_time, filelength);
+      }
+    }
+  }
+  else {
     // Two-level line table.
     // Skip the fake directory and filename tables, and the fake
     // extended opcode that wraps the rest of the section.
@@ -1583,7 +2021,6 @@ bool LineInfo::ProcessOneOpcode(
           const uint64 filelength = reader->ReadUnsignedLEB128(start,
                                                                &templen);
           start += templen;
-
           if (handler) {
             handler->DefineFile(filename, -1, dirindex, mod_time,
                                 filelength);
@@ -1660,7 +2097,7 @@ void LineInfo::ReadLines() {
     // Read the actuals table;
     handler_->StartActuals();
     lineptr = actuals_start_;
-    while (lineptr < lengthstart + header_.total_length) {
+    while (lineptr < lengthstart + header_.unit_length) {
       lsm.Reset(header_.default_is_stmt);
       while (!lsm.end_sequence) {
         size_t oplength;
@@ -1693,7 +2130,7 @@ void LineInfo::ReadLines() {
     handler_->SetContext(0);
     handler_->SetSubprog(0);
     const char* lineptr = after_header_;
-    while (lineptr < lengthstart + header_.total_length) {
+    while (lineptr < lengthstart + header_.unit_length) {
       lsm.Reset(header_.default_is_stmt);
       while (!lsm.end_sequence) {
         size_t oplength;
@@ -1712,7 +2149,7 @@ void LineInfo::ReadLines() {
     }
   }
 
-  after_header_ = lengthstart + header_.total_length;
+  after_header_ = lengthstart + header_.unit_length;
 }
 
 }  // namespace devtools_crosstool_autofdo

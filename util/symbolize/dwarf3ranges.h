@@ -18,11 +18,46 @@
 #include <algorithm>
 #include <utility>
 #include <vector>
+#include <memory>
+#include <map>
 
 #include "base/common.h"
 #include "symbolize/bytereader.h"
 
 namespace devtools_crosstool_autofdo {
+
+// Entry kinds for DWARF5 non-contiguous address ranges
+enum DwarfRangeListEntryKind {
+  DW_RLE_end_of_list = 0,
+  DW_RLE_base_addressx = 1,
+  DW_RLE_startx_endx = 2,
+  DW_RLE_startx_length = 3,
+  DW_RLE_offset_pair = 4,
+  DW_RLE_base_address = 5,
+  DW_RLE_start_end = 6,
+  DW_RLE_start_length = 7
+};
+
+
+// This struct contains header info and each range list specific data.
+struct RngListsData {
+  RngListsData()
+  : unit_length(0),
+    version(0),
+    address_size(0),
+    segment_selector_size(0),
+    offset_entry_count(0),
+    rnglist_base_(0),
+    offset_list_() {}
+
+  uint64 unit_length;
+  uint8 version; 
+  uint8 address_size;
+  uint8 segment_selector_size;
+  uint32 offset_entry_count;
+  uint64 rnglist_base_;
+  std::vector<uint32> offset_list_;
+};
 
 // This class represents a DWARF3 non-contiguous address range.  The
 // contents of an address range section are passed in
@@ -32,15 +67,39 @@ class AddressRangeList {
  public:
   typedef pair<uint64, uint64> Range;
   typedef vector<Range> RangeList;
+  typedef std::map<uint64, RngListsData> RngDataMap;
   AddressRangeList(const char* buffer,
                    uint64 buffer_length,
-                   ByteReader* reader)
+                   ByteReader* reader,
+                   bool is_rnglists_section,
+                   const char* addr_buffer,
+                   uint64 addr_buffer_length)
       : reader_(reader),
         buffer_(buffer),
-        buffer_length_(buffer_length) { }
+        buffer_length_(buffer_length),
+        is_rnglists_section(is_rnglists_section),
+        addr_buffer_(addr_buffer),
+        addr_buffer_length_(addr_buffer_length),
+        rngdatamap_() {
+      if (is_rnglists_section) {
+          ReadDwarfRngListsHeader();
+      }
+  }
 
   void ReadRangeList(uint64 offset, uint64 base,
-                     RangeList* output);
+                     RangeList* output, uint64 addr_base = 0);
+
+  // This handles the case where we read ranges with DW_FORM_sec_offset.
+  // In this case, the buffer does not have offset array. So for calculating the position, 
+  // we only add the offset to buffer_.
+  void ReadDwarfRngListsDirectly(uint64 offset, uint64 base,
+                                 AddressRangeList::RangeList* ranges, uint64 addr_base);
+
+  // In this case DW_FORM_rnglistx, buffer_ includes offset array too.
+  // So we have to add that to the the buffer_ to be able to read the RngLists.
+  void ReadDwarfRngListwithOffsetArray(uint64 offset, uint64 base,
+                                       AddressRangeList::RangeList* ranges, 
+                                       uint64 addr_base, uint64 range_base_);
 
   static uint64 RangesMin(const RangeList *ranges) {
     if (ranges->size() == 0)
@@ -55,13 +114,40 @@ class AddressRangeList {
     return result;
   }
 
+  bool IsRngListsSection() {
+    return is_rnglists_section;
+  }
+
+  uint64 GetRngListsElementOffsetByIndex(uint64 addr_base, uint64 rng_index);
+
  private:
+
+  uint64 ReadOffset(const char** offsetarrayptr);
+
+  void ReadDwarfRngListsHeader();
+
+  void ReadDwarfRangeList(uint64 offset, uint64 base,
+                           RangeList* output);
+
+  void ReadDwarfRngLists(uint64 base, RangeList* output, const char* pos, uint64 addr_base, uint8 address_size);
+
+
+
   // The associated ByteReader that handles endianness issues for us
   ByteReader* reader_;
 
   // buffer is the buffer for our range info
   const char* buffer_;
   uint64 buffer_length_;
+  const char* addr_buffer_;
+  uint64 addr_buffer_length_;
+  bool is_rnglists_section;
+
+  // a map of addr_base_ -> RngListsData
+  // If the RngList we are processing does not have offset array,
+  // then addr_base will be the beginning of the data address (right after header).
+  RngDataMap rngdatamap_;
+
   DISALLOW_COPY_AND_ASSIGN(AddressRangeList);
 };
 

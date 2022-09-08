@@ -100,8 +100,8 @@ bool Google3Addr2line::Prepare() {
 
   SectionMap sections;
   const char *debug_section_names[] = {
-    ".debug_line", ".debug_abbrev", ".debug_info", ".debug_line", ".debug_str",
-    ".debug_ranges", ".debug_addr"
+    ".debug_line", ".debug_abbrev", ".debug_info", ".debug_str",
+    ".debug_ranges", ".debug_addr", ".debug_rnglists", ".debug_line_str"
   };
   for (const char *section_name : debug_section_names) {
     size_t section_size;
@@ -113,14 +113,29 @@ bool Google3Addr2line::Prepare() {
   }
 
   size_t debug_info_size = 0;
+  size_t debug_addr_size = 0;
   size_t debug_ranges_size = 0;
+  const char *debug_info_data = NULL;
+  const char *debug_addr_data = NULL;
   const char *debug_ranges_data = NULL;
-  GetSection(sections, ".debug_info", NULL, &debug_info_size, binary_name_, "");
-  GetSection(sections, ".debug_ranges", &debug_ranges_data,
-             &debug_ranges_size, binary_name_, "");
+  bool is_rnglists_section = false;
+  GetSection(sections, ".debug_info", &debug_info_data, &debug_info_size, binary_name_, "");
+  GetSection(sections, ".debug_addr", &debug_addr_data, &debug_addr_size, binary_name_, "");
+  GetSection(sections, ".debug_ranges", &debug_ranges_data, &debug_ranges_size, binary_name_, "");
+  if (debug_ranges_data == NULL) {
+      GetSection(sections, ".debug_rnglists", &debug_ranges_data, &debug_ranges_size, binary_name_, "");
+      if (debug_ranges_data != NULL) 
+        is_rnglists_section = true;
+      else 
+        LOG(INFO) << "Executable does not have .debug_ranges nor .debug_rnglists.";
+  }
+
   AddressRangeList debug_ranges(debug_ranges_data,
-                                                debug_ranges_size,
-                                                &reader);
+                                debug_ranges_size,
+                                &reader,
+                                is_rnglists_section, 
+                                debug_addr_data, 
+                                debug_addr_size);
   inline_stack_handler_ = new InlineStackHandler(
       &debug_ranges, sections, &reader, sampled_functions_,
       elf_->VaddrOfFirstLoadSegment());
@@ -223,6 +238,7 @@ void Google3Addr2line::GetInlineStack(uint64_t address,
       start_line = canonical_parent->callsite_line();
     if (start_line == 0)
       start_line = subprog->callsite_line();
+
     stack->push_back(SourceInfo(
         canonical_parent->name().c_str(),
         subprog->callsite_directory(),

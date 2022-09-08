@@ -36,6 +36,17 @@ inline uint16 ByteReader::ReadTwoBytes(const char* buffer) const {
   }
 }
 
+inline uint32 ByteReader::ReadThreeBytes(const char* buffer) const {
+  const uint32 buffer0 = static_cast<uint32>(buffer[0]) & 0xff;
+  const uint32 buffer1 = static_cast<uint32>(buffer[1]) & 0xff;
+  const uint32 buffer2 = static_cast<uint32>(buffer[2]) & 0xff;
+  if (endian_ == ENDIANNESS_LITTLE) {
+    return buffer0 | buffer1 << 8 | buffer2 << 16;
+  } else {
+    return buffer2 | buffer1 << 8 | buffer0 << 16;
+  }
+}
+
 inline uint64 ByteReader::ReadFourBytes(const char* buffer) const {
   const uint32 buffer0 = static_cast<uint32>(buffer[0]) & 0xff;
   const uint32 buffer1 = static_cast<uint32>(buffer[1]) & 0xff;

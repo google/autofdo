@@ -62,7 +62,11 @@ class ByteReader {
   // number.
   uint16 ReadTwoBytes(const char* buffer) const;
 
-  // Read four bytes from BUFFER and return it as an unsigned 32 bit
+  // Read three bytes from BUFFER and return it as an unsigned 32 bit
+  // number.
+  uint32 ReadThreeBytes(const char* buffer) const;
+
+  // Read four bytes from BUFFER and return it as an unsigned 64 bit
   // number.  This function returns a uint64 so that it is compatible
   // with ReadAddress and ReadOffset.  The number it returns will
   // never be outside the range of an unsigned 32 bit integer.
@@ -92,6 +96,10 @@ class ByteReader {
   // bytes currently.  Internally we support 4 and 8 byte addresses,
   // and will CHECK on anything else.
   uint64 ReadAddress(const char* buffer) const;
+
+  // Read a DWARF2/3 initial length field from START, using this reader, and
+  // report the length in LEN.  Return the actual initial length.
+  uint64 ReadInitialLength(const char* start, size_t* len);
 
  private:
   // Function pointer type for our address and offset readers.
