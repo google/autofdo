@@ -244,20 +244,34 @@ void CUFunctionInfoHandler::ProcessAttributeUnsigned(uint64 offset,
                                                      uint64 data) {
   if (attr == DW_AT_stmt_list) {
     SectionMap::const_iterator line_sect = sections_.find(".debug_line");
-    CHECK(line_sect != sections_.end());
-
-    SectionMap::const_iterator str_sect = sections_.find(".debug_line_str");
+    CHECK(line_sect != sections_.end()) << "unable to find .debug_line "
+        "in section map";
+    SectionMap::const_iterator line_str = sections_.find(".debug_line_str");
     const char* line_str_buffer = NULL;
     uint64 line_str_size = 0;
-    if (str_sect != sections_.end()) {
-      line_str_buffer = str_sect->second.first;
-      line_str_size = str_sect->second.second;
+    if (line_str != sections_.end()) {
+      line_str_buffer = line_str->second.first;
+      line_str_size = line_str->second.second;
     }
-
-    LineInfo lireader(line_sect->second.first + data,
-                      line_sect->second.second  - data,
-                      line_str_buffer,
-                      line_str_size,
+    SectionMap::const_iterator str_section = sections_.find(".debug_str");
+    const char* str_buffer = NULL;
+    uint64 str_buffer_size = 0;
+    if (str_section != sections_.end()) {
+      str_buffer = line_str->second.first;
+      str_buffer_size = line_str->second.second;
+    }
+    SectionMap::const_iterator str_offset = sections_.find(".debug_line_str");
+    const char* str_offset_buffer = NULL;
+    uint64 str_offset_size = 0;
+    if (str_offset != sections_.end()) {
+      str_offset_buffer = line_str->second.first;
+      str_offset_size = line_str->second.second;
+    }                    
+    LineInfo lireader(line_sect->second.first + data, line_sect->second.second - data,
+                      line_str_buffer, line_str_size,
+                      str_buffer, str_buffer_size,
+                      str_offset_buffer, str_offset_size,
+                      get_str_offset_base(),
                       reader_, linehandler_);
     lireader.Start();
   } else if (current_function_info_) {

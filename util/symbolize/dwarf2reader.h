@@ -22,6 +22,7 @@
 #ifndef AUTOFDO_SYMBOLIZE_DWARF2READER_H__
 #define AUTOFDO_SYMBOLIZE_DWARF2READER_H__
 
+#include <memory>
 #include <stddef.h>
 #include <stdint.h>
 #include <map>
@@ -32,6 +33,8 @@
 
 #include "base/common.h"
 #include "symbolize/dwarf2enums.h"
+#include "bytereader.h"
+#include "symbolize/index_helper.h"
 
 namespace devtools_crosstool_autofdo {
 class ElfReader;
@@ -40,11 +43,19 @@ class Dwarf2Handler;
 class LineInfoHandler;
 class DwpReader;
 
+
+struct AttributeSpec {
+    enum DwarfAttribute name;
+    enum DwarfForm form;
+    // For the special case of DW_FORM_implicit_const
+    uint32 value;
+};
+
+
 // This maps from a string naming a section to a pair containing a
 // the data for the section, and the size of the section.
 typedef map<string, pair<const char*, uint64> > SectionMap;
-typedef std::list<std::pair<enum DwarfAttribute, enum DwarfForm> >
-    AttributeList;
+typedef std::list<AttributeSpec> AttributeList;
 typedef AttributeList::iterator AttributeIterator;
 typedef AttributeList::const_iterator ConstAttributeIterator;
 
@@ -56,9 +67,13 @@ typedef std::vector<std::pair<int, const char *> > FileVector;
 typedef std::vector<struct LineStateMachine> LogicalsVector;
 
 struct LineInfoHeader {
-  uint64 total_length;
+  uint64 unit_length;  //  initial length
   uint16 version;
-  uint64 prologue_length;
+  
+  uint8 address_size; // DWARF5 Specific field
+  uint8 segment_selector_size; // DWARF5 Specific field
+
+  uint64 header_length;
   uint8 min_insn_length;  // insn stands for instruction
   uint8 max_ops_per_insn;
   bool default_is_stmt;  // stmt stands for statement
@@ -70,6 +85,19 @@ struct LineInfoHeader {
   std::vector<unsigned char> *std_opcode_lengths;
   uint64 logicals_offset;
   uint64 actuals_offset;
+
+  /*
+  * The remaining fields in DWARF5 are not useful for us;
+  * therefore, we ignore them:
+  * directory_entry_format_count
+  * directory_entry_format
+  * directories_count
+  * directories
+  * file_name_entry_format_count
+  * file_name_entry_format
+  * file_names_count
+  * file_names
+  */
 };
 
 class LineInfo {
@@ -82,7 +110,9 @@ class LineInfo {
            ByteReader* reader, LineInfoHandler* handler);
 
   LineInfo(const char* buffer_, uint64 buffer_length,
-           const char* str_buffer_, uint64 str_buffer_length,
+           const char* line_str_buffer_, uint64 line_str_buffer_length,
+           const char* str_buffer, uint64 str_buffer_length,
+           const char* str_offsets_buffer, uint64 str_offsets_buffer_length, uint64 str_offset_base,
            ByteReader* reader, LineInfoHandler* handler);
 
   virtual ~LineInfo() {
@@ -158,9 +188,18 @@ class LineInfo {
   const char* buffer_;
   uint64 buffer_length_;
 
-  // str_buffer is the buffer for the string table, in .debug_line_str.
+  // line_str_buffer_ is the buffer for the string table, in .debug_line_str.
+  const char* line_str_buffer_;
+  uint64 line_str_buffer_length_;
+
+  // str_buffer_ is the buffer for the string table, in .debug_str.
   const char* str_buffer_;
   uint64 str_buffer_length_;
+
+  // str_offsets_buffer_ is the buffer for the string table, in .debug_str_offsets.
+  const char* str_offsets_buffer_;
+  uint64 str_offsets_buffer_length_;
+  uint64 str_offset_base_;
 
   // after_header is the place right after the end of the line
   // information header.
@@ -385,6 +424,22 @@ class Dwarf2Handler {
   // ending the parent.
   virtual void EndDIE(uint64 offset) { }
 
+  virtual void set_range_base(uint64 range_base) { this->ranges_base_ = range_base; }
+  virtual uint64 get_range_base() { return ranges_base_; }
+  virtual void set_addr_base(uint64 addr_base) { this->addr_base_ = addr_base; }
+  virtual uint64 get_addr_base() { return addr_base_; }
+  virtual void set_str_offset_base(uint64 str_offset_base) { this->str_offset_base_ = str_offset_base; }
+  virtual uint64 get_str_offset_base() { return str_offset_base_; }
+
+ protected:
+  // We need to communicate these values between the CompilationUnit
+  // and handler.
+  // The value of the DW_AT_GNU_ranges_base attribute, if any.
+  uint64 ranges_base_;
+  // The value of the DW_AT_GNU_addr_base attribute, if any.
+  uint64 addr_base_;
+  uint64 str_offset_base_;
+
  private:
   DISALLOW_EVIL_CONSTRUCTORS(Dwarf2Handler);
 };
@@ -445,8 +500,7 @@ class CompilationUnit {
   // compilation unit.  We also inherit the Dwarf2Handler from
   // the executable file, and call it as if we were still
   // processing the original compilation unit.
-  void SetSplitDwarf(const char* addr_buffer, uint64 addr_buffer_length,
-                     uint64 addr_base, uint64 ranges_base, uint64 dwo_id);
+  void SetSplitDwarf(const char* addr_buffer, uint64 addr_buffer_length, uint64 dwo_id);
 
   bool malformed() const {return malformed_;}
 
@@ -480,6 +534,11 @@ class CompilationUnit {
     uint16 version;
     uint64 abbrev_offset;
     uint8 address_size;
+    uint8 unit_type;
+
+    // The value of the DW_AT_GNU_dwo_id attribute, if any.
+    // This attribute has been moved to header in DWARF5
+    uint64 dwo_id; 
   } header_;
 
   // Reads the DWARF2/3 header for this compilation unit.
@@ -487,6 +546,20 @@ class CompilationUnit {
 
   // Reads the DWARF2/3 abbreviations for this compilation unit
   void ReadAbbrevs();
+
+  // Reads address size from DWARF header for this compilation unit
+  bool ReadAddressSize(const char** headerptr);
+
+  // Reads .debug_abbrev section offset DWARF header for this compilation unit
+  bool ReadAbbrevOffset(const char** headerptr);
+
+  // Reads .debug_str_offsets section DWARF header for this compilation unit
+  void ReadDebugOffsetTableHeader(const char* str_offset_ptr,
+                                  uint64 str_offset_length);
+
+  // Reads .debug_addr section DWARF header for this compilation unit
+  void ReadDebugAddressTableHeader(const char* addr_ptr,
+                                  uint64 addr_length);     
 
   // Processes a single DIE for this compilation unit.
   //
@@ -502,7 +575,8 @@ class CompilationUnit {
   const char* ProcessAttribute(uint64 dieoffset,
                                const char* start,
                                enum DwarfAttribute attr,
-                               enum DwarfForm form);
+                               enum DwarfForm form,
+                               uint32 value = 0);
 
   // Called when we have an attribute with unsigned data to give to
   // our handler.  The attribute is for the DIE at OFFSET from the
@@ -513,20 +587,7 @@ class CompilationUnit {
   void ProcessAttributeUnsigned(uint64 offset,
                                 enum DwarfAttribute attr,
                                 enum DwarfForm form,
-                                uint64 data) {
-    if (attr == DW_AT_GNU_dwo_id)
-      dwo_id_ = data;
-    else if (attr == DW_AT_GNU_addr_base)
-      addr_base_ = data;
-    else if (attr == DW_AT_GNU_ranges_base)
-      ranges_base_ = data;
-    // TODO(ccoutant): When we add DW_AT_ranges_base from DWARF-5,
-    // that base will apply to DW_AT_ranges attributes in the
-    // skeleton CU as well as in the .dwo/.dwp files.
-    else if (attr == DW_AT_ranges && is_split_dwarf_)
-      data += ranges_base_;
-    handler_->ProcessAttributeUnsigned(offset, attr, form, data);
-  }
+                                uint64 data);
 
   // Called when we have an attribute with signed data to give to
   // our handler.  The attribute is for the DIE at OFFSET from the
@@ -562,7 +623,7 @@ class CompilationUnit {
                               enum DwarfAttribute attr,
                               enum DwarfForm form,
                               const char* data) {
-    if (attr == DW_AT_GNU_dwo_name)
+    if (attr == DW_AT_GNU_dwo_name || attr == DW_AT_dwo_name)
       dwo_name_ = data;
     handler_->ProcessAttributeString(offset, attr, form, data);
   }
@@ -638,21 +699,12 @@ class CompilationUnit {
   // associated with the skeleton compilation unit.
   bool is_split_dwarf_;
 
-  // The value of the DW_AT_GNU_dwo_id attribute, if any.
-  uint64 dwo_id_;
-
   // The value of the DW_AT_GNU_dwo_name attribute, if any.
   const char* dwo_name_;
 
   // If this is a split DWARF CU, the value of the DW_AT_GNU_dwo_id attribute
   // from the skeleton CU.
   uint64 skeleton_dwo_id_;
-
-  // The value of the DW_AT_GNU_ranges_base attribute, if any.
-  uint64 ranges_base_;
-
-  // The value of the DW_AT_GNU_addr_base attribute, if any.
-  uint64 addr_base_;
 
   // True if we have already looked for a .dwp file.
   bool have_checked_for_dwp_;

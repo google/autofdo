@@ -46,4 +46,22 @@ void ByteReader::SetAddressSize(uint8 size) {
   }
 }
 
+uint64 ByteReader::ReadInitialLength(const char* start, size_t* len) {
+    const uint64 initial_length = ReadFourBytes(start);
+    start += 4;
+
+    // In DWARF2/3, if the initial length is all 1 bits, then the offset
+    // size is 8 and we need to read the next 8 bytes for the real length.
+    if (initial_length == 0xffffffff) {
+        SetOffsetSize(8);
+        *len = 12;
+        return ReadOffset(start);
+    }
+    else {
+        SetOffsetSize(4);
+        *len = 4;
+    }
+    return initial_length;
+}
+
 }  // namespace devtools_crosstool_autofdo
