@@ -236,7 +236,8 @@ function (config_with_llvm)
     util/symbolize/elf_reader.cc)
   target_include_directories(symbol_map PUBLIC util)
   target_link_libraries(symbol_map
-    absl::container
+    absl::flat_hash_map
+    absl::node_hash_set
     absl::strings
     absl::memory
     absl::flags
@@ -255,12 +256,14 @@ function (config_with_llvm)
     third_party/perf_data_converter/src/quipper
     util/regexp)
   target_link_libraries(llvm_profile_writer
-    absl::container
+    absl::flat_hash_map
+    absl::node_hash_set
     absl::flags
     symbol_map)
   add_library(llvm_profile_reader OBJECT llvm_profile_reader.cc)
   target_link_libraries(llvm_profile_reader
-    absl::container
+    absl::flat_hash_map
+    absl::node_hash_set
     symbol_map)
   add_library(profile_reader OBJECT profile_reader.cc)
 
