@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 set(CMAKE_CXX_STANDARD 17)
+set(ABSL_PROPAGATE_CXX_STD on)
 
 project(autofdo)
 
@@ -553,7 +554,7 @@ function (config_with_llvm)
 
   add_custom_command(PRE_BUILD
     OUTPUT prepare_cmds
-    COMMAND ln -s -f ${CMAKE_HOME_DIRECTORY}/testdata testdata)
+    COMMAND ln -s -f ../testdata testdata)
   add_custom_target(prepare ALL
     DEPENDS prepare_cmds)
 endfunction()
