@@ -36,33 +36,27 @@ class InstructionMap {
       : symbol_map_(symbol), addr2line_(addr2line) {
   }
 
-  // Deletes all the InstInfo, which was allocated in BuildInstMap.
-  ~InstructionMap();
-
-  // Returns the size of the instruction map.
-  uint64_t size() const { return inst_map_.size(); }
-
   // Builds instruction map for a function.
   void BuildPerFunctionInstructionMap(const std::string &name,
                                       uint64_t start_addr, uint64_t end_addr);
 
   // Contains information about each instruction.
   struct InstInfo {
-    const SourceInfo &source(int i) const {
-      DCHECK(i >= 0 && source_stack.size() > i);
-      return source_stack[i];
-    }
     SourceStack source_stack;
   };
 
-  typedef std::map<uint64_t, InstInfo *> InstMap;
-  const InstMap &inst_map() const {
-    return inst_map_;
+  InstInfo *lookup(uint64_t addr) {
+    uint64_t idx = addr - start_addr_;  // May underflow, which is OK.
+    return idx < inst_map_.size() ? &inst_map_[idx] : nullptr;
   }
 
  private:
   // A map from instruction address to its information.
-  InstMap inst_map_;
+  std::vector<InstInfo> inst_map_;
+
+  // The starting address for inst_map_.  inst_map_[pc - start_addr_] maps to
+  // the information associated with pc.
+  uint64_t start_addr_;
 
   // A map from symbol name to symbol data.
   SymbolMap *symbol_map_;

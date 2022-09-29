@@ -15,6 +15,7 @@
 
 #include "base/integral_types.h"
 #include "base/macros.h"
+#include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "quipper/perf_parser.h"
 
 namespace quipper {
@@ -142,13 +143,15 @@ class PerfDataSampleReader : public FileSampleReader {
   bool Append(const std::string &profile_file) override;
 
  protected:
-  virtual bool MatchBinary(const std::string &name);
+  virtual bool MatchBinary(
+      const quipper::ParsedEvent::DSOAndOffset &dso_and_offset);
   virtual void GetFileNameFromBuildID(const quipper::PerfReader *reader);
 
   const std::string build_id_;
 
  private:
   std::set<std::string> focus_bins_;
+  absl::flat_hash_map<const quipper::DSOInfo *, bool> re_cache_;
   const std::regex re_;
 
   DISALLOW_COPY_AND_ASSIGN(PerfDataSampleReader);

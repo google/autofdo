@@ -3,6 +3,8 @@
 
 #if defined(HAVE_LLVM)
 
+#include <memory>
+
 #include "llvm_propeller_abstract_whole_program_info.h"
 #include "llvm_propeller_cfg.pb.h"
 #include "llvm/Support/Allocator.h"
@@ -10,14 +12,16 @@
 
 namespace devtools_crosstool_autofdo {
 
-class MockPropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
+class MockPropellerWholeProgramInfo final : public AbstractPropellerWholeProgramInfo {
  public:
   explicit MockPropellerWholeProgramInfo(const PropellerOptions &options)
       : AbstractPropellerWholeProgramInfo(options) {}
 
   ~MockPropellerWholeProgramInfo() final {}
 
-  bool CreateCfgs() override;
+  // "only_for_hot_functions": see comments in
+  // "AbstractPropellerWholeProgramInfo".
+  absl::Status CreateCfgs(CfgCreationMode cfg_creation_mode) override;
 
  private:
   void CreateCfgsFromProtobuf();

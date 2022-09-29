@@ -13,11 +13,6 @@
 #include "symbol_map.h"
 
 namespace devtools_crosstool_autofdo {
-InstructionMap::~InstructionMap() {
-  for (const auto &addr_info : inst_map_) {
-    delete addr_info.second;
-  }
-}
 
 void InstructionMap::BuildPerFunctionInstructionMap(const std::string &name,
                                                     uint64_t start_addr,
@@ -25,10 +20,15 @@ void InstructionMap::BuildPerFunctionInstructionMap(const std::string &name,
   if (start_addr >= end_addr) {
     return;
   }
+
+  // Make sure nobody has set up inst_map_ yet.
+  CHECK(inst_map_.empty());
+
+  start_addr_ = start_addr;
+  inst_map_.resize(end_addr - start_addr);
   for (uint64_t addr = start_addr; addr < end_addr; addr++) {
-    InstInfo *info = new InstInfo();
+    InstInfo *info = &inst_map_[addr - start_addr];
     addr2line_->GetInlineStack(addr, &info->source_stack);
-    inst_map_.insert(InstMap::value_type(addr, info));
     if (info->source_stack.size() > 0) {
       symbol_map_->AddSourceCount(name, info->source_stack, 0, 1, 1,
                                   SymbolMap::PERFDATA);

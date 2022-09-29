@@ -9,8 +9,6 @@ struct PropellerStats {
   int perf_file_parsed = 0;
   uint64_t br_counters_accumulated = 0;
   uint64_t edges_with_same_src_sink_but_different_type = 0;
-  uint64_t dropped_symbols = 0;
-  uint64_t syms_created = 0;
   uint64_t cfgs_created = 0;
   uint64_t nodes_created = 0;
   uint64_t edges_created = 0;
@@ -20,6 +18,7 @@ struct PropellerStats {
   uint64_t optimized_intra_score = 0;
   uint64_t original_inter_score = 0;
   uint64_t optimized_inter_score = 0;
+  uint64_t hot_functions = 0;
 
   // Merge two copies of stats.
   PropellerStats & operator += (const PropellerStats &s) {
@@ -28,8 +27,6 @@ struct PropellerStats {
     br_counters_accumulated += s.br_counters_accumulated;
     edges_with_same_src_sink_but_different_type +=
         s.edges_with_same_src_sink_but_different_type;
-    dropped_symbols += s.dropped_symbols;
-    syms_created += s.syms_created;
     cfgs_created += s.cfgs_created;
     nodes_created += s.nodes_created;
     edges_created += s.edges_created;
@@ -38,6 +35,9 @@ struct PropellerStats {
         s.bbaddrmap_function_does_not_have_symtab_entry;
     original_intra_score += s.original_intra_score;
     optimized_intra_score += s.optimized_intra_score;
+    original_inter_score += s.original_inter_score;
+    optimized_inter_score += s.optimized_inter_score;
+    hot_functions += s.hot_functions;
     return *this;
   }
 };

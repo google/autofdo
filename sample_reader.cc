@@ -36,12 +36,23 @@ PerfDataSampleReader::PerfDataSampleReader(const std::string &profile_file,
 
 PerfDataSampleReader::~PerfDataSampleReader() {}
 
-// Returns true if name equals any binary path in focus_bins_, or
-// focus_bins_ is empty and name matches re_.
-bool PerfDataSampleReader::MatchBinary(const std::string &name) {
+// Returns true if the DSO name of dso_and_offset equals any binary path in
+// focus_bins_, or focus_bins_ is empty and name matches re_.
+bool PerfDataSampleReader::MatchBinary(
+    const quipper::ParsedEvent::DSOAndOffset &dso_and_offset) {
   if (focus_bins_.empty()) {
-    return std::regex_search(name.c_str(), re_);
+    // If we already know whether we've accepted the given dso before, return
+    // the cached result.
+    auto re_cache_it = re_cache_.find(dso_and_offset.dso_info_);
+    if (re_cache_it != re_cache_.end()) {
+      return re_cache_it->second;
+    }
+
+    bool is_found = std::regex_search(dso_and_offset.dso_name().c_str(), re_);
+    re_cache_[dso_and_offset.dso_info_] = is_found;
+    return is_found;
   } else {
+    std::string name = dso_and_offset.dso_name();
     for (const auto &binary_path : focus_bins_) {
       if (name == binary_path) {
         return true;
@@ -88,12 +99,12 @@ void PerfDataSampleReader::GetFileNameFromBuildID(const quipper::PerfReader*
 std::set<uint64_t> SampleReader::GetSampledAddresses() const {
   std::set<uint64_t> addrs;
   if (range_count_map_.size() > 0) {
-    for (const auto &range_count : range_count_map_) {
-      addrs.insert(range_count.first.first);
+    for (const auto &[range, count] : range_count_map_) {
+      addrs.insert(range.first);
     }
   } else {
-    for (const auto &addr_count : address_count_map_) {
-      addrs.insert(addr_count.first);
+    for (const auto &[addr, count] : address_count_map_) {
+      addrs.insert(addr);
     }
   }
   return addrs;
@@ -111,12 +122,12 @@ uint64_t SampleReader::GetTotalSampleCount() const {
   uint64_t ret = 0;
 
   if (range_count_map_.size() > 0) {
-    for (const auto &range_count : range_count_map_) {
-      ret += range_count.second;
+    for (const auto &[range, count] : range_count_map_) {
+      ret += count;
     }
   } else {
-    for (const auto &addr_count : address_count_map_) {
-      ret += addr_count.second;
+    for (const auto &[addr, count] : address_count_map_) {
+      ret += count;
     }
   }
   return ret;
@@ -127,13 +138,12 @@ bool SampleReader::ReadAndSetTotalCount() {
     return false;
   }
   if (range_count_map_.size() > 0) {
-    for (const auto &range_count : range_count_map_) {
-      total_count_ += range_count.second * (1 + range_count.first.second -
-                                            range_count.first.first);
+    for (const auto &[range, count] : range_count_map_) {
+      total_count_ += count * (1 + range.second - range.first);
     }
   } else {
-    for (const auto &addr_count : address_count_map_) {
-      total_count_ += addr_count.second;
+    for (const auto &[addr, count] : address_count_map_) {
+      total_count_ += count;
     }
   }
   return true;
@@ -145,7 +155,7 @@ bool FileSampleReader::Read() {
 
 bool TextSampleReaderWriter::Append(const std::string &profile_file) {
   FILE *fp = fopen(profile_file.c_str(), "r");
-  if (fp == NULL) {
+  if (fp == nullptr) {
     LOG(ERROR) << "Cannot open " << profile_file << " to read";
     return false;
   }
@@ -205,37 +215,35 @@ bool TextSampleReaderWriter::Append(const std::string &profile_file) {
 }
 
 void TextSampleReaderWriter::Merge(const SampleReader &reader) {
-  for (const auto &range_count : reader.range_count_map()) {
-    range_count_map_[range_count.first] += range_count.second;
+  for (const auto &[range, count] : reader.range_count_map()) {
+    range_count_map_[range] += count;
   }
-  for (const auto &addr_count : reader.address_count_map()) {
-    address_count_map_[addr_count.first] += addr_count.second;
+  for (const auto &[addr, count] : reader.address_count_map()) {
+    address_count_map_[addr] += count;
   }
-  for (const auto &branch_count : reader.branch_count_map()) {
-    branch_count_map_[branch_count.first] += branch_count.second;
+  for (const auto &[branch, count] : reader.branch_count_map()) {
+    branch_count_map_[branch] += count;
   }
 }
 
 bool TextSampleReaderWriter::Write(const char *aux_info) {
   FILE *fp = fopen(profile_file_.c_str(), "w");
-  if (fp == NULL) {
+  if (fp == nullptr) {
     LOG(ERROR) << "Cannot open " << profile_file_ << " to write";
     return false;
   }
 
   fprintf(fp, "%" PRIuS "\n", range_count_map_.size());
-  for (const auto &range_count : range_count_map_) {
-    absl::FPrintF(fp, "%x-%x:%u\n", range_count.first.first,
-                  range_count.first.second, range_count.second);
+  for (const auto &[range, count] : range_count_map_) {
+    absl::FPrintF(fp, "%x-%x:%u\n", range.first, range.second, count);
   }
   fprintf(fp, "%" PRIuS "\n", address_count_map_.size());
-  for (const auto &addr_count : address_count_map_) {
-    absl::FPrintF(fp, "%x:%u\n", addr_count.first, addr_count.second);
+  for (const auto &[addr, count] : address_count_map_) {
+    absl::FPrintF(fp, "%x:%u\n", addr, count);
   }
   fprintf(fp, "%" PRIuS "\n", branch_count_map_.size());
-  for (const auto &branch_count : branch_count_map_) {
-    absl::FPrintF(fp, "%x->%x:%u\n", branch_count.first.first,
-                  branch_count.first.second, branch_count.second);
+  for (const auto &[branch, count] : branch_count_map_) {
+    absl::FPrintF(fp, "%x->%x:%u\n", branch.first, branch.second, count);
   }
   if (aux_info) {
     fprintf(fp, "%s", aux_info);
@@ -246,7 +254,7 @@ bool TextSampleReaderWriter::Write(const char *aux_info) {
 
 bool TextSampleReaderWriter::IsFileExist() const {
   FILE *fp = fopen(profile_file_.c_str(), "r");
-  if (fp == NULL) {
+  if (fp == nullptr) {
     return false;
   } else {
     fclose(fp);
@@ -277,17 +285,17 @@ bool PerfDataSampleReader::Append(const std::string &profile_file) {
         event.event_ptr->header().type() != quipper::PERF_RECORD_SAMPLE) {
       continue;
     }
-    if (MatchBinary(event.dso_and_offset.dso_name())) {
+    if (MatchBinary(event.dso_and_offset)) {
       address_count_map_[event.dso_and_offset.offset()]++;
     }
     if (event.branch_stack.size() > 0 &&
-        MatchBinary(event.branch_stack[0].to.dso_name()) &&
-        MatchBinary(event.branch_stack[0].from.dso_name())) {
+        MatchBinary(event.branch_stack[0].to) &&
+        MatchBinary(event.branch_stack[0].from)) {
       branch_count_map_[Branch(event.branch_stack[0].from.offset(),
                                event.branch_stack[0].to.offset())]++;
     }
     for (int i = 1; i < event.branch_stack.size(); i++) {
-      if (!MatchBinary(event.branch_stack[i].to.dso_name())) {
+      if (!MatchBinary(event.branch_stack[i].to)) {
         continue;
       }
 
@@ -315,7 +323,7 @@ bool PerfDataSampleReader::Append(const std::string &profile_file) {
         continue;
       }
       range_count_map_[Range(begin, end)]++;
-      if (MatchBinary(event.branch_stack[i].from.dso_name())) {
+      if (MatchBinary(event.branch_stack[i].from)) {
         branch_count_map_[Branch(event.branch_stack[i].from.offset(),
                                  event.branch_stack[i].to.offset())]++;
       }

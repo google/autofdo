@@ -65,7 +65,8 @@ class Profile {
   // Builds function level profile for specified function:
   //   1. Traverses all instructions to build instruction map.
   //   2. Unwinds the inline stack to add symbol count to each inlined symbol.
-  void ProcessPerFunctionProfile(std::string func_name, const ProfileMaps &map);
+  void ProcessPerFunctionProfile(const std::string &func_name,
+                                 const ProfileMaps &map);
 
   const SampleReader *sample_reader_;
   const std::string binary_name_;

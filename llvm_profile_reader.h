@@ -3,6 +3,7 @@
 #ifndef AUTOFDO_LLVM_PROFILE_READER_H_
 #define AUTOFDO_LLVM_PROFILE_READER_H_
 
+#include "base/commandlineflags.h"
 #include "base_profile_reader.h"
 #include "source_info.h"
 #include "third_party/abseil/absl/container/node_hash_set.h"
@@ -11,6 +12,9 @@
 #if LLVM_VERSION_MAJOR >= 12
 #include "llvm/Support/Discriminator.h"
 #endif
+#include "third_party/abseil/absl/flags/declare.h"
+#include "third_party/abseil/absl/flags/flag.h"
+
 
 namespace llvm {
 class StringRef;
@@ -18,6 +22,11 @@ namespace sampleprof {
 class FunctionSamples;
 }
 }  // namespace llvm
+
+#if LLVM_VERSION_MAJOR >= 12
+// Whether to only use base discriminator in fsprofile.
+ABSL_DECLARE_FLAG(bool, use_base_only_in_fs_discriminator);
+#endif
 
 namespace devtools_crosstool_autofdo {
 class SymbolMap;
@@ -46,11 +55,18 @@ class LLVMProfileReader : public ProfileReader {
 
 #if LLVM_VERSION_MAJOR >= 12
   bool ReadFromFile(const std::string &output_file) override {
-    return ReadFromFile(output_file,
-                        llvm::sampleprof::FSDiscriminatorPass::PassLast);
+    llvm::sampleprof::FSDiscriminatorPass discriminator_mask;
+    if (absl::GetFlag(FLAGS_use_base_only_in_fs_discriminator)) {
+      discriminator_mask = llvm::sampleprof::FSDiscriminatorPass::Base;
+    } else {
+      discriminator_mask = llvm::sampleprof::FSDiscriminatorPass::PassLast;
+    }
+
+    return ReadFromFile(output_file, discriminator_mask);
   }
   bool ReadFromFile(const std::string &filename,
                     llvm::sampleprof::FSDiscriminatorPass discriminator_pass);
+  bool ProfileIsFS() const { return profile_is_fs_; }
 #else
   bool ReadFromFile(const std::string &output_file) override;
 #endif
@@ -76,6 +92,9 @@ class LLVMProfileReader : public ProfileReader {
   absl::node_hash_set<std::string>& names_;
   SpecialSyms *special_syms_;
   std::unique_ptr<llvm::sampleprof::ProfileSymbolList> prof_sym_list_;
+#if LLVM_VERSION_MAJOR >= 12
+  bool profile_is_fs_ = false;
+#endif
 };
 }  // namespace devtools_crosstool_autofdo
 

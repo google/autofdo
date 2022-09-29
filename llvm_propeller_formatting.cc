@@ -2,13 +2,27 @@
 
 #include <iomanip>
 #include <ios>
-#include <iostream>
 #include <list>
+#include <ostream>
+#include <string>
 
-#include "llvm_propeller_bbsections.h"
 #include "llvm_propeller_cfg.h"
 
 namespace devtools_crosstool_autofdo {
+
+namespace {
+std::string GetCfgEdgeKindString(CFGEdge::Kind kind) {
+  switch (kind) {
+    case CFGEdge::Kind::kBranchOrFallthough:
+      return "kBranchOrFallthrough";
+    case CFGEdge::Kind::kCall:
+      return "Call";
+    case CFGEdge::Kind::kRet:
+      return "Return";
+  }
+  LOG(FATAL) << "Invalid edge kind.";
+}
+}  // namespace
 
 // Output number with "," separated style.
 std::ostream &operator<<(std::ostream &out,
@@ -31,26 +45,11 @@ std::ostream &operator<<(std::ostream &out,
   return out;
 }
 
-static std::ostream &OutputAliases(std::ostream &out, const SymbolEntry &s) {
-  int k = 0;
-  for (const auto &n : s.aliases) {
-    if (k++) out << '/';
-    out << n.str();
-  }
-  return out;
-}
-
-std::ostream &operator<<(std::ostream &out, const SymbolNameFormatter &f) {
-  if (f.sym == nullptr) return out << "nullptr-symbol";
-  if (f.sym->IsBasicBlock())
-    out << f.sym->ordinal - f.sym->func_ptr->ordinal << ".BB.";
-  return OutputAliases(out, *(f.sym->func_ptr));
-}
-
 std::ostream &operator<<(std::ostream &out, const CFGEdgeNameFormatter &f) {
   if (f.edge == nullptr) return out << "nullptr-edge";
   return out << f.edge->src()->GetName() << " -> " << f.edge->sink()->GetName()
-             << "[ weight: " << f.edge->weight() << "]";
+             << "[ weight: " << f.edge->weight()
+             << "] [type: " << GetCfgEdgeKindString(f.edge->kind()) << "]";
 }
 
 std::ostream &operator<<(std::ostream &out, const AddressFormatter &f) {

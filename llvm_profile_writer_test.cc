@@ -58,11 +58,13 @@ TEST(LlvmProfileWriterTest, ReadProfile) {
   //  14: 0
   //  10: _Z3bari:137340
   //   1: 9890
-  const auto &main_profile_it =
+// LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT is defined when llvm version is before
+// https://reviews.llvm.org/rGb9db70369b7799887b817e13109801795e4d70fc
 #ifndef LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT
+  const auto &main_profile_it =
       profiles.find(llvm::sampleprof::SampleContext("main"));
 #else
-      profiles.find("main");
+  const auto &main_profile_it = profiles.find("main");
 #endif
   ASSERT_NE(main_profile_it, profiles.end());
   const auto &main_profile = main_profile_it->second;
@@ -98,11 +100,13 @@ TEST(LlvmProfileWriterTest, ConvertProfile) {
   StringTableUpdater::Update(symbol_map, &name_table);
   LLVMProfileBuilder builder(name_table);
   const auto &profiles = builder.ConvertProfiles(symbol_map);
-  const auto &foo_profile_it =
+// LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT is defined when llvm version is before
+// https://reviews.llvm.org/rGb9db70369b7799887b817e13109801795e4d70fc
 #ifndef LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT
+  const auto &foo_profile_it =
       profiles.find(llvm::sampleprof::SampleContext("foo"));
 #else
-      profiles.find("foo");
+  const auto &foo_profile_it = profiles.find("foo");
 #endif
   ASSERT_NE(foo_profile_it, profiles.end());
 #if LLVM_VERSION_MAJOR>=12

@@ -2,17 +2,38 @@
 #define AUTOFDO_LLVM_PROPELLER_CODE_LAYOUT_H_
 
 #if defined(HAVE_LLVM)
+#include <string>
 #include <unordered_map>
 #include <vector>
 
-#include "llvm_propeller_bbsections.h"
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_chain_cluster_builder.h"
 #include "llvm_propeller_code_layout_scorer.h"
+#include "llvm_propeller_node_chain_assembly.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
+#include "third_party/abseil/absl/strings/str_cat.h"
+#include "third_party/abseil/absl/strings/str_join.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace devtools_crosstool_autofdo {
+
+struct CodeLayoutStats {
+  // Number of assemblies applied by NodeChainBuilder separated by merge_order.
+  // These are the assemblies with which NodeChainBuilder::MergeChains(assembly)
+  // has been called.
+  absl::flat_hash_map<MergeOrder, int> n_assemblies_by_merge_order;
+
+  std::string DebugString() const {
+    return absl::StrCat(
+        "Merge order stats: ",
+        absl::StrJoin(
+            n_assemblies_by_merge_order, ", ",
+            [](std::string *out, const std::pair<MergeOrder, int> &entry) {
+              absl::StrAppend(out, "[", GetMergeOrderName(entry.first), ":",
+                              entry.second, "]");
+            }));
+  }
+};
 
 struct CFGScore {
   // Total score across all intra-function edges in a CFG.
@@ -24,8 +45,9 @@ struct CFGScore {
 
 using CFGScoreMapTy = absl::flat_hash_map<const ControlFlowGraph *, CFGScore>;
 
-// This struct represents the layout information for every function
-struct FuncLayoutClusterInfo {
+// This struct represents the layout information for one function, that is every
+// basic block cluster and its layout index within the global ordering.
+struct FunctionClusterInfo {
   // This struct represents a cluster of basic blocks (belong to the function
   // associated with func_symbol) which are contiguous in the layout.
   struct BBCluster {
@@ -33,7 +55,7 @@ struct FuncLayoutClusterInfo {
     unsigned layout_index;
 
     // Indices of basic blocks in this cluster.
-    std::vector<unsigned> bb_indexes;
+    std::vector<int> bb_indexes;
 
     // Constructor for building a BB cluster. The 'bb_indexes' vector must be
     // populated afterwards.
@@ -41,25 +63,20 @@ struct FuncLayoutClusterInfo {
   };
 
   // Associated CFG.
-  const ControlFlowGraph *cfg = nullptr;
+  ControlFlowGraph *cfg = nullptr;
 
   // Clusters pertaining to this CFG.
   std::vector<BBCluster> clusters = {};
 
   // Score of this CFG in the original layout.
-  const CFGScore original_score;
+  CFGScore original_score = {};
 
   // Score of this CFG in the computed layout.
-  const CFGScore optimized_score;
+  CFGScore optimized_score = {};
 
   // Index of the function's cold cluster within the cold part.
-  const unsigned cold_cluster_layout_index = 0;
+  unsigned cold_cluster_layout_index = 0;
 };
-
-// CodeLayoutResult holds the result of the layout algorithm which is consumed
-// by the profile writer. It contains a mapping from the function ordinal to the
-// layout cluster info.
-using CodeLayoutResult = std::unordered_map<uint64_t, FuncLayoutClusterInfo>;
 
 class CodeLayout {
  public:
@@ -69,12 +86,13 @@ class CodeLayout {
 
   // This performs code layout on all hot cfgs in the prop_prof_writer instance
   // and returns the global order information for all function.
-  CodeLayoutResult OrderAll();
+  std::vector<FunctionClusterInfo> OrderAll();
 
  private:
   const PropellerCodeLayoutScorer code_layout_scorer_;
   // CFGs targeted for code layout.
   const std::vector<ControlFlowGraph *> cfgs_;
+  CodeLayoutStats stats_;
 
   // Returns the intra-procedural ext-tsp scores for the given CFGs given a
   // function for getting the address of each CFG node.

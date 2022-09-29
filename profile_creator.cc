@@ -123,21 +123,20 @@ bool ProfileCreator::CreateProfile(const std::string &input_profile_name,
   std::unique_ptr<llvm::sampleprof::ProfileSymbolList> prof_sym_list;
   NameSizeList name_size_list;
   if (store_sym_list_in_profile) {
-    prof_sym_list = absl::make_unique<llvm::sampleprof::ProfileSymbolList>();
+    prof_sym_list = std::make_unique<llvm::sampleprof::ProfileSymbolList>();
     name_size_list = symbol_map.collectNamesForProfSymList();
     fillProfileSymbolList(prof_sym_list.get(), name_size_list, &symbol_map,
                           absl::GetFlag(FLAGS_symbol_list_size_coverage_ratio));
     prof_sym_list->setToCompress(absl::GetFlag(FLAGS_compress_symbol_list));
-    auto llvm_profile_writer = static_cast<LLVMProfileWriter *>(writer);
-    auto sample_profile_writer =
+    auto *llvm_profile_writer = static_cast<LLVMProfileWriter *>(writer);
+    auto *sample_profile_writer =
         llvm_profile_writer->CreateSampleWriter(output_profile_name);
     if (!sample_profile_writer) return false;
     sample_profile_writer->setProfileSymbolList(prof_sym_list.get());
   }
 #endif
 
-  bool ret = writer->WriteToFile(output_profile_name);
-  return ret;
+  return writer->WriteToFile(output_profile_name);
 }
 
 bool ProfileCreator::ReadSample(const std::string &input_profile_name,

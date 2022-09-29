@@ -17,7 +17,7 @@ namespace devtools_crosstool_autofdo {
 
 // Represents the source position.
 struct SourceInfo {
-  SourceInfo() : func_name(NULL), start_line(0), line(0), discriminator(0) {}
+  SourceInfo() : func_name(nullptr), start_line(0), line(0), discriminator(0) {}
 
 #if defined(HAVE_LLVM)
   SourceInfo(const char *func_name, llvm::StringRef dir_name,
@@ -35,20 +35,16 @@ struct SourceInfo {
         discriminator(discriminator) {
   }
 
-  bool operator<(const SourceInfo &p) const;
-
-  std::string RelativePath() const {
-    if (!dir_name.empty())
-      return dir_name + "/" + file_name;
-    if (!file_name.empty()) return file_name;
-    return std::string();
-  }
-
   uint64_t Offset(bool use_discriminator_encoding) const {
 #if defined(HAVE_LLVM)
+    bool use_base_discriminator;
+    if (use_fs_discriminator)
+      use_base_discriminator = use_base_only_in_fs_discriminator;
+    else
+      use_base_discriminator = use_discriminator_encoding;
     return GenerateOffset(
         line - start_line,
-        (use_discriminator_encoding && !use_fs_discriminator
+        (use_base_discriminator
              ? llvm::DILocation::getBaseDiscriminatorFromDiscriminator(
                    discriminator)
              : discriminator));
@@ -97,6 +93,8 @@ struct SourceInfo {
 #if defined(HAVE_LLVM)
   // If the discriminators are of fs-discriminator format.
   static bool use_fs_discriminator;
+  // If we want to use the base discriminator only in fsprofile.
+  static bool use_base_only_in_fs_discriminator;
 #endif
 
   const char *func_name;

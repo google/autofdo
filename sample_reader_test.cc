@@ -77,7 +77,7 @@ TEST_F(SampleReaderTest, ReadText) {
       FLAGS_test_tmpdir + "test.txt");
   writer.Merge(lbr_reader);
   EXPECT_EQ(writer.GetSampleCountOrZero(0xfe0), 55);
-  EXPECT_TRUE(writer.Write(NULL));
+  EXPECT_TRUE(writer.Write(nullptr));
 
   devtools_crosstool_autofdo::TextSampleReaderWriter reader(
       FLAGS_test_tmpdir + "test.txt");
@@ -126,7 +126,8 @@ TEST_F(SampleReaderTest, ReadVmlinuxProfile) {
   // Verify that the perf reader counts branches mapped to
   // [kernel.kallsyms]_stext when the kernel dso name is /tmp/vmlinux.
 
-  // $ perf buildid-list -i testdata/perf-vmlinux.data
+  // $ perf buildid-list -i \
+  //   devtools/crosstool/autofdo/testdata/perf-vmlinux.data
   // 948da3c05fff6a515eab7b9dd416e30564b2ccf2 /tmp/vmlinux
   std::string profile =
       FLAGS_test_srcdir + kTestDataDir + "perf-vmlinux.data";

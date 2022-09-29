@@ -17,7 +17,6 @@
 #include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_options_builder.h"
 #include "llvm_propeller_profile_writer.h"
-#include "perfdata_reader.h"
 #include "profile_creator.h"
 #include "third_party/abseil/absl/status/status.h"
 #include "third_party/abseil/absl/strings/str_split.h"
@@ -51,6 +50,15 @@ ABSL_FLAG(std::string, format, "text",
           "post linker optimizer.");
 ABSL_FLAG(std::string, propeller_symorder, "",
           "Propeller symbol ordering output file name.");
+ABSL_FLAG(std::string, propeller_cfg_dump_dir, "",
+          "Directory for dumping the cfgs. The directory will be created if "
+          "does not exist.");
+ABSL_FLAG(uint32_t, propeller_chain_split_threshold, 0,
+          "Maximum chain length (in number of nodes) for which propeller tries "
+          "splitting and remerging at every splitting position.");
+ABSL_FLAG(bool, propeller_chain_split, false,
+          "Whether propeller is allowed to split chains before merging with "
+          "other chains.");
 ABSL_FLAG(
     std::string, profiled_binary_name, "",
     "Name specified to compare against perf mmap_events. This value is usually "
@@ -63,6 +71,8 @@ ABSL_FLAG(bool, prof_sym_list, false,
           "Generate profile symbol list from the binary. The symbol list will "
           "be kept and saved in the profile. The option can only be enabled "
           "when --format=extbinary.");
+ABSL_FLAG(bool, http, false,
+          "Enable http to server statusz requests.");
 
 // While reading perfdata file, we use build id to match a binary and its pids
 // in perf file. We may also want to use file name to do the match, which is
@@ -71,6 +81,11 @@ ABSL_FLAG(bool, prof_sym_list, false,
 // have to rebuild the binary from source.
 ABSL_FLAG(bool, ignore_build_id, false,
           "Ignore build id, use file name to match data in perfdata file.");
+
+ABSL_FLAG(bool, propeller_split_only, false,
+          "Instruct the propeller layout optimizer to only generate cluster "
+          "information for split, no reordering of hot blocks. Default to "
+          "\"false\". Only valid when --format=propeller.");
 
 devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
   devtools_crosstool_autofdo::PropellerOptionsBuilder option_builder;
@@ -88,12 +103,29 @@ devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
     for (const std::string &pf : perf_files)
       if (!pf.empty()) option_builder.AddPerfNames(pf);
   }
+  if (!absl::GetFlag(FLAGS_propeller_cfg_dump_dir).empty()) {
+    option_builder.SetCfgDumpDirName(
+        absl::GetFlag(FLAGS_propeller_cfg_dump_dir));
+  }
+
+  devtools_crosstool_autofdo::PropellerCodeLayoutParameters code_layout_params;
+  code_layout_params.set_chain_split_threshold(
+      absl::GetFlag(FLAGS_propeller_chain_split_threshold));
+  code_layout_params.set_chain_split(
+      absl::GetFlag(FLAGS_propeller_chain_split));
+
   return devtools_crosstool_autofdo::PropellerOptions(
       option_builder.SetBinaryName(absl::GetFlag(FLAGS_binary))
           .SetClusterOutName(absl::GetFlag(FLAGS_out))
           .SetSymbolOrderOutName(absl::GetFlag(FLAGS_propeller_symorder))
           .SetProfiledBinaryName(absl::GetFlag(FLAGS_profiled_binary_name))
-          .SetIgnoreBuildId(absl::GetFlag(FLAGS_ignore_build_id)));
+          .SetIgnoreBuildId(absl::GetFlag(FLAGS_ignore_build_id))
+          .SetSplitOnly(absl::GetFlag(FLAGS_propeller_split_only))
+          .SetCodeLayoutParamsChainSplit(
+              absl::GetFlag(FLAGS_propeller_chain_split))
+          .SetCodeLayoutParamsChainSplitThreshold(
+              absl::GetFlag(FLAGS_propeller_chain_split_threshold))
+          .SetHttp(absl::GetFlag(FLAGS_http)));
 }
 
 int main(int argc, char **argv) {
@@ -152,28 +184,16 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  const std::string binary = absl::GetFlag(FLAGS_binary);
-  llvm::Optional<bool> seg_exec =
-      devtools_crosstool_autofdo::CheckFirstLoadableSegmentIsExecutable(binary);
-  if (seg_exec.hasValue() && !seg_exec.getValue()) {
-    LOG(ERROR) << "autofdo tool requires the first loadable segment to be "
-                  "executable. \""
-               << binary
-               << "\" does not meet this requirement. Try rebuild with link "
-                  "option \"-Wl,--no-rosegment\".";
-    return 1;
-  }
-
   std::unique_ptr<devtools_crosstool_autofdo::LLVMProfileWriter> writer(
       nullptr);
   if (absl::GetFlag(FLAGS_format) == "text") {
-    writer = absl::make_unique<devtools_crosstool_autofdo::LLVMProfileWriter>(
+    writer = std::make_unique<devtools_crosstool_autofdo::LLVMProfileWriter>(
         llvm::sampleprof::SPF_Text);
   } else if (absl::GetFlag(FLAGS_format) == "binary") {
-    writer = absl::make_unique<devtools_crosstool_autofdo::LLVMProfileWriter>(
+    writer = std::make_unique<devtools_crosstool_autofdo::LLVMProfileWriter>(
         llvm::sampleprof::SPF_Binary);
   } else if (absl::GetFlag(FLAGS_format) == "extbinary") {
-    writer = absl::make_unique<devtools_crosstool_autofdo::LLVMProfileWriter>(
+    writer = std::make_unique<devtools_crosstool_autofdo::LLVMProfileWriter>(
         llvm::sampleprof::SPF_Ext_Binary);
   } else {
     LOG(ERROR)
@@ -188,7 +208,8 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  devtools_crosstool_autofdo::ProfileCreator creator(binary);
+  devtools_crosstool_autofdo::ProfileCreator creator(
+      absl::GetFlag(FLAGS_binary));
   absl::SetFlag(&FLAGS_use_discriminator_encoding, true);
   if (creator.CreateProfile(absl::GetFlag(FLAGS_profile),
                             absl::GetFlag(FLAGS_profiler), writer.get(),

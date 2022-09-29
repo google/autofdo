@@ -159,8 +159,8 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
   gcov_write_unsigned(GCOV_TAG_AFDO_FILE_NAMES);
   gcov_write_unsigned(length_4bytes);
   gcov_write_unsigned(string_index_map.size());
-  for (const auto &name_index : string_index_map) {
-    char *c = strdup(name_index.first.c_str());
+  for (const auto &[name, index] : string_index_map) {
+    char *c = strdup(name.c_str());
     int len = strlen(c);
     // Workaround https://gcc.gnu.org/bugzilla/show_bug.cgi?id=64346
     // We should not have D4Ev in our profile because it does not exist
@@ -204,9 +204,8 @@ void AutoFDOProfileWriter::WriteWorkingSet() {
 }
 
 bool AutoFDOProfileWriter::WriteToFile(const std::string &output_filename) {
-  if (absl::GetFlag(FLAGS_debug_dump)) {
+  if (absl::GetFlag(FLAGS_debug_dump))
     Dump();
-  }
 
   if (!WriteHeader(output_filename)) {
     return false;
@@ -264,9 +263,7 @@ class ProfileDumper : public SymbolTraverser {
     printf("\n");
     printf("Call sites:\n");
     int i = 0;
-    for (const auto &callsite_symbol : node->callsites) {
-      Callsite site = callsite_symbol.first;
-      Symbol *symbol = callsite_symbol.second;
+    for (const auto &[site, symbol] : node->callsites) {
       printf("  #%d: site\n", i);
       printf("    uint64: %lu\n", site.first);
       printf("    const char *: %s\n", site.second);
@@ -281,8 +278,8 @@ class ProfileDumper : public SymbolTraverser {
     absl::PrintF("node->callsites.size() = %u\n",
                  static_cast<uint64_t>(node->callsites.size()));
     std::vector<uint64_t> positions;
-    for (const auto &pos_count : node->pos_counts)
-      positions.push_back(pos_count.first);
+    for (const auto &[pos, count] : node->pos_counts)
+      positions.push_back(pos);
     std::sort(positions.begin(), positions.end());
     i = 0;
     for (const auto &pos : positions) {
@@ -302,10 +299,10 @@ class ProfileDumper : public SymbolTraverser {
       absl::PrintF("#%d: profile info target map size = %u\n", i,
                    static_cast<uint64_t>(info.target_map.size()));
       printf("#%d: info.target_map:\n", i);
-      for (const auto &target_count : info.target_map) {
+      for (const auto &[target, count] : info.target_map) {
         printf("\tGetStringIndex(target_count.first): %d\n",
-               GetStringIndex(target_count.first));
-        absl::PrintF("\ttarget_count.second: %u\n", target_count.second);
+               GetStringIndex(target));
+        absl::PrintF("\ttarget_count.second: %u\n", count);
       }
       printf("\n");
       i++;
