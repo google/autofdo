@@ -41,6 +41,7 @@ class PropellerOptionsBuilder {
   PropellerOptionsBuilder& SetVerboseClusterOutput(bool value);
   PropellerOptionsBuilder& SetCfgDumpDirName(const std::string & value);
   PropellerOptionsBuilder& SetSplitOnly(bool value);
+  PropellerOptionsBuilder& SetLayoutOnly(bool value);
   PropellerOptionsBuilder& SetHttp(bool value);
 
  private:

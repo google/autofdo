@@ -116,12 +116,14 @@ void ControlFlowGraph::CalculateNodeFreqs() {
 }
 
 void ControlFlowGraph::CoalesceColdNodes() {
+  node_number_before_coalescing_cold_nodes_ = nodes_.size();
   for (auto i = nodes_.begin(), j = nodes_.end(); i != j;) {
     auto &n = *i;
     if (n->freq()) {
       ++i;
       continue;
     }
+
     // Since all edges are created from profiles, that means, all edges must
     // have weight > 0, which also means, if a node is cold (feq_ == 0), then
     // the node must not have any edges.

@@ -85,7 +85,13 @@ ABSL_FLAG(bool, ignore_build_id, false,
 ABSL_FLAG(bool, propeller_split_only, false,
           "Instruct the propeller layout optimizer to only generate cluster "
           "information for split, no reordering of hot blocks. Default to "
-          "\"false\". Only valid when --format=propeller.");
+          "\"false\". Mutually exclusive with --propeller_layout_only. "
+          "Only valid when --format=propeller.");
+
+ABSL_FLAG(bool, propeller_layout_only, false,
+          "Instruct the propeller layout optimizer to place cold bbs after "
+          "hot ones. Default to \"false\". Mutually exclusive with "
+          "--propeller_split_only. Only valid when --format=propeller.");
 
 devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
   devtools_crosstool_autofdo::PropellerOptionsBuilder option_builder;
@@ -121,6 +127,7 @@ devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
           .SetProfiledBinaryName(absl::GetFlag(FLAGS_profiled_binary_name))
           .SetIgnoreBuildId(absl::GetFlag(FLAGS_ignore_build_id))
           .SetSplitOnly(absl::GetFlag(FLAGS_propeller_split_only))
+          .SetLayoutOnly(absl::GetFlag(FLAGS_propeller_layout_only))
           .SetCodeLayoutParamsChainSplit(
               absl::GetFlag(FLAGS_propeller_chain_split))
           .SetCodeLayoutParamsChainSplitThreshold(
@@ -160,6 +167,12 @@ int main(int argc, char **argv) {
   // Propeller profile format does not use CreateProfile so check it separately
   // before checking for other formats.
   if (absl::GetFlag(FLAGS_format) == "propeller") {
+    if (absl::GetFlag(FLAGS_propeller_split_only) &&
+        absl::GetFlag(FLAGS_propeller_layout_only)) {
+      LOG(ERROR) << "Only one of --propeller_layout_only and "
+                    "--propeller_split_only can be used.";
+      return 1;
+    }
     absl::Status status = devtools_crosstool_autofdo::GeneratePropellerProfiles(
         CreatePropellerOptionsFromFlags());
     if (!status.ok()) {

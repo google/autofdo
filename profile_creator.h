@@ -7,6 +7,7 @@
 #define AUTOFDO_PROFILE_CREATOR_H_
 
 #include <cstdint>
+#include <string>
 
 #include "addr2line.h"
 #include "profile_writer.h"

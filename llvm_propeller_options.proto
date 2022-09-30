@@ -3,7 +3,7 @@ syntax = "proto2";
 package devtools_crosstool_autofdo;
 
 
-// Next Available: 13.
+// Next Available: 14.
 message PropellerOptions {
   // binary file name.
   optional string binary_name = 1;
@@ -43,6 +43,9 @@ message PropellerOptions {
 
   // Start a http-server to handle /statusz.
   optional bool http = 12 [default = false];
+
+  // Do not do split, which will place all cold nodes after hot nodes.
+  optional bool layout_only = 13 [default = false];
 }
 
 // Next Available: 8.

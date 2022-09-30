@@ -1,5 +1,7 @@
 #include "llvm_propeller_code_layout_scorer.h"
 
+#include <algorithm>
+
 #include "llvm_propeller_options.pb.h"
 
 namespace devtools_crosstool_autofdo {

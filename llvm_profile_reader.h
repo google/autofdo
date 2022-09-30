@@ -7,14 +7,13 @@
 #include "base_profile_reader.h"
 #include "source_info.h"
 #include "third_party/abseil/absl/container/node_hash_set.h"
+#include "third_party/abseil/absl/flags/declare.h"
+#include "third_party/abseil/absl/flags/flag.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/ProfileData/SampleProf.h"
 #if LLVM_VERSION_MAJOR >= 12
 #include "llvm/Support/Discriminator.h"
 #endif
-#include "third_party/abseil/absl/flags/declare.h"
-#include "third_party/abseil/absl/flags/flag.h"
-
 
 namespace llvm {
 class StringRef;

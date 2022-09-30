@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <functional>
 #include <numeric>
+#include <string>
 #include <vector>
 
 #include "symbol_map.h"

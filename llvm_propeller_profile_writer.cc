@@ -39,8 +39,8 @@ void DumpCfgs(
     absl::string_view cfg_dump_dir_name) {
   // Create the cfg dump directory and the cfg index file.
   std::filesystem::create_directories(cfg_dump_dir_name);
-  auto cfg_index_file =  std::filesystem::path(cfg_dump_dir_name) /
-    "cfg-index.txt";
+  auto cfg_index_file =
+      std::filesystem::path(cfg_dump_dir_name) / "cfg-index.txt";
   std::ofstream cfg_index_os(cfg_index_file, std::ofstream::out);
   CHECK(cfg_index_os.good())
       << "Failed to open " << cfg_index_file << " for writing.";
@@ -63,7 +63,7 @@ void DumpCfgs(
 
     // Use the address of the function as the CFG filename for uniqueness.
     auto cfg_dump_file = std::filesystem::path(cfg_dump_dir_name) /
-      absl::StrCat(func_addr_str, ".dot");
+                         absl::StrCat(func_addr_str, ".dot");
     std::ofstream cfg_dump_os(cfg_dump_file, std::ofstream::out);
     CHECK(cfg_dump_os.good())
         << "Failed to open " << cfg_dump_file << " for writing.";
@@ -249,7 +249,7 @@ bool PropellerProfWriter::Write(
           func_layout_info.optimized_score.inter_out_score);
     }
     auto &clusters = func_layout_info.clusters;
-    std::vector<unsigned int> func_hot_bb_ids;
+    std::set<int> func_hot_bb_ids;
     for (unsigned cluster_id = 0; cluster_id < clusters.size(); ++cluster_id) {
       auto &cluster = clusters[cluster_id];
       // If a cluster starts with zero BB index (function entry basic block),
@@ -260,15 +260,24 @@ bool PropellerProfWriter::Write(
               func_layout_info.cfg->names_, cluster.bb_indexes.front() == 0
                                                 ? Optional<unsigned>()
                                                 : cluster_id);
-      if (options_.split_only()) {
+      if (options_.split_only() || options_.layout_only())
         // save all hot bb ids in "func_hot_bb_ids".
-        func_hot_bb_ids.insert(func_hot_bb_ids.end(),
-                               cluster.bb_indexes.begin(),
+        func_hot_bb_ids.insert(cluster.bb_indexes.begin(),
                                cluster.bb_indexes.end());
+
+      if (options_.split_only())
         continue;
-      }
       for (int bbi = 0; bbi < cluster.bb_indexes.size(); ++bbi)
         out_stream << (bbi ? " " : "!!") << cluster.bb_indexes[bbi];
+
+      if (options_.layout_only() && cluster_id == clusters.size() - 1) {
+        // Append cold bbs after the last cluster BB ids.
+        // Currently we only have 1 cluster.
+        int nbc =
+            func_layout_info.cfg->node_number_before_coalescing_cold_nodes();
+        for (int i = 0; i < nbc; ++i)
+          if (!func_hot_bb_ids.count(i)) out_stream << " " << i;
+      }
       out_stream << "\n";
     }
 
@@ -280,10 +289,11 @@ bool PropellerProfWriter::Write(
       // better solution is to only construct a chain, and return it,
       // skipping the reordering step (so we save the reordering time and
       // get a more accurate stat).
-      std::sort(func_hot_bb_ids.begin(), func_hot_bb_ids.end());
       out_stream << "!!";
-      for (unsigned i = 0; i < func_hot_bb_ids.size(); ++i)
-        out_stream << (i ? " " : "") << func_hot_bb_ids[i];
+      // "func_hot_bb_ids" is already sorted by less<int>.
+      for (auto i = func_hot_bb_ids.begin(); i != func_hot_bb_ids.end(); ++i)
+        out_stream << (i != func_hot_bb_ids.begin() ? " " : "")
+                   << *i;
       out_stream << "\n";
     }
     cold_symbol_order[func_layout_info.cold_cluster_layout_index] =

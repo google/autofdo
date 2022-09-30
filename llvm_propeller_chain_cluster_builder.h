@@ -1,7 +1,9 @@
 #ifndef AUTOFDO_LLVM_PROPELLER_CHAIN_CLUSTER_BUILDER_H_
 #define AUTOFDO_LLVM_PROPELLER_CHAIN_CLUSTER_BUILDER_H_
 
+#include <algorithm>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "llvm_propeller_node_chain.h"

@@ -113,6 +113,11 @@ PropellerOptionsBuilder& PropellerOptionsBuilder::SetSplitOnly(bool value) {
   return *this;
 }
 
+PropellerOptionsBuilder& PropellerOptionsBuilder::SetLayoutOnly(bool value) {
+  data_.set_layout_only(value);
+  return *this;
+}
+
 PropellerOptionsBuilder& PropellerOptionsBuilder::SetHttp(bool value) {
   data_.set_http(value);
   return *this;

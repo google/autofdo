@@ -1,6 +1,7 @@
 #include "profile_reader.h"
 
 #include <cstdint>
+#include <string>
 
 #include "base/commandlineflags.h"
 #include "base/logging.h"

@@ -4,6 +4,7 @@
 #ifndef AUTOFDO_PROFILE_READER_H_
 #define AUTOFDO_PROFILE_READER_H_
 
+#include <string>
 #include <vector>
 
 #include "base_profile_reader.h"

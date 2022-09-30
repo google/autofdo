@@ -226,6 +226,10 @@ class ControlFlowGraph {
     return inter_edges_;
   }
 
+  int node_number_before_coalescing_cold_nodes() const {
+    return node_number_before_coalescing_cold_nodes_;
+  }
+
   // APIs for test purposes.
   static std::unique_ptr<ControlFlowGraph> CreateForTest(llvm::StringRef name) {
     return std::make_unique<ControlFlowGraph>(
@@ -263,6 +267,11 @@ class ControlFlowGraph {
   // All cold nodes (and their edges) are coalesced into the lowest-ordinal cold
   // node by CoalesceColdNodes. This remains null if all nodes are hot.
   CFGNode* coalesced_cold_node_ = nullptr;
+
+  // All cold nodes are deleted except the one with the lowest BB id. By
+  // recording the total number before coalescing, we can reconstruct the list
+  // of all cold nodes.
+  int node_number_before_coalescing_cold_nodes_ = 0;
 
   // CFGs own all nodes. Nodes here are *strictly* sorted by addresses /
   // ordinals.

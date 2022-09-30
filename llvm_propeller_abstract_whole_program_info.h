@@ -10,9 +10,8 @@
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_statistics.h"
-#include "llvm/ADT/StringRef.h"
-
 #include "third_party/abseil/absl/status/status.h"
+#include "llvm/ADT/StringRef.h"
 
 namespace devtools_crosstool_autofdo {
 

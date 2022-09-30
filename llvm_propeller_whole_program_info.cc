@@ -40,6 +40,19 @@
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/MemoryBuffer.h"
 
+// The following inclusions are automatically deleted when prepare source for
+// upstream.
+
+// github tree does not have util/task/status* files
+// "ASSIGN_OR_RETURN" is similarly defined.
+#if not defined(ASSIGN_OR_RETURN)
+#define ASSIGN_OR_RETURN(lhs, exp) \
+    auto _status_or_value ## __LINE__ = (exp); \
+    if (!_status_or_value ## __LINE__.ok()) \
+      return _status_or_value ## __LINE__.status(); \
+    lhs = std::move(_status_or_value ## __LINE__.value());
+#endif
+
 namespace devtools_crosstool_autofdo {
 
 namespace {
@@ -197,12 +210,8 @@ absl::StatusOr<LBRAggregation> PropellerWholeProgramInfo::ParsePerfData() {
 
   binary_perf_info_.ResetPerfInfo();
   while (true) {
-    std::optional<PerfDataProvider::BufferHandle> perf_data;
-    auto next = perf_data_provider_->GetNext();
-    if (next.ok())
-      perf_data = std::move(next.value());
-    else
-      return next.status();
+    ASSIGN_OR_RETURN(std::optional<PerfDataProvider::BufferHandle> perf_data,
+                     perf_data_provider_->GetNext());
 
     if (!perf_data.has_value()) break;
 
@@ -668,14 +677,9 @@ absl::Status PropellerWholeProgramInfo::ReadBinaryInfo() {
   LOG(INFO) << "Started reading the binary info from: "
             << binary_info.file_name;
   symtab_ = ReadSymbolTable(binary_info);
-
-  auto bb_addr_map_status = CreateELFFileUtil(binary_info.object_file.get())
-    ->GetBbAddrMap(binary_info);
-  if (bb_addr_map_status.ok())
-    bb_addr_map_ = std::move(bb_addr_map_status.value());
-  else
-    return bb_addr_map_status.status();
-  
+  ASSIGN_OR_RETURN(bb_addr_map_,
+                   CreateELFFileUtil(binary_info.object_file.get())
+                       ->GetBbAddrMap(binary_info));
   function_index_to_names_map_ =
       SetFunctionIndexToNamesMap(symtab_, bb_addr_map_);
   stats_.bbaddrmap_function_does_not_have_symtab_entry +=
