@@ -86,9 +86,11 @@ void MockPropellerWholeProgramInfo::CreateCfgsFromProtobuf() {
       CHECK(to_n);
       auto *cfg = from_n->cfg();
       CHECK(cfg);
+      auto edge_kind = convertFromPBKind(edgepb.kind());
       cfg->CreateEdge(from_n, to_n, edgepb.weight(),
-                      convertFromPBKind(edgepb.kind()));
-      ++stats_.edges_created;
+                      edge_kind);
+      ++stats_.edges_created_by_kind[edge_kind];
+      stats_.total_edge_weight_by_kind[edge_kind] += edgepb.weight();
     }
   };
   for (const auto &cfgpb : propeller_pb_.cfg()) {

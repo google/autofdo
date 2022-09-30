@@ -308,7 +308,8 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, CheckStatsSanity) {
   ASSERT_NE(whole_program_info, nullptr);
   ASSERT_OK(whole_program_info->CreateCfgs(CfgCreationMode::kAllFunctions));
   EXPECT_GT(whole_program_info->stats().cfgs_created, 3);
-  EXPECT_GT(whole_program_info->stats().edges_created, 3);
+  EXPECT_GT(whole_program_info->stats().total_edges_created(), 3);
+  EXPECT_GT(whole_program_info->stats().total_edge_weight_created(), 3);
   EXPECT_GT(whole_program_info->stats().nodes_created, 8);
   EXPECT_GT(whole_program_info->stats().binary_mmap_num, 1);
   EXPECT_EQ(whole_program_info->stats().duplicate_symbols, 0);

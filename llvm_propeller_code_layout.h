@@ -106,7 +106,7 @@ class CodeLayout {
   // Returns the intra-procedural ext-tsp scores for the given CFGs under the
   // new layout, which is described by the 'clusters' parameter.
   CFGScoreMapTy ComputeOptLayoutScores(
-      std::vector<std::unique_ptr<ChainCluster>> &clusters);
+      const std::vector<std::unique_ptr<const ChainCluster>> &clusters);
 };
 
 }  // namespace devtools_crosstool_autofdo

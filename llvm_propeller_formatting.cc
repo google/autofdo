@@ -10,20 +10,6 @@
 
 namespace devtools_crosstool_autofdo {
 
-namespace {
-std::string GetCfgEdgeKindString(CFGEdge::Kind kind) {
-  switch (kind) {
-    case CFGEdge::Kind::kBranchOrFallthough:
-      return "kBranchOrFallthrough";
-    case CFGEdge::Kind::kCall:
-      return "Call";
-    case CFGEdge::Kind::kRet:
-      return "Return";
-  }
-  LOG(FATAL) << "Invalid edge kind.";
-}
-}  // namespace
-
 // Output number with "," separated style.
 std::ostream &operator<<(std::ostream &out,
                          const CommaStyleNumberFormatter &f) {
@@ -49,7 +35,8 @@ std::ostream &operator<<(std::ostream &out, const CFGEdgeNameFormatter &f) {
   if (f.edge == nullptr) return out << "nullptr-edge";
   return out << f.edge->src()->GetName() << " -> " << f.edge->sink()->GetName()
              << "[ weight: " << f.edge->weight()
-             << "] [type: " << GetCfgEdgeKindString(f.edge->kind()) << "]";
+             << "] [type: " << CFGEdge::GetCfgEdgeKindString(f.edge->kind())
+             << "]";
 }
 
 std::ostream &operator<<(std::ostream &out, const AddressFormatter &f) {

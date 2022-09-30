@@ -177,10 +177,12 @@ class NodeChain {
   }
 
   // Helper method for iterating over all nodes in this chain (in order).
-  template <class Visitor>
-  void VisitEachNodeRef(Visitor v) {
-    for (auto &bundle_ptr : node_bundles_)
-      for (CFGNode *n : bundle_ptr->nodes_) v(*n);
+  void VisitEachNodeRef(absl::FunctionRef<void(const CFGNode &)> func) const {
+    for (const std::unique_ptr<CFGNodeBundle> &bundle_ptr : node_bundles_) {
+      for (CFGNode *node : bundle_ptr->nodes_) {
+        func(*node);
+      }
+    }
   }
 };
 

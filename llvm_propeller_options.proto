@@ -48,7 +48,7 @@ message PropellerOptions {
   optional bool layout_only = 13 [default = false];
 }
 
-// Next Available: 8.
+// Next Available: 10.
 message PropellerCodeLayoutParameters {
   optional uint32 fallthrough_weight = 1 [default = 10];
   optional uint32 forward_jump_weight = 2 [default = 1];
@@ -59,4 +59,9 @@ message PropellerCodeLayoutParameters {
   optional bool chain_split = 6 [default = false];
   // Maximum chain size for which splitting is considered at every node bundle.
   optional uint32 chain_split_threshold = 7 [default = 0];
+  // Whether to use the call chain clustering algorithm to reorder functions.
+  optional bool call_chain_clustering = 8 [default = false];
+  // Maximum cluster size for call chain clustering (No further clustering is
+  // done on a cluster when it exceeds this size).
+  optional uint32 cluster_merge_size_threshold = 9 [default = 2097152];
 }

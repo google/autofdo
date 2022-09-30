@@ -59,6 +59,11 @@ ABSL_FLAG(uint32_t, propeller_chain_split_threshold, 0,
 ABSL_FLAG(bool, propeller_chain_split, false,
           "Whether propeller is allowed to split chains before merging with "
           "other chains.");
+ABSL_FLAG(bool, propeller_verbose_cluster_output, false,
+          "Whether to print statistics inline in the cluster profile.");
+ABSL_FLAG(bool, propeller_call_chain_clustering, false,
+          "Whether propeller should order functions based on the "
+          "call-chain-clustering algorithm.");
 ABSL_FLAG(
     std::string, profiled_binary_name, "",
     "Name specified to compare against perf mmap_events. This value is usually "
@@ -114,12 +119,6 @@ devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
         absl::GetFlag(FLAGS_propeller_cfg_dump_dir));
   }
 
-  devtools_crosstool_autofdo::PropellerCodeLayoutParameters code_layout_params;
-  code_layout_params.set_chain_split_threshold(
-      absl::GetFlag(FLAGS_propeller_chain_split_threshold));
-  code_layout_params.set_chain_split(
-      absl::GetFlag(FLAGS_propeller_chain_split));
-
   return devtools_crosstool_autofdo::PropellerOptions(
       option_builder.SetBinaryName(absl::GetFlag(FLAGS_binary))
           .SetClusterOutName(absl::GetFlag(FLAGS_out))
@@ -132,7 +131,11 @@ devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
               absl::GetFlag(FLAGS_propeller_chain_split))
           .SetCodeLayoutParamsChainSplitThreshold(
               absl::GetFlag(FLAGS_propeller_chain_split_threshold))
-          .SetHttp(absl::GetFlag(FLAGS_http)));
+          .SetCodeLayoutParamsCallChainClustering(
+              absl::GetFlag(FLAGS_propeller_call_chain_clustering))
+          .SetHttp(absl::GetFlag(FLAGS_http))
+          .SetVerboseClusterOutput(
+              absl::GetFlag(FLAGS_propeller_verbose_cluster_output)));
 }
 
 int main(int argc, char **argv) {

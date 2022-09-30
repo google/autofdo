@@ -153,8 +153,12 @@ std::unique_ptr<PropellerProfWriter> PropellerProfWriter::Create(
     // Error message already logged in PropellerWholeProgramInfo::Create.
     return nullptr;
   }
-  if (!whole_program_info->CreateCfgs(CfgCreationMode::kOnlyHotFunctions).ok())
+  absl::Status create_cfgs_status =
+      whole_program_info->CreateCfgs(CfgCreationMode::kOnlyHotFunctions);
+  if (!create_cfgs_status.ok()) {
+    LOG(ERROR) << create_cfgs_status;
     return nullptr;
+  }
   return std::unique_ptr<PropellerProfWriter>(
       new PropellerProfWriter(options, std::move(whole_program_info)));
 }
@@ -171,8 +175,38 @@ void PropellerProfWriter::PrintStats() const {
             << " cfgs.";
   LOG(INFO) << "Created " << CommaStyleNumberFormatter(stats_.nodes_created)
             << " nodes.";
-  LOG(INFO) << "Created " << CommaStyleNumberFormatter(stats_.edges_created)
-            << " edges.";
+
+  int64_t edges_created = stats_.total_edges_created();
+  LOG(INFO) << "Created " << CommaStyleNumberFormatter(edges_created)
+            << " edges: {"
+            << absl::StrJoin(
+                   stats_.edges_created_by_kind, ", ",
+                   [edges_created](
+                       std::string *out,
+                       const std::pair<CFGEdge::Kind, int64_t> &entry) {
+                     return absl::StrAppend(
+                         out, absl::StrFormat(
+                                  "%s: %.2f%%",
+                                  CFGEdge::GetCfgEdgeKindString(entry.first),
+                                  entry.second * 100.0 / edges_created));
+                   })
+            << "}.";
+
+  int64_t total_edge_weight = stats_.total_edge_weight_created();
+  LOG(INFO) << "Profiled " << CommaStyleNumberFormatter(total_edge_weight)
+            << " total edge weight: {"
+            << absl::StrJoin(
+                   stats_.total_edge_weight_by_kind, ", ",
+                   [total_edge_weight](
+                       std::string *out,
+                       const std::pair<CFGEdge::Kind, int64_t> &entry) {
+                     return absl::StrAppend(
+                         out, absl::StrFormat(
+                                  "%s: %.2f%%",
+                                  CFGEdge::GetCfgEdgeKindString(entry.first),
+                                  entry.second * 100.0 / total_edge_weight));
+                   })
+            << "}.";
 
   if (stats_.edges_with_same_src_sink_but_different_type)
     LOG(WARNING) << "Found edges with same source&sink but different type "
@@ -247,6 +281,9 @@ bool PropellerProfWriter::Write(
           func_layout_info.optimized_score.intra_score,
           func_layout_info.original_score.inter_out_score,
           func_layout_info.optimized_score.inter_out_score);
+      // Print out the frequency of the function entry node.
+      out_stream << absl::StreamFormat(
+          "#entry-freq %llu\n", func_layout_info.cfg->GetEntryNode()->freq());
     }
     auto &clusters = func_layout_info.clusters;
     std::set<int> func_hot_bb_ids;

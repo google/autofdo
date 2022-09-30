@@ -123,4 +123,14 @@ PropellerOptionsBuilder& PropellerOptionsBuilder::SetHttp(bool value) {
   return *this;
 }
 
+PropellerOptionsBuilder& PropellerOptionsBuilder::SetCodeLayoutParamsCallChainClustering(bool value) {
+  data_.mutable_code_layout_params()->set_call_chain_clustering(value);
+  return *this;
+}
+
+PropellerOptionsBuilder& PropellerOptionsBuilder::SetCodeLayoutParamsClusterMergeSizeThreshold(uint32_t value) {
+  data_.mutable_code_layout_params()->set_cluster_merge_size_threshold(value);
+  return *this;
+}
+
 }  // namespace devtools_crosstool_autofdo

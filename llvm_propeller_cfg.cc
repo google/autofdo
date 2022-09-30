@@ -160,18 +160,19 @@ void ControlFlowGraph::WriteDotFormat(std::ostream &os,
   os << "}\n";
 }
 
-std::ostream& operator<<(std::ostream& os, CFGEdge::Kind kind) {
+std::string CFGEdge::GetCfgEdgeKindString(Kind kind) {
   switch (kind) {
     case CFGEdge::Kind::kBranchOrFallthough:
-      os << "Fallthrough";
-      break;
+      return "BranchOrFallthrough";
     case CFGEdge::Kind::kCall:
-      os <<"Call";
-      break;
+      return "Call";
     case CFGEdge::Kind::kRet:
-      os <<"Ret";
-      break;
+      return "Return";
   }
-  return os;
+  LOG(FATAL) << "Invalid edge kind.";
+}
+
+std::string CFGEdge::GetDotFormatLabelForEdgeKind(Kind kind) {
+  return CFGEdge::GetCfgEdgeKindString(kind).substr(0, 1);
 }
 }  // namespace devtools_crosstool_autofdo

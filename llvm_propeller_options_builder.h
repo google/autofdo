@@ -43,6 +43,8 @@ class PropellerOptionsBuilder {
   PropellerOptionsBuilder& SetSplitOnly(bool value);
   PropellerOptionsBuilder& SetLayoutOnly(bool value);
   PropellerOptionsBuilder& SetHttp(bool value);
+  PropellerOptionsBuilder& SetCodeLayoutParamsCallChainClustering(bool value);
+  PropellerOptionsBuilder& SetCodeLayoutParamsClusterMergeSizeThreshold(uint32_t value);
 
  private:
   PropellerOptions data_;

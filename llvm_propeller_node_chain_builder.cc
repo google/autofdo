@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "llvm_propeller_cfg.h"
-#include "llvm_propeller_formatting.h"
 #include "llvm_propeller_node_chain.h"
 #include "llvm_propeller_node_chain_assembly.h"
 #include "third_party/abseil/absl/algorithm/container.h"
@@ -53,8 +52,8 @@ std::vector<std::unique_ptr<NodeChain>> NodeChainBuilder::BuildChains() {
   CoalesceChains();
 
   std::vector<std::unique_ptr<NodeChain>> chains;
-  for (auto &elem : chains_)
-    chains.push_back(std::move(elem.second));
+  chains.reserve(chains_.size());
+  for (auto &elem : chains_) chains.push_back(std::move(elem.second));
   chains_.clear();
   return chains;
 }
@@ -283,7 +282,7 @@ void NodeChainBuilder::InitChainEdges() {
   // Set up the outgoing edges for every chain
   for (auto &elem : chains_) {
     auto *chain = elem.second.get();
-    chain->VisitEachNodeRef([chain](CFGNode &n) {
+    chain->VisitEachNodeRef([chain](const CFGNode &n) {
       n.ForEachOutEdgeRef([chain](CFGEdge &edge) {
         // Ignore returns and zero-frequency edges.
         // TODO(rahmanl): Remove IsCall() for interp
@@ -334,6 +333,7 @@ void NodeChainBuilder::CoalesceChains() {
   // Nothing to do when only one chain exists.
   if (chains_.size() <= 1) return;
   std::vector<NodeChain *> chain_order;
+  chain_order.reserve(chains_.size());
   for (auto &elem : chains_) chain_order.push_back(elem.second.get());
 
   std::sort(chain_order.begin(), chain_order.end(),
@@ -345,9 +345,8 @@ void NodeChainBuilder::CoalesceChains() {
               if (c1->GetFirstNode()->is_entry()) return true;
               // Sort chains in decreasing order of execution density, and
               // break ties according to the initial ordering.
-              if (c1->exec_density() == c2->exec_density())
-                return c1->id() < c2->id();
-              return c1->exec_density() > c2->exec_density();
+              return std::forward_as_tuple(-c1->exec_density(), c1->id()) <
+                     std::forward_as_tuple(-c2->exec_density(), c2->id());
             });
 
   for (int i = 1; i < chain_order.size(); ++i)

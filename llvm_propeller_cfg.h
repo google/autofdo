@@ -49,6 +49,8 @@ class CFGEdge final {
   // TODO(rahmanl): implement this. Ref: b/154263650
   bool IsFallthroughEdge() const;
 
+  static std::string GetCfgEdgeKindString(Kind kind);
+
  private:
   friend class ControlFlowGraph;
   friend class PropellerWholeProgramInfo;
@@ -56,18 +58,7 @@ class CFGEdge final {
   void IncrementWeight(uint64_t increment) { weight_ += increment; }
   void ReplaceSink(CFGNode *sink) { sink_ = sink; }
 
-  static std::string GetDotFormatLabelForEdgeKind(Kind kind) {
-    switch (kind) {
-      case Kind::kBranchOrFallthough:
-        return "N";
-      case Kind::kCall:
-        return "C";
-      case Kind::kRet:
-        return "R";
-    }
-    LOG(FATAL) << "Unknown kind: " << (unsigned int)kind;
-  }
-
+  static std::string GetDotFormatLabelForEdgeKind(Kind kind);
   // Returns a string to be used as the label in the dot format.
   std::string GetDotFormatLabel() const {
     return absl::StrCat(GetDotFormatLabelForEdgeKind(kind_), "#", weight_);
@@ -77,8 +68,6 @@ class CFGEdge final {
   uint64_t weight_ = 0;
   const Kind kind_;
 };
-
-std::ostream& operator<<(std::ostream& os, CFGEdge::Kind kind);
 
 // All instances of CFGNode are owned by their cfg_.
 class CFGNode final {

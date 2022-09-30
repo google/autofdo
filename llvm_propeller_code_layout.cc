@@ -9,14 +9,9 @@
 
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_chain_cluster_builder.h"
-#include "llvm_propeller_node_chain_assembly.h"
 #include "llvm_propeller_node_chain_builder.h"
-#include "third_party/abseil/absl/algorithm/container.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/functional/function_ref.h"
-#include "third_party/abseil/absl/strings/str_cat.h"
-#include "third_party/abseil/absl/strings/str_join.h"
-#include "third_party/abseil/absl/strings/string_view.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -56,12 +51,12 @@ CFGScoreMapTy CodeLayout::ComputeOrigLayoutScores() {
 // Returns the intra-procedural ext-tsp scores for the given CFGs under the new
 // layout, which is described by the 'clusters' parameter.
 CFGScoreMapTy CodeLayout::ComputeOptLayoutScores(
-    std::vector<std::unique_ptr<ChainCluster>> &clusters) {
+    const std::vector<std::unique_ptr<const ChainCluster>> &clusters) {
   // First compute the address of each basic block under the given layout.
   uint64_t layout_addr = 0;
   absl::flat_hash_map<const CFGNode *, uint64_t> layout_address_map;
   for (auto &cluster : clusters) {
-    cluster->VisitEachNodeRef([&](CFGNode &node) {
+    cluster->VisitEachNodeRef([&](const CFGNode &node) {
       layout_address_map.emplace(&node, layout_addr);
       layout_addr += node.size();
     });
@@ -75,7 +70,7 @@ CFGScoreMapTy CodeLayout::ComputeOptLayoutScores(
 std::vector<FunctionClusterInfo> CodeLayout::OrderAll() {
   // Build optimal node chains for eac CFG.
   // TODO(rahmanl) Call NodeChainBuilder(cfgs_).BuildChains() for interp
-  std::vector<std::unique_ptr<NodeChain>> built_chains;
+  std::vector<std::unique_ptr<const NodeChain>> built_chains;
   for (auto *cfg : cfgs_) {
     auto chains =
         NodeChainBuilder(code_layout_scorer_, *cfg, stats_).BuildChains();
@@ -86,12 +81,10 @@ std::vector<FunctionClusterInfo> CodeLayout::OrderAll() {
 
   // Further cluster the constructed chains to get the global order of all
   // nodes.
-  auto clusters = ChainClusterBuilder(std::move(built_chains)).BuildClusters();
-
-  // Order clusters consistent with the original ordering.
-  // TODO(rahmanl): Order clusters in decreasing order of their exec density.
-  absl::c_sort(clusters,
-               [](auto &lhs, auto &rhs) { return lhs->id() < rhs->id(); });
+  const std::vector<std::unique_ptr<const ChainCluster>> clusters =
+      ChainClusterBuilder(code_layout_scorer_.code_layout_params(),
+                          std::move(built_chains))
+          .BuildClusters();
 
   CFGScoreMapTy orig_score_map = ComputeOrigLayoutScores();
   CFGScoreMapTy opt_score_map = ComputeOptLayoutScores(clusters);
@@ -113,11 +106,11 @@ std::vector<FunctionClusterInfo> CodeLayout::OrderAll() {
   // Iterate over all CFG nodes in order and add them to the cluster layout
   // information.
   for (auto &cluster : clusters) {
-    cluster->VisitEachNodeRef([&](auto &n) {
-      if (cfg != n.cfg() || n.is_entry()) {
+    cluster->VisitEachNodeRef([&](const CFGNode &node) {
+      if (cfg != node.cfg() || node.is_entry()) {
         // Switch to the right cluster layout info when the function changes or
         // Or when an entry basic block is reached.
-        cfg = n.cfg();
+        cfg = node.cfg();
         uint64_t func_symbol_ordinal = cfg->GetEntryNode()->symbol_ordinal();
         bool inserted = false;
         std::tie(func_cluster_info_it, inserted) =
@@ -134,7 +127,7 @@ std::vector<FunctionClusterInfo> CodeLayout::OrderAll() {
         func_cluster_info_it->second.clusters.emplace_back(layout_index++);
       }
       func_cluster_info_it->second.clusters.back().bb_indexes.push_back(
-          n.bb_index());
+          node.bb_index());
     });
   }
   std::vector<FunctionClusterInfo> all_function_cluster_info;

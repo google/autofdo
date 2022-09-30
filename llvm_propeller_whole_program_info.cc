@@ -312,8 +312,9 @@ CFGEdge *PropellerWholeProgramInfo::InternalCreateEdge(
     edge = i->second;
     if (edge->kind() != edge_kind) {
       LOG(WARNING) << "Edges with same src and sink have different type: "
-                   << CFGEdgeNameFormatter(edge) << " has type " << edge_kind
-                   << " and " << edge->kind();
+                   << CFGEdgeNameFormatter(edge) << " has type "
+                   << CFGEdge::GetCfgEdgeKindString(edge_kind) << " and "
+                   <<  CFGEdge::GetCfgEdgeKindString(edge->kind());
       ++stats_.edges_with_same_src_sink_but_different_type;
     }
     edge->IncrementWeight(weight);
@@ -326,11 +327,12 @@ CFGEdge *PropellerWholeProgramInfo::InternalCreateEdge(
     CFGNode *to_node = to_ni->second;
     DCHECK(from_node && to_node);
     edge = from_node->cfg()->CreateEdge(from_node, to_node, weight, edge_kind);
-    ++stats_.edges_created;
+    ++stats_.edges_created_by_kind[edge_kind];
     tmp_edge_map->emplace(std::piecewise_construct,
                           std::forward_as_tuple(from_bb_ordinal, to_bb_ordinal),
                           std::forward_as_tuple(edge));
   }
+  stats_.total_edge_weight_by_kind[edge_kind] += weight;
   return edge;
 }
 
@@ -351,7 +353,6 @@ bool PropellerWholeProgramInfo::CreateEdges(
       tmp_bb_fallthrough_counters;
 
   uint64_t weight_on_dubious_edges = 0;
-  uint64_t total_weight_created = 0;
   uint64_t edges_recorded = 0;
   for (const typename BranchCountersTy::value_type &bcnt :
        lbr_aggregation.branch_counters) {
@@ -399,7 +400,6 @@ bool PropellerWholeProgramInfo::CreateEdges(
       // or a basic block.
       weight_on_dubious_edges += weight;
     }
-    total_weight_created += weight;
 
     CFGEdge::Kind edge_kind = CFGEdge::Kind::kBranchOrFallthough;
     if (GetFunctionEntry(to_bb_handle).Addr == to) {
@@ -412,17 +412,20 @@ bool PropellerWholeProgramInfo::CreateEdges(
                        edge_kind, tmp_node_map, &tmp_edge_map);
   }
 
-  if (weight_on_dubious_edges / static_cast<double>(total_weight_created) >
+  if (weight_on_dubious_edges /
+          static_cast<double>(stats_.total_edge_weight_created()) >
       0.3) {
     LOG(ERROR) << "Too many jumps into middle of basic blocks detected, "
                   "probably because of source drift ("
                << CommaStyleNumberFormatter(weight_on_dubious_edges)
-               << " out of " << CommaStyleNumberFormatter(total_weight_created)
+               << " out of "
+               << CommaStyleNumberFormatter(stats_.total_edge_weight_created())
                << ").";
     return false;
   }
 
-  if (stats_.edges_created / static_cast<double>(edges_recorded) < 0.0005) {
+  if (stats_.total_edges_created() / static_cast<double>(edges_recorded) <
+      0.0005) {
     LOG(ERROR)
         << "Fewer than 0.05% recorded jumps are converted into CFG edges, "
            "probably because of source drift.";
@@ -697,11 +700,16 @@ absl::Status PropellerWholeProgramInfo::ReadBinaryInfo() {
 //   4. DoCreateCfgs
 absl::Status PropellerWholeProgramInfo::CreateCfgs(
     CfgCreationMode cfg_creation_mode) {
-  std::thread read_binary_info_thread(
-      &PropellerWholeProgramInfo::ReadBinaryInfo, this);
+  absl::Status read_binary_info_status;
+  std::thread read_binary_info_thread([this, &read_binary_info_status]() {
+    read_binary_info_status = ReadBinaryInfo();
+  });
+
   absl::StatusOr<LBRAggregation> lbr_aggregation = ParsePerfData();
 
   read_binary_info_thread.join();
+  if (!read_binary_info_status.ok())
+    return read_binary_info_status;
 
   if (status_provider_) status_provider_->SetProgress(20);
 
