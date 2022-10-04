@@ -1,6 +1,5 @@
 #include "llvm_propeller_code_layout.h"
 
-#include <algorithm>
 #include <iterator>
 #include <memory>
 #include <tuple>
@@ -10,6 +9,7 @@
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_chain_cluster_builder.h"
 #include "llvm_propeller_node_chain_builder.h"
+#include "third_party/abseil/absl/algorithm/container.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/functional/function_ref.h"
 
@@ -68,13 +68,22 @@ CFGScoreMapTy CodeLayout::ComputeOptLayoutScores(
 }
 
 std::vector<FunctionClusterInfo> CodeLayout::OrderAll() {
-  // Build optimal node chains for eac CFG.
-  // TODO(rahmanl) Call NodeChainBuilder(cfgs_).BuildChains() for interp
+  // Build optimal node chains for each CFG.
   std::vector<std::unique_ptr<const NodeChain>> built_chains;
-  for (auto *cfg : cfgs_) {
-    auto chains =
-        NodeChainBuilder(code_layout_scorer_, *cfg, stats_).BuildChains();
-    std::move(chains.begin(), chains.end(), std::back_inserter(built_chains));
+  if (code_layout_scorer_.code_layout_params().inter_function_reordering()) {
+    absl::c_move(NodeChainBuilder::CreateNodeChainBuilder<
+                     NodeChainAssemblyBalancedTreeQueue>(code_layout_scorer_,
+                                                         cfgs_, stats_)
+                     .BuildChains(),
+                 std::back_inserter(built_chains));
+  } else {
+    for (auto *cfg : cfgs_) {
+      absl::c_move(NodeChainBuilder::CreateNodeChainBuilder<
+                       NodeChainAssemblyIterativeQueue>(code_layout_scorer_,
+                                                        {cfg}, stats_)
+                       .BuildChains(),
+                   std::back_inserter(built_chains));
+    }
   }
 
   LOG(INFO) << stats_.DebugString();
@@ -141,8 +150,7 @@ std::vector<FunctionClusterInfo> CodeLayout::OrderAll() {
   // the cluster file which is independent from the global cluster ordering.
   // TODO(rahmanl): Test the cluster order once we have interproc-reordering.
   for (auto &func_cluster_info : all_function_cluster_info) {
-    std::sort(func_cluster_info.clusters.begin(),
-              func_cluster_info.clusters.end(),
+    absl::c_sort(func_cluster_info.clusters,
               [](const FunctionClusterInfo::BBCluster &a,
                  const FunctionClusterInfo::BBCluster &b) {
                 return a.bb_indexes.front() < b.bb_indexes.front();
@@ -150,11 +158,10 @@ std::vector<FunctionClusterInfo> CodeLayout::OrderAll() {
   }
   // For determinism, order the function cluster info elements in
   // lexicographical order of their (primary) function name.
-  std::sort(all_function_cluster_info.begin(), all_function_cluster_info.end(),
-            [](const FunctionClusterInfo &a, const FunctionClusterInfo &b) {
-              return a.cfg->GetPrimaryName().compare(b.cfg->GetPrimaryName()) <
-                     0;
-            });
+  absl::c_sort(all_function_cluster_info, [](const FunctionClusterInfo &a,
+                                             const FunctionClusterInfo &b) {
+    return a.cfg->GetPrimaryName().compare(b.cfg->GetPrimaryName()) < 0;
+  });
 
   return all_function_cluster_info;
 }

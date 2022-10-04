@@ -2,6 +2,8 @@
 #define AUTOFDO_LLVM_PROFILE_WRITER_H_
 
 #if defined(HAVE_LLVM)
+#include <string>
+
 #include "profile_writer.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/ProfileData/SampleProf.h"

@@ -3,7 +3,7 @@ syntax = "proto2";
 package devtools_crosstool_autofdo;
 
 
-// Next Available: 14.
+// Next Available: 12.
 message PropellerOptions {
   // binary file name.
   optional string binary_name = 1;
@@ -39,16 +39,11 @@ message PropellerOptions {
   // done if field is unset.
   optional string cfg_dump_dir_name = 10;
 
-  optional bool split_only = 11 [default = false];
-
   // Start a http-server to handle /statusz.
-  optional bool http = 12 [default = false];
-
-  // Do not do split, which will place all cold nodes after hot nodes.
-  optional bool layout_only = 13 [default = false];
+  optional bool http = 11 [default = false];
 }
 
-// Next Available: 10.
+// Next Available: 13.
 message PropellerCodeLayoutParameters {
   optional uint32 fallthrough_weight = 1 [default = 10];
   optional uint32 forward_jump_weight = 2 [default = 1];
@@ -64,4 +59,11 @@ message PropellerCodeLayoutParameters {
   // Maximum cluster size for call chain clustering (No further clustering is
   // done on a cluster when it exceeds this size).
   optional uint32 cluster_merge_size_threshold = 9 [default = 2097152];
+  // Whether to split the cold blocks in hot functions. When `false` cold blocks
+  // are placed immediately after hot ones.
+  optional bool split_functions = 10 [default = true];
+  // Whether to change the relative order of hot blocks.
+  optional bool reorder_hot_blocks = 11 [default = true];
+  // Whether to do inter-procedural reordering.
+  optional bool inter_function_reordering = 12 [default = false];
 }

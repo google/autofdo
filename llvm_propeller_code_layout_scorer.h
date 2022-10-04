@@ -15,7 +15,7 @@ class PropellerCodeLayoutScorer {
   explicit PropellerCodeLayoutScorer(
       const PropellerCodeLayoutParameters &params);
 
-  uint64_t GetEdgeScore(const CFGEdge &edge, int64_t src_sink_distance) const;
+  int64_t GetEdgeScore(const CFGEdge &edge, int64_t src_sink_distance) const;
 
   const PropellerCodeLayoutParameters &code_layout_params() const {
     return code_layout_params_;

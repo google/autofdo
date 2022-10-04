@@ -193,10 +193,6 @@ class ELFFileUtilBase {
 
   virtual std::string GetBuildId() = 0;
 
-  // Reads, decodes and then returns the BB address map section of the binary.
-  virtual absl::StatusOr<std::vector<llvm::object::BBAddrMap>> GetBbAddrMap(
-      const devtools_crosstool_autofdo::BinaryInfo &binary_info) = 0;
-
   virtual bool ReadLoadableSegments(
       devtools_crosstool_autofdo::BinaryInfo *binary_info) = 0;
 
@@ -226,9 +222,6 @@ class ELFFileUtil : public ELFFileUtilBase {
   // Read loadable and executable segment information into BinaryInfo::segments.
   bool ReadLoadableSegments(
       devtools_crosstool_autofdo::BinaryInfo *binary_info) override;
-
-  absl::StatusOr<std::vector<llvm::object::BBAddrMap>> GetBbAddrMap(
-      const devtools_crosstool_autofdo::BinaryInfo &binary_info) override;
 
  private:
   const llvm::object::ELFFile<ELFT> *elf_file_ = nullptr;

@@ -2,8 +2,10 @@
 #define AUTOFDO_LLVM_PROPELLER_CODE_LAYOUT_H_
 
 #if defined(HAVE_LLVM)
+#include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "llvm_propeller_cfg.h"
@@ -13,7 +15,6 @@
 #include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
 #include "third_party/abseil/absl/strings/str_join.h"
-#include "llvm/ADT/StringRef.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -22,16 +23,26 @@ struct CodeLayoutStats {
   // These are the assemblies with which NodeChainBuilder::MergeChains(assembly)
   // has been called.
   absl::flat_hash_map<MergeOrder, int> n_assemblies_by_merge_order;
+  // Number of initial single-node chains.
+  int n_single_node_chains = 0;
+  // Number of initial multi-node chains.
+  int n_multi_node_chains = 0;
 
   std::string DebugString() const {
-    return absl::StrCat(
-        "Merge order stats: ",
+    std::string result;
+    absl::StrAppend(
+        &result, "Merge order stats: ",
         absl::StrJoin(
             n_assemblies_by_merge_order, ", ",
             [](std::string *out, const std::pair<MergeOrder, int> &entry) {
               absl::StrAppend(out, "[", GetMergeOrderName(entry.first), ":",
                               entry.second, "]");
-            }));
+            }),
+        "\n");
+    absl::StrAppend(&result, "Initial chains stats: single-node chains: [",
+                    n_single_node_chains, "] multi-node chains: [",
+                    n_multi_node_chains, "]");
+    return result;
   }
 };
 

@@ -2,6 +2,7 @@
 #define AUTOFDO_LLVM_PROPELLER_STATISTICS_H_
 
 #include <cstdint>
+#include <utility>
 
 #include "llvm_propeller_cfg.h"
 #include "third_party/abseil/absl/algorithm/container.h"
@@ -13,6 +14,8 @@ struct PropellerStats {
   uint64_t br_counters_accumulated = 0;
   uint64_t edges_with_same_src_sink_but_different_type = 0;
   uint64_t cfgs_created = 0;
+  // Number of CFGs which have hot landing pads.
+  int cfgs_with_hot_landing_pads = 0;
   uint64_t nodes_created = 0;
   absl::flat_hash_map<CFGEdge::Kind, int64_t> edges_created_by_kind;
   absl::flat_hash_map<CFGEdge::Kind, int64_t> total_edge_weight_by_kind;
@@ -48,6 +51,7 @@ struct PropellerStats {
     edges_with_same_src_sink_but_different_type +=
         s.edges_with_same_src_sink_but_different_type;
     cfgs_created += s.cfgs_created;
+    cfgs_with_hot_landing_pads += s.cfgs_with_hot_landing_pads;
     nodes_created += s.nodes_created;
     for (auto [edge_kind, count] : s.edges_created_by_kind)
       edges_created_by_kind[edge_kind] += count;

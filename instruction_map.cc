@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include <cstdint>
+#include <string>
 
 #include "addr2line.h"
 #include "symbol_map.h"

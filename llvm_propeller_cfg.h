@@ -73,12 +73,14 @@ class CFGEdge final {
 class CFGNode final {
  public:
   explicit CFGNode(uint64_t symbol_ordinal, uint64_t addr, int bb_index,
-                   uint64_t size, ControlFlowGraph *cfg, uint64_t freq = 0)
+                   uint64_t size, bool is_landing_pad, ControlFlowGraph *cfg,
+                   uint64_t freq = 0)
       : symbol_ordinal_(symbol_ordinal),
         addr_(addr),
         bb_index_(bb_index),
         freq_(freq),
         size_(size),
+        is_landing_pad_(is_landing_pad),
         cfg_(cfg) {}
 
   uint64_t symbol_ordinal() const { return symbol_ordinal_; }
@@ -86,8 +88,10 @@ class CFGNode final {
   int bb_index() const { return bb_index_; }
   uint64_t freq() const { return freq_; }
   uint64_t size() const { return size_ ;}
+  bool is_landing_pad() const { return is_landing_pad_; }
   ControlFlowGraph* cfg() const { return cfg_; }
   CFGNodeBundle *bundle() const { return bundle_; }
+  int64_t bundle_offset() const { return bundle_offset_; }
 
   const std::vector<CFGEdge *> &intra_outs() const { return intra_outs_; }
   const std::vector<CFGEdge *> &intra_ins() const { return intra_ins_; }
@@ -127,9 +131,18 @@ class CFGNode final {
   std::string GetDotFormatLabel() const { return absl::StrCat(bb_index_); }
 
   void set_freq(uint64_t freq) { freq_ = freq; }
+
+  void set_is_landing_pad(bool is_landing_pad) {
+    is_landing_pad_ = is_landing_pad;
+  }
+
   void set_bundle(CFGNodeBundle *bundle) {
     DCHECK_EQ(bundle_, nullptr);
     bundle_ = bundle;
+  }
+
+  void set_bundle_offset(int64_t bundle_offset) {
+    bundle_offset_ = bundle_offset;
   }
 
   const uint64_t symbol_ordinal_;
@@ -139,6 +152,7 @@ class CFGNode final {
   const int bb_index_;
   uint64_t freq_ = 0;
   uint64_t size_ = 0;
+  bool is_landing_pad_ = false;
   ControlFlowGraph * const cfg_;
 
   std::vector<CFGEdge *> intra_outs_ = {};  // Intra function edges.
@@ -147,15 +161,23 @@ class CFGNode final {
   std::vector<CFGEdge *> inter_ins_ = {};   // Returns from other functions.
 
   CFGNodeBundle *bundle_ = nullptr;
+  int64_t bundle_offset_ = 0;
+};
+
+struct CFGNodePtrLessComparator {
+  bool operator()(const CFGNode* a,
+                  const CFGNode* b) const {
+    if (!a && b) return true;
+    if (a && !b) return false;
+    if (!a && !b) return false;
+    return a->symbol_ordinal() < b->symbol_ordinal();
+  }
 };
 
 struct CFGNodeUniquePtrLessComparator {
   bool operator()(const std::unique_ptr<CFGNode> &a,
                   const std::unique_ptr<CFGNode> &b) const {
-    if (!a && b) return true;
-    if (a && !b) return false;
-    if (!a && !b) return false;
-    return a->symbol_ordinal() < b->symbol_ordinal();
+    return CFGNodePtrLessComparator()(a.get(), b.get());
   }
 };
 
@@ -165,6 +187,9 @@ class ControlFlowGraph {
       : names_(names.begin(), names.end()) {}
   explicit ControlFlowGraph(llvm::SmallVectorImpl<llvm::StringRef> &&names)
       : names_(std::move(names)) {}
+
+  int n_landing_pads() const { return n_landing_pads_; }
+  int n_hot_landing_pads() const { return n_hot_landing_pads_; }
 
   CFGNode *GetEntryNode() const {
     CHECK(!nodes_.empty());
@@ -197,7 +222,9 @@ class ControlFlowGraph {
   CFGEdge *CreateEdge(CFGNode *from, CFGNode *to, uint64_t weight,
                       CFGEdge::Kind kind);
 
-  void FinishCreatingControlFlowGraph();
+  // Computes and sets node frequencies based edge weights. This must be called
+  // after constructing all nodes and edges.
+  void CalculateNodeFreqs();
 
   const llvm::SmallVectorImpl<llvm::StringRef> &names() const {
     return names_;
@@ -215,10 +242,6 @@ class ControlFlowGraph {
     return inter_edges_;
   }
 
-  int node_number_before_coalescing_cold_nodes() const {
-    return node_number_before_coalescing_cold_nodes_;
-  }
-
   // APIs for test purposes.
   static std::unique_ptr<ControlFlowGraph> CreateForTest(llvm::StringRef name) {
     return std::make_unique<ControlFlowGraph>(
@@ -227,10 +250,6 @@ class ControlFlowGraph {
 
   CFGNode *InsertNodeForTest(std::unique_ptr<CFGNode> node) {
     return nodes_.insert(std::move(node)).first->get();
-  }
-
-  const CFGNode* GetCoallescedColdNodeForTest() const {
-    return coalesced_cold_node_;
   }
 
   // Writes the dot format of CFG into the given stream. The second argument
@@ -244,23 +263,13 @@ class ControlFlowGraph {
   friend class MockPropellerWholeProgramInfo;
   friend class PropellerProfWriter;
 
-  void CalculateNodeFreqs();
-
-  void CoalesceColdNodes();
-
   bool hot_tag_ = false;
+  int n_landing_pads_ = 0;
+  int n_hot_landing_pads_ = 0;
+
   // Function names associated with this CFG: The first name is the primary
   // function name and the rest are aliases. The primary name is necessary.
   llvm::SmallVector<llvm::StringRef, 3> names_;
-
-  // All cold nodes (and their edges) are coalesced into the lowest-ordinal cold
-  // node by CoalesceColdNodes. This remains null if all nodes are hot.
-  CFGNode* coalesced_cold_node_ = nullptr;
-
-  // All cold nodes are deleted except the one with the lowest BB id. By
-  // recording the total number before coalescing, we can reconstruct the list
-  // of all cold nodes.
-  int node_number_before_coalescing_cold_nodes_ = 0;
 
   // CFGs own all nodes. Nodes here are *strictly* sorted by addresses /
   // ordinals.

@@ -1,7 +1,9 @@
 #include "llvm_propeller_cfg.h"
 
+#include <algorithm>
 #include <memory>
 #include <numeric>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,8 +26,12 @@ void ControlFlowGraph::CreateNodes(
   int bb_index = 0;
   for (const auto &bb_entry : func_bb_addr_map.BBEntries) {
     nodes_.insert(std::make_unique<CFGNode>(
-        ordinal++, func_bb_addr_map.Addr + bb_entry.Offset, bb_index++,
-        bb_entry.Size, this));
+        /*symbol_ordinal=*/ordinal++,
+        /*addr=*/func_bb_addr_map.Addr + bb_entry.Offset,
+        /*bb_index=*/bb_index++,
+        /*size=*/bb_entry.Size, /*is_landing_pad=*/bb_entry.IsEHPad,
+        /*cfg=*/this));
+    if (bb_entry.IsEHPad) ++n_landing_pads_;
   }
 }
 
@@ -55,19 +61,9 @@ CFGEdge *ControlFlowGraph::CreateEdge(CFGNode *from, CFGNode *to,
   return ret;
 }
 
-void ControlFlowGraph::FinishCreatingControlFlowGraph() {
-  CalculateNodeFreqs();
-  CoalesceColdNodes();
-}
-
 void ControlFlowGraph::CalculateNodeFreqs() {
   if (nodes_.empty()) return;
-  auto sum_edge_weight = [](const std::vector<CFGEdge *> &edges) -> uint64_t {
-    return std::accumulate(
-        edges.begin(), edges.end(), 0,
-        [](uint64_t sum, const CFGEdge *edge) { return sum + edge->weight_; });
-  };
-  ForEachNodeRef([this, &sum_edge_weight](CFGNode &node) {
+  ForEachNodeRef([&](CFGNode &node) {
     // A node (basic block) may have multiple outgoing calls to different
     // functions. In that case, a single execution of that node counts toward
     // the weight of each of its calls as wells as returns back to the
@@ -109,34 +105,8 @@ void ControlFlowGraph::CalculateNodeFreqs() {
     node.set_freq(std::max({max_call_out, max_ret_in, sum_out, sum_in}));
 
     this->hot_tag_ |= (node.freq() != 0);
+    if (node.is_landing_pad() && node.freq() != 0) ++n_hot_landing_pads_;
   });
-  // Make sure entry node has a non-zero frequency if function is hot.
-  if (this->hot_tag_ && GetEntryNode()->freq() == 0)
-    GetEntryNode()->set_freq(1);
-}
-
-void ControlFlowGraph::CoalesceColdNodes() {
-  node_number_before_coalescing_cold_nodes_ = nodes_.size();
-  for (auto i = nodes_.begin(), j = nodes_.end(); i != j;) {
-    auto &n = *i;
-    if (n->freq()) {
-      ++i;
-      continue;
-    }
-
-    // Since all edges are created from profiles, that means, all edges must
-    // have weight > 0, which also means, if a node is cold (feq_ == 0), then
-    // the node must not have any edges.
-    CHECK(n->intra_ins_.empty() && n->intra_outs_.empty() &&
-          n->inter_outs_.empty() && n->inter_ins_.empty());
-    if (coalesced_cold_node_ != nullptr) {
-      coalesced_cold_node_->GrowOnCoallesce(n->size());
-      i = nodes_.erase(i);
-    } else {
-      coalesced_cold_node_ = n.get();
-      ++i;
-    }
-  }
 }
 
 void ControlFlowGraph::WriteDotFormat(std::ostream &os,

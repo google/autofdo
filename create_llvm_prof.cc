@@ -13,7 +13,6 @@
 #include "base/commandlineflags.h"
 #include "base/logging.h"
 #include "llvm_profile_writer.h"
-#include "llvm_propeller_code_layout.h"
 #include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_options_builder.h"
 #include "llvm_propeller_profile_writer.h"
@@ -64,6 +63,16 @@ ABSL_FLAG(bool, propeller_verbose_cluster_output, false,
 ABSL_FLAG(bool, propeller_call_chain_clustering, false,
           "Whether propeller should order functions based on the "
           "call-chain-clustering algorithm.");
+ABSL_FLAG(bool, propeller_inter_function_ordering, false,
+          "Whether propeller should reorder basic blocks inter-procedurally, "
+          "i.e., basic blocks of a function can be interleaved by basic blocks "
+          "from other functions.");
+ABSL_FLAG(uint32_t, propeller_forward_jump_distance, 1024,
+          "Distance threshold to use for forward branches in propeller code "
+          "layout score computation.");
+ABSL_FLAG(uint32_t, propeller_backward_jump_distance, 680,
+          "Distance threshold to use for backward branches in propeller code "
+          "layout score computation.");
 ABSL_FLAG(
     std::string, profiled_binary_name, "",
     "Name specified to compare against perf mmap_events. This value is usually "
@@ -125,14 +134,22 @@ devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
           .SetSymbolOrderOutName(absl::GetFlag(FLAGS_propeller_symorder))
           .SetProfiledBinaryName(absl::GetFlag(FLAGS_profiled_binary_name))
           .SetIgnoreBuildId(absl::GetFlag(FLAGS_ignore_build_id))
-          .SetSplitOnly(absl::GetFlag(FLAGS_propeller_split_only))
-          .SetLayoutOnly(absl::GetFlag(FLAGS_propeller_layout_only))
           .SetCodeLayoutParamsChainSplit(
               absl::GetFlag(FLAGS_propeller_chain_split))
           .SetCodeLayoutParamsChainSplitThreshold(
               absl::GetFlag(FLAGS_propeller_chain_split_threshold))
+          .SetCodeLayoutParamsBackwardJumpDistance(
+              absl::GetFlag(FLAGS_propeller_backward_jump_distance))
+          .SetCodeLayoutParamsForwardJumpDistance(
+              absl::GetFlag(FLAGS_propeller_forward_jump_distance))
           .SetCodeLayoutParamsCallChainClustering(
               absl::GetFlag(FLAGS_propeller_call_chain_clustering))
+          .SetCodeLayoutParamsReorderHotBlocks(
+              !absl::GetFlag(FLAGS_propeller_split_only))
+          .SetCodeLayoutParamsSplitFunctions(
+              !absl::GetFlag(FLAGS_propeller_layout_only))
+          .SetCodeLayoutParamsInterFunctionReordering(
+              absl::GetFlag(FLAGS_propeller_inter_function_ordering))
           .SetHttp(absl::GetFlag(FLAGS_http))
           .SetVerboseClusterOutput(
               absl::GetFlag(FLAGS_propeller_verbose_cluster_output)));

@@ -1,6 +1,8 @@
 #include "llvm_profile_reader.h"
 
 #include <memory>
+#include <string>
+#include <utility>
 
 #include "symbol_map.h"
 #include "llvm/Config/llvm-config.h"

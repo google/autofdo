@@ -313,6 +313,7 @@ function (config_with_llvm)
   add_executable(create_llvm_prof)
   target_link_libraries(create_llvm_prof 
     absl::base
+    absl::check
     absl::flags
     absl::flags_parse
     absl::status
@@ -414,6 +415,7 @@ function (config_with_llvm)
   add_executable(sample_reader_test sample_reader_test.cc)
   target_link_libraries(sample_reader_test
     absl::base
+    absl::check
     absl::strings
     glog
     gtest
@@ -430,6 +432,7 @@ function (config_with_llvm)
   add_executable(llvm_propeller_profile_writer_test llvm_propeller_profile_writer_test.cc)
   target_link_libraries(llvm_propeller_profile_writer_test
     absl::base
+    absl::check
     absl::flags
     absl::flags_parse
     absl::status
@@ -458,6 +461,7 @@ function (config_with_llvm)
   add_executable(llvm_propeller_whole_program_info_test llvm_propeller_whole_program_info_test.cc)
   target_link_libraries(llvm_propeller_whole_program_info_test
     absl::base
+    absl::check
     absl::flags
     absl::flags_parse
     absl::status
@@ -487,6 +491,7 @@ function (config_with_llvm)
   add_executable(llvm_propeller_code_layout_test llvm_propeller_code_layout_test.cc)
   target_link_libraries(llvm_propeller_code_layout_test
     absl::base
+    absl::check
     absl::flags
     absl::flags_parse
     absl::status

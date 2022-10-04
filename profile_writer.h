@@ -7,6 +7,7 @@
 #define AUTOFDO_PROFILE_WRITER_H_
 
 #include <cstdint>
+#include <string>
 
 #include "symbol_map.h"
 

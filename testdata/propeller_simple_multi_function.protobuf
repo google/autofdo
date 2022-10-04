@@ -1,18 +1,17 @@
 ##
 ##                                bar
 ##                               /   \
-##                          100 /     \
+##                          100 /     \ 0
 ##                             /       \
-##               100          v         v
-##       foo <---------- a.BB.bar  aa.BB.bar     baz     qux -----+
-##      /   \            ^   ^  \        /                   ^     |
-##  20 /     \80      80 |   |   \100   /                    |  10 |
-##    v       v          |   |    \    /                     +-----+
-##  r.BB.foo  rr.BB.foo -+   |     v  v
-##    |                      |    raa.BB.bar
-##    |         20           |
+##             100 (CALL)     v         v       0                      CALL
+##       foo <------------ bar.1       bar.2 -----> bar.5   baz    qux -----+
+##      /   \             ^  ^  \          |                        ^       |
+##  20 /     \80        80|  |   \100      |                        |  10   |
+##    v       v           |  |    \        | 2                      +-------+
+##  foo.1  foo.2  --------+  |     v       v
+##    |          (RETURN)    |    bar.3   bar.4
+##    |     20 (RETURN)      |
 ##    +----------------------+
-##
 
 cfg {
   name: "foo"
@@ -131,10 +130,16 @@ cfg {
     symbol_ordinal: 6
     bb_index: 2
     size: 8
-    freq: 0
+    freq: 2
     intra_outs {
       source: 6
-      sink: 7
+      sink: 8
+      weight: 2
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    intra_outs {
+      source: 6
+      sink: 9
       weight: 0
       kind: BRANCH_OR_FALLTHROUGH
     }
@@ -163,12 +168,36 @@ cfg {
       kind: BRANCH_OR_FALLTHROUGH
     }
   }
+  node {
+    symbol_ordinal: 8
+    bb_index: 4
+    size: 10
+    freq: 2
+    intra_ins {
+      source: 6
+      sink: 8
+      weight: 2
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    symbol_ordinal: 9
+    bb_index: 5
+    size: 7
+    freq: 0
+    intra_ins {
+      source: 6
+      sink: 9
+      weight: 0
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
 }
 
 cfg {
   name: "baz"
   node {
-    symbol_ordinal: 8
+    symbol_ordinal: 10
     bb_index: 0
     size: 8
     freq: 0
@@ -177,9 +206,21 @@ cfg {
 cfg {
   name: "qux"
   node {
-    symbol_ordinal: 9
+    symbol_ordinal: 11
     bb_index: 0
     size: 12
     freq: 10
+    intra_ins {
+      source: 11
+      sink: 11
+      weight: 10
+      kind: CALL
+    }
+    intra_outs {
+      source: 11
+      sink: 11
+      weight: 10
+      kind: CALL
+    }
   }
 }

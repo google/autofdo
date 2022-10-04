@@ -9,7 +9,6 @@
 
 #include "llvm_propeller_code_layout_scorer.h"
 #include "llvm_propeller_node_chain.h"
-#include "llvm_propeller_node_chain_builder.h"
 #include "third_party/abseil/absl/status/status.h"
 #include "third_party/abseil/absl/status/statusor.h"
 #include "third_party/abseil/absl/strings/str_format.h"
@@ -34,29 +33,27 @@ absl::string_view GetMergeOrderName(MergeOrder merge_order) {
 
 absl::StatusOr<NodeChainAssembly> NodeChainAssembly::BuildNodeChainAssembly(
     const PropellerCodeLayoutScorer &scorer, NodeChain &split_chain,
-    NodeChain &unsplit_chain, MergeOrder merge_order,
-    std::optional<int> slice_pos) {
+    NodeChain &unsplit_chain, NodeChainAssemblyBuildingOptions options) {
   CHECK_NE(split_chain.id(), unsplit_chain.id())
       << "Cannot construct an assembly between a chain and itself.";
-  if (merge_order == MergeOrder::kSU) {
-    CHECK(!slice_pos.has_value())
+  if (options.merge_order == MergeOrder::kSU) {
+    CHECK(!options.slice_pos.has_value())
         << "slice_pos must not be provided for kSU merge order.";
   } else {
-    CHECK(slice_pos.has_value())
+    CHECK(options.slice_pos.has_value())
         << "slice_pos is required for every merge order other than kSU.";
-    CHECK_LT(*slice_pos, split_chain.node_bundles_.size())
+    CHECK_LT(*options.slice_pos, split_chain.node_bundles_.size())
         << "Out of bounds slice position.";
-    CHECK_GT(*slice_pos, 0) << "Out of bounds slice position.";
+    CHECK_GT(*options.slice_pos, 0) << "Out of bounds slice position.";
   }
-  NodeChainAssembly assembly(scorer, split_chain, unsplit_chain, merge_order,
-                             slice_pos);
-  // Omit assemblies which place the entry node in the middle of the chain.
-  // Placing the entry block in the middle is allowed. However, it requires
-  // multiple hot function parts (sections) as the function entry always
-  // marks the beginning of a section.
-  // TODO(rahmanl): Try relaxing this condition with inter-procedural
-  // layout.
-  if ((split_chain.GetFirstNode()->is_entry() ||
+  NodeChainAssembly assembly(scorer, split_chain, unsplit_chain,
+                             options.merge_order, options.slice_pos);
+  // If `inter_function_ordering = false`, omit assemblies which place the entry
+  // node in the middle of the chain. Placing the entry block in the middle is
+  // allowed. However, it requires multiple hot function parts (sections) as the
+  // function entry always marks the beginning of a section.
+  if (!scorer.code_layout_params().inter_function_reordering() &&
+      (split_chain.GetFirstNode()->is_entry() ||
        unsplit_chain.GetFirstNode()->is_entry()) &&
       !assembly.GetFirstNode()->is_entry()) {
     return absl::FailedPreconditionError(
@@ -64,9 +61,11 @@ absl::StatusOr<NodeChainAssembly> NodeChainAssembly::BuildNodeChainAssembly(
   }
 
   // Also omit assemblies without positive gain.
-  if (assembly.score_gain() <= 0) {
+  if (assembly.score_gain() < 0) {
     return absl::FailedPreconditionError(absl::StrFormat(
-        "Assembly has non-positive score gain: %lld", assembly.score_gain()));
+        "Assembly has negative score gain: %lld", assembly.score_gain()));
+  } else if (assembly.score_gain() == 0 && options.error_on_zero_score_gain) {
+    return absl::FailedPreconditionError("Assembly has zero score gain.");
   }
   return assembly;
 }
@@ -77,16 +76,11 @@ int64_t NodeChainAssembly::ComputeScoreGain(
   int64_t score_gain =
       ComputeInterChainScore(scorer, split_chain(), unsplit_chain()) +
       ComputeInterChainScore(scorer, unsplit_chain(), split_chain());
-  // As an optimization if the inter-chain score gain is zero, we omit the
+  // As an optimization, if the inter-chain score gain is zero, we omit the
   // exact computation of the score gain and simply return 0.
   if (score_gain == 0) return 0;
-  // If this assembly actually splits the split_chain, consider the change
-  // in score from split_chain as well.
-  if (splits()) {
-    score_gain += ComputeInterChainScore(scorer, split_chain(), split_chain());
-    score_gain -= split_chain().score_;
-  }
-  return score_gain;
+  // Consider the change in score from split_chain as well.
+  return score_gain + ComputeSplitChainScoreGain(scorer);
 }
 
 std::vector<NodeChainSlice> NodeChainAssembly::ConstructSlices() const {
@@ -200,17 +194,53 @@ int64_t NodeChainAssembly::ComputeEdgeScore(
   return scorer.GetEdgeScore(edge, src_sink_distance);
 }
 
-// Returns the score contribution from edges running between two given chains
-// for this assembly.
 int64_t NodeChainAssembly::ComputeInterChainScore(
     const PropellerCodeLayoutScorer &scorer, NodeChain &from_chain,
     NodeChain &to_chain) const {
+  auto it = from_chain.inter_chain_out_edges_.find(&to_chain);
+  if (it == from_chain.inter_chain_out_edges_.end()) return 0;
   int64_t score = 0;
-  auto it = from_chain.out_edges_.find(&to_chain);
-  if (it == from_chain.out_edges_.end()) return 0;
   for (const CFGEdge *edge : it->second)
     score += ComputeEdgeScore(scorer, *edge);
   return score;
+}
+
+// Returns the score gain from intra-chain edges of `split_chain()` for this
+// assembly. Effectively, we aggregate the score difference of inter-slice
+// edges, i.e., edges from one slice of `split_chain()` to the other. This is
+// correct because intra-slice edges will see no difference in score.
+int64_t NodeChainAssembly::ComputeSplitChainScoreGain(
+    const PropellerCodeLayoutScorer &scorer) const {
+  if (!splits()) return 0;
+  int64_t score_gain = 0;
+  auto get_score_gain = [&](const CFGEdge &edge) {
+    return ComputeEdgeScore(scorer, edge) -
+           scorer.GetEdgeScore(edge, GetNodeOffset(edge.sink()) -
+                                         GetNodeOffset(edge.src()) -
+                                         edge.src()->size());
+  };
+  // Visit edges from the first slice (before `slice_pos_`) to the second slice.
+  for (int i = 0; i < *slice_pos_; ++i) {
+    const auto &bundle = split_chain().node_bundles_[i];
+    for (auto it = bundle->intra_chain_out_edges_.rbegin(),
+              it_end = bundle->intra_chain_out_edges_.rend();
+         it != it_end && (*it)->sink()->bundle()->chain_index_ >= *slice_pos_;
+         ++it) {
+      score_gain += get_score_gain(**it);
+    }
+  }
+  // Visit edges from the second slice (on and after `slice_pos_`) to the first
+  // slice.
+  for (int i = *slice_pos_; i < split_chain().node_bundles_.size(); ++i) {
+    const auto &bundle = split_chain().node_bundles_[i];
+    for (auto it = bundle->intra_chain_out_edges_.begin(),
+              it_end = bundle->intra_chain_out_edges_.end();
+         it != it_end && (*it)->sink()->bundle()->chain_index_ < *slice_pos_;
+         ++it) {
+      score_gain += get_score_gain(**it);
+    }
+  }
+  return score_gain;
 }
 
 bool NodeChainAssembly::NodeChainAssemblyComparator::operator()(

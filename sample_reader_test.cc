@@ -8,6 +8,7 @@
 
 #include "sample_reader.h"
 
+#include <string>
 #include <utility>
 
 #include "base/commandlineflags.h"

@@ -25,7 +25,7 @@ message CFGEdgePb {
 }
 
 // Basic blocks.
-// Next Available: 9.
+// Next Available: 10.
 message CFGNodePb {
   optional uint64 symbol_ordinal = 1;
 
@@ -39,6 +39,7 @@ message CFGNodePb {
   repeated CFGEdgePb inter_ins = 7;
 
   optional uint32 bb_index = 8;
+  optional bool is_landing_pad = 9;
 }
 //
 // Control flow graph where basic blocks are vertices and jumps are edges.

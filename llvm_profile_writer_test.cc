@@ -1,5 +1,7 @@
 #include "llvm_profile_writer.h"
 
+#include <string>
+
 #include "addr2line.h"
 #include "profile_creator.h"
 #include "symbol_map.h"

@@ -175,6 +175,8 @@ void PropellerProfWriter::PrintStats() const {
             << " cfgs.";
   LOG(INFO) << "Created " << CommaStyleNumberFormatter(stats_.nodes_created)
             << " nodes.";
+  LOG(INFO) << CommaStyleNumberFormatter(stats_.cfgs_with_hot_landing_pads)
+            << " cfgs have hot landing pads.";
 
   int64_t edges_created = stats_.total_edges_created();
   LOG(INFO) << "Created " << CommaStyleNumberFormatter(edges_created)
@@ -255,7 +257,8 @@ bool PropellerProfWriter::Write(
   // Allocate the cold symbol order vector equally sized as
   // all_functions_cluster_info, as there is (at most) one cold cluster per
   // function.
-  std::vector<CFGNode *> cold_symbol_order(all_functions_cluster_info.size());
+  std::vector<const FunctionClusterInfo *> cold_symbol_order(
+      all_functions_cluster_info.size());
   std::ofstream out_stream(options_.cluster_out_name());
   // TODO(b/160339651): Remove this in favour of structured format in LLVM code.
   for (const FunctionClusterInfo &func_layout_info :
@@ -286,7 +289,6 @@ bool PropellerProfWriter::Write(
           "#entry-freq %llu\n", func_layout_info.cfg->GetEntryNode()->freq());
     }
     auto &clusters = func_layout_info.clusters;
-    std::set<int> func_hot_bb_ids;
     for (unsigned cluster_id = 0; cluster_id < clusters.size(); ++cluster_id) {
       auto &cluster = clusters[cluster_id];
       // If a cluster starts with zero BB index (function entry basic block),
@@ -297,44 +299,13 @@ bool PropellerProfWriter::Write(
               func_layout_info.cfg->names_, cluster.bb_indexes.front() == 0
                                                 ? Optional<unsigned>()
                                                 : cluster_id);
-      if (options_.split_only() || options_.layout_only())
-        // save all hot bb ids in "func_hot_bb_ids".
-        func_hot_bb_ids.insert(cluster.bb_indexes.begin(),
-                               cluster.bb_indexes.end());
-
-      if (options_.split_only())
-        continue;
       for (int bbi = 0; bbi < cluster.bb_indexes.size(); ++bbi)
         out_stream << (bbi ? " " : "!!") << cluster.bb_indexes[bbi];
-
-      if (options_.layout_only() && cluster_id == clusters.size() - 1) {
-        // Append cold bbs after the last cluster BB ids.
-        // Currently we only have 1 cluster.
-        int nbc =
-            func_layout_info.cfg->node_number_before_coalescing_cold_nodes();
-        for (int i = 0; i < nbc; ++i)
-          if (!func_hot_bb_ids.count(i)) out_stream << " " << i;
-      }
       out_stream << "\n";
     }
 
-    if (options_.split_only()) {
-      // TODO(shenhan): let NodeChainBuilder construct one Chain (or
-      // CFGNodeBundle) from all the hot nodes and return it.  Currently
-      // under this "split_only" option, code layout still computes the
-      // reordering, and here we just drop the ordering, which is a waste. A
-      // better solution is to only construct a chain, and return it,
-      // skipping the reordering step (so we save the reordering time and
-      // get a more accurate stat).
-      out_stream << "!!";
-      // "func_hot_bb_ids" is already sorted by less<int>.
-      for (auto i = func_hot_bb_ids.begin(); i != func_hot_bb_ids.end(); ++i)
-        out_stream << (i != func_hot_bb_ids.begin() ? " " : "")
-                   << *i;
-      out_stream << "\n";
-    }
     cold_symbol_order[func_layout_info.cold_cluster_layout_index] =
-        func_layout_info.cfg->coalesced_cold_node_;
+        &func_layout_info;
   }
 
   if (options_.has_cfg_dump_dir_name())
@@ -354,12 +325,25 @@ bool PropellerProfWriter::Write(
   }
 
   // Insert the .cold symbols for cold parts of hot functions.
-  for (CFGNode *cold_node : cold_symbol_order) {
-    // The cold node could be null if all BBs in the CFG are hot.
-    if (cold_node == nullptr) continue;
-    for (auto &func_name : cold_node->cfg()->names()) {
+  for (const FunctionClusterInfo * cluster_info : cold_symbol_order) {
+    // The cold node should not be emitted if all basic blocks appear in the
+    // clusters.
+    int num_bbs_in_clusters = 0;
+    for (const FunctionClusterInfo::BBCluster &cluster : cluster_info->clusters)
+      num_bbs_in_clusters += cluster.bb_indexes.size();
+    if (num_bbs_in_clusters == cluster_info->cfg->nodes_.size()) continue;
+    // Check if the function entry is in the clusters. The entry node always
+    // begins its cluster. So this simply checks the first node in every
+    // cluster.
+    bool entry_is_in_clusters = absl::c_any_of(cluster_info->clusters,
+                         [](const FunctionClusterInfo::BBCluster &cluster) {
+                           return cluster.bb_indexes.front() == 0;
+                         });
+    for (auto &func_name : cluster_info->cfg->names()) {
       symorder_stream << func_name.str();
-      if (!cold_node->is_entry()) symorder_stream << ".cold";
+      // If the entry node is not in clusters, function name can serve as the
+      // cold symbol name. So we don't need the ".cold" suffix.
+      if (entry_is_in_clusters) symorder_stream << ".cold";
       symorder_stream << "\n";
     }
   }

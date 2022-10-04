@@ -3,6 +3,9 @@
 #ifndef AUTOFDO_LLVM_PROFILE_READER_H_
 #define AUTOFDO_LLVM_PROFILE_READER_H_
 
+#include <string>
+#include <utility>
+
 #include "base/commandlineflags.h"
 #include "base_profile_reader.h"
 #include "source_info.h"

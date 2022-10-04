@@ -9,7 +9,7 @@
 ##   aa.BB.foo    a.BB.foo
 ##      |  \       |    \
 ##      |   \      |     \
-##    10|   0\     |100   \0
+##    10|   0\     |80    \20
 ##      |     \    |       \
 ##      v      \   |        \
 ## raa.BB.foo   v  v         v
@@ -42,12 +42,12 @@ cfg {
     intra_outs {
       source: 2
       sink: 5
-      weight: 100
+      weight: 80
     }
     intra_outs {
       source: 2
       sink: 6
-      weight: 0
+      weight: 20
     }
     intra_ins {
       source: 1
@@ -92,11 +92,11 @@ cfg {
     symbol_ordinal: 5
     bb_index: 4
     size: 6
-    freq: 100
+    freq: 80
     intra_ins {
       source: 2
       sink: 5
-      weight: 100
+      weight: 80
     }
     intra_ins {
       source: 3
@@ -108,7 +108,7 @@ cfg {
     symbol_ordinal: 6
     bb_index: 5
     size: 4
-    freq: 0
+    freq: 20
     intra_ins {
       source: 2
       sink: 5

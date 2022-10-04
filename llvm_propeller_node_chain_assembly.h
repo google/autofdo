@@ -16,6 +16,26 @@
 
 namespace devtools_crosstool_autofdo {
 
+// Represents a pair of NodeChains <`split_chain`, `unsplit_chain`> associated
+// with a `NodeChainAssembly`.
+struct NodeChainPair {
+  NodeChain *split_chain = nullptr;
+  NodeChain *unsplit_chain = nullptr;
+  friend bool operator==(const NodeChainPair &lhs, const NodeChainPair &rhs);
+  template <typename H>
+  friend H AbslHashValue(H h, const NodeChainPair &m);
+};
+
+inline bool operator==(const NodeChainPair &lhs, const NodeChainPair &rhs) {
+  return lhs.split_chain == rhs.split_chain &&
+         lhs.unsplit_chain == rhs.unsplit_chain;
+}
+
+template <typename H>
+H AbslHashValue(H h, const NodeChainPair &m) {
+  return H::combine(std::move(h), m.split_chain, m.unsplit_chain);
+}
+
 // This struct defines a slices of a node chain, specified by iterators to the
 // beginning and end of the slice.
 class NodeChainSlice {
@@ -103,6 +123,18 @@ absl::string_view GetMergeOrderName(MergeOrder merge_order);
 // fields and use them to query and traverse the NodeChainAssembly.
 class NodeChainAssembly {
  public:
+  // This struct represents options for building a `NodeChainAssembly` by
+  // `NodeChainAssembly::BuildNodeChainAssembly`.
+  struct NodeChainAssemblyBuildingOptions {
+    // The merge order for concatenating the three/two resulting chain slices.
+    MergeOrder merge_order = MergeOrder::kSU;
+    // The split position in the split_chain (if split_chain must be split).
+    std::optional<int> slice_pos = std::nullopt;
+    // Whether `NodeChainAssembly::BuildNodeChainAssembly` should return error
+    // if the constructed assembly's score gain is zero.
+    bool error_on_zero_score_gain = true;
+  };
+
   // Comparator for two NodeChainAssemblies. It compares score_gain and break
   // ties consistently.
   struct NodeChainAssemblyComparator {
@@ -111,15 +143,18 @@ class NodeChainAssembly {
   };
 
   // Builds a NodeChainAssembly which merges `split_chain` and `unsplit_chain`
-  // according to `merge_order`. Both chains must outlive the created
-  // NodeChainAssembly. `slice_pos` must be std::nullopt iff `merge_order` is
-  // kSU. Returns error under either of two conditions:
-  // 1- The assembly places a function entry node in the middle.
-  // 2- The constructed assembly has a non-positive score-gain.
+  // according to `options`. Both chains must outlive the created
+  // NodeChainAssembly. `options.slice_pos` must be `std::nullopt` iff
+  // `options.merge_order == kSU`. Returns error under these conditions:
+  // 1- The assembly places a function entry node in the middle (in
+  //    non-inter-function-reordering mode).
+  // 2- `options.slice_pos` is out of bounds (less than 0 or larger than
+  //    `split_chain.node_bundles.size() - 1`).
+  // 3- The constructed assembly has a negative score gain or it has zero
+  //    score gain and `options.error_on_zero_score_gain == true`.
   static absl::StatusOr<NodeChainAssembly> BuildNodeChainAssembly(
       const PropellerCodeLayoutScorer &scorer, NodeChain &split_chain,
-      NodeChain &unsplit_chain, MergeOrder merge_order,
-      std::optional<int> slice_pos = std::nullopt);
+      NodeChain &unsplit_chain, NodeChainAssemblyBuildingOptions options);
 
   // NodeChainAssembly is copyable and moveable.
   NodeChainAssembly(const NodeChainAssembly&) = default;
@@ -131,8 +166,9 @@ class NodeChainAssembly {
 
   std::optional<int> slice_pos() const { return slice_pos_; }
 
-  NodeChain &split_chain() const { return *split_chain_; }
-  NodeChain &unsplit_chain() const { return *unsplit_chain_; }
+  NodeChainPair chain_pair() const { return chain_pair_; }
+  NodeChain &split_chain() const { return *chain_pair_.split_chain; }
+  NodeChain &unsplit_chain() const { return *chain_pair_.unsplit_chain; }
 
   const std::vector<NodeChainSlice>& slices() const { return slices_; }
 
@@ -173,8 +209,8 @@ class NodeChainAssembly {
                              NodeChain &split_chain, NodeChain &unsplit_chain,
                              MergeOrder merge_order,
                              std::optional<int> slice_pos)
-      : split_chain_(&split_chain),
-        unsplit_chain_(&unsplit_chain),
+      : chain_pair_{.split_chain = &split_chain,
+                    .unsplit_chain = &unsplit_chain},
         merge_order_(merge_order),
         slice_pos_(slice_pos),
         slices_(ConstructSlices()),
@@ -229,13 +265,21 @@ class NodeChainAssembly {
                                  NodeChain &from_chain,
                                  NodeChain &to_chain) const;
 
+  // Returns the total score gain from `split_chain()`'s intra-chain edges for
+  // this assembly. This is more efficient than calling
+  // `ComputeInterChainScore(scorer, chain, chain)` since it only computes the
+  // delta in score from edges which run between different slices of
+  // `split_chain()` (i.e., their source-to-sink distance has changed by
+  // splitting).
+  int64_t ComputeSplitChainScoreGain(
+      const PropellerCodeLayoutScorer &scorer) const;
+
   // Returns the score contribution of a single edge for this assembly.
   int64_t ComputeEdgeScore(const PropellerCodeLayoutScorer &scorer,
                             const CFGEdge &edge) const;
 
-  // The two chains in the assembly. split_chain_ is the one that may be split.
-  NodeChain *split_chain_;
-  NodeChain *unsplit_chain_;
+  // The two chains in the assembly.
+  NodeChainPair chain_pair_;
 
   // The merge order of the slices
   MergeOrder merge_order_;

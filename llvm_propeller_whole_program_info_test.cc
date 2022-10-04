@@ -287,13 +287,15 @@ TEST(LlvmPropellerWholeProgramInfoBbInfoTest, CreateCfgsFromBbInfo) {
   EXPECT_THAT(
       main_cfg.nodes(),
       ElementsAre(
-          Pointee(CfgNodeFieldsAre(6, 0x11E0, 0, 1, 0x30, &main_cfg)),
+          Pointee(CfgNodeFieldsAre(6, 0x11E0, 0, 0, 0x30, &main_cfg)),
           Pointee(CfgNodeFieldsAre(7, 0x1210, 1, 22714, 0xD, &main_cfg)),
           Pointee(CfgNodeFieldsAre(8, 0x121D, 2, 23039, 0x25, &main_cfg)),
-          Pointee(CfgNodeFieldsAre(9, 0x1242, 3, 0, 0x6D, &main_cfg)),
+          Pointee(CfgNodeFieldsAre(9, 0x1242, 3, 0, 0x2E, &main_cfg)),
           Pointee(CfgNodeFieldsAre(10, 0x1270, 4, 21603, 0x1D, &main_cfg)),
+          Pointee(CfgNodeFieldsAre(11, 0x128D, 5, 0, 0x37, &main_cfg)),
           Pointee(CfgNodeFieldsAre(12, 0x12C4, 6, 21980, 0x5, &main_cfg)),
-          Pointee(CfgNodeFieldsAre(13, 0x12C9, 7, 22714, 0xE, &main_cfg))));
+          Pointee(CfgNodeFieldsAre(13, 0x12C9, 7, 22714, 0xE, &main_cfg)),
+          Pointee(CfgNodeFieldsAre(14, 0x12D7, 8, 0, 0x8, &main_cfg))));
 }
 
 TEST(LlvmPropellerWholeProgramInfoBbInfoTest, CheckStatsSanity) {

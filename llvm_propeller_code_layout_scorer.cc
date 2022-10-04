@@ -63,7 +63,7 @@ PropellerCodeLayoutScorer::PropellerCodeLayoutScorer(
 
 // Returns the score for one edge, given its source to sink direction and
 // distance in the layout.
-uint64_t PropellerCodeLayoutScorer::GetEdgeScore(
+int64_t PropellerCodeLayoutScorer::GetEdgeScore(
     const CFGEdge &edge, int64_t src_sink_distance) const {
   // Approximate callsites to be in the middle of the source basic block.
   if (edge.IsCall()) src_sink_distance += edge.src()->size() / 2;

@@ -15,6 +15,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "llvm_propeller_file_perf_data_provider.h"
 #include "llvm_propeller_formatting.h"
@@ -32,13 +33,11 @@
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/ELF.h"
-#include "llvm/Config/llvm-config.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ELFTypes.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/LEB128.h"
-#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/FormatAdapters.h"
 
 // The following inclusions are automatically deleted when prepare source for
 // upstream.
@@ -98,6 +97,29 @@ SymTabTy ReadSymbolTable(BinaryInfo &binary_info) {
     if (check_size_ok) addr_sym_list.push_back(sr);
   }
   return symtab;
+}
+
+// Returns the binary's `BBAddrMap`s by calling LLVM-side decoding function
+// `ELFObjectFileBase::readBBAddrMap`. Returns error if the call fails or if the
+// result is empty.
+absl::StatusOr<std::vector<BBAddrMap>> ReadBbAddrMap(BinaryInfo &binary_info) {
+  auto *elf_object = llvm::dyn_cast<llvm::object::ELFObjectFileBase>(
+      binary_info.object_file.get());
+  CHECK(elf_object);
+  Expected<std::vector<BBAddrMap>> bb_addr_map = elf_object->readBBAddrMap();
+  if (!bb_addr_map) {
+    return absl::InternalError(
+        llvm::formatv(
+            "Failed to read the LLVM_BB_ADDR_MAP section from {0}: {1}.",
+            binary_info.file_name, llvm::fmt_consume(bb_addr_map.takeError()))
+            .str());
+  }
+  if (bb_addr_map->empty()) {
+    return absl::FailedPreconditionError(absl::StrFormat(
+        "'%s' does not have a non-empty LLVM_BB_ADDR_MAP section.",
+        binary_info.file_name));
+  }
+  return std::move(*bb_addr_map);
 }
 
 // Returns a map from BB-address-map function indexes to their names.
@@ -284,7 +306,8 @@ absl::Status PropellerWholeProgramInfo::DoCreateCfgs(
     return absl::InternalError("Unable to create edges from LBR profile.");
 
   for (auto &[func_index, cfg] : cfg_map) {
-    cfg->FinishCreatingControlFlowGraph();
+    cfg->CalculateNodeFreqs();
+    if (cfg->n_hot_landing_pads() != 0) ++stats_.cfgs_with_hot_landing_pads;
     cfgs_.insert(
         {function_index_to_names_map_[func_index].front(), std::move(cfg)});
   }
@@ -680,9 +703,7 @@ absl::Status PropellerWholeProgramInfo::ReadBinaryInfo() {
   LOG(INFO) << "Started reading the binary info from: "
             << binary_info.file_name;
   symtab_ = ReadSymbolTable(binary_info);
-  ASSIGN_OR_RETURN(bb_addr_map_,
-                   CreateELFFileUtil(binary_info.object_file.get())
-                       ->GetBbAddrMap(binary_info));
+  ASSIGN_OR_RETURN(bb_addr_map_, ReadBbAddrMap(binary_info));
   function_index_to_names_map_ =
       SetFunctionIndexToNamesMap(symtab_, bb_addr_map_);
   stats_.bbaddrmap_function_does_not_have_symtab_entry +=
@@ -694,10 +715,10 @@ absl::Status PropellerWholeProgramInfo::ReadBinaryInfo() {
 
 // "CreateCfgs" steps:
 //   1.a ReadSymbolTable
-//   1.b ParsePerfData
+//   1.b ReadBbAddrMap
+//   1.c ParsePerfData
 //   2. CalculateHotFunctions or mark all functions as hot
-//   3. ReadBbAddrMap
-//   4. DoCreateCfgs
+//   3. DoCreateCfgs
 absl::Status PropellerWholeProgramInfo::CreateCfgs(
     CfgCreationMode cfg_creation_mode) {
   absl::Status read_binary_info_status;

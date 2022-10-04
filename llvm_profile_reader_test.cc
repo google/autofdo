@@ -2,6 +2,8 @@
 
 #include "llvm_profile_reader.h"
 
+#include <string>
+
 #include "base/commandlineflags.h"
 #include "symbol_map.h"
 #include "gtest/gtest.h"

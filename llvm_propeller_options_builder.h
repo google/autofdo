@@ -40,14 +40,49 @@ class PropellerOptionsBuilder {
       uint32_t value);
   PropellerOptionsBuilder& SetVerboseClusterOutput(bool value);
   PropellerOptionsBuilder& SetCfgDumpDirName(const std::string & value);
-  PropellerOptionsBuilder& SetSplitOnly(bool value);
-  PropellerOptionsBuilder& SetLayoutOnly(bool value);
   PropellerOptionsBuilder& SetHttp(bool value);
   PropellerOptionsBuilder& SetCodeLayoutParamsCallChainClustering(bool value);
   PropellerOptionsBuilder& SetCodeLayoutParamsClusterMergeSizeThreshold(uint32_t value);
+  PropellerOptionsBuilder& SetCodeLayoutParamsReorderHotBlocks(bool value);
+  PropellerOptionsBuilder& SetCodeLayoutParamsSplitFunctions(bool value);
+  PropellerOptionsBuilder& SetCodeLayoutParamsInterFunctionReordering(bool value);
 
  private:
   PropellerOptions data_;
+};
+
+class PropellerCodeLayoutParametersBuilder {
+ public:
+  static constexpr uint64_t kProtoBuilderTypeInfo = 1;
+
+  PropellerCodeLayoutParametersBuilder() = default;
+  explicit PropellerCodeLayoutParametersBuilder(
+      const PropellerCodeLayoutParameters& data)
+      : data_(data) {}
+  explicit PropellerCodeLayoutParametersBuilder(
+      PropellerCodeLayoutParameters&& data)
+      : data_(data) {}
+
+  operator const PropellerCodeLayoutParameters&() const {  // NOLINT
+    return data_;
+  }
+
+  PropellerCodeLayoutParametersBuilder& SetFallthroughWeight(uint32_t value);
+  PropellerCodeLayoutParametersBuilder& SetForwardJumpWeight(uint32_t value);
+  PropellerCodeLayoutParametersBuilder& SetBackwardJumpWeight(uint32_t value);
+  PropellerCodeLayoutParametersBuilder& SetForwardJumpDistance(uint32_t value);
+  PropellerCodeLayoutParametersBuilder& SetBackwardJumpDistance(uint32_t value);
+  PropellerCodeLayoutParametersBuilder& SetChainSplit(bool value);
+  PropellerCodeLayoutParametersBuilder& SetChainSplitThreshold(uint32_t value);
+  PropellerCodeLayoutParametersBuilder& SetCallChainClustering(bool value);
+  PropellerCodeLayoutParametersBuilder& SetClusterMergeSizeThreshold(
+      uint32_t value);
+  PropellerCodeLayoutParametersBuilder& SetSplitFunctions(bool value);
+  PropellerCodeLayoutParametersBuilder& SetReorderHotBlocks(bool value);
+  PropellerCodeLayoutParametersBuilder& SetInterFunctionReordering(bool value);
+
+ private:
+  PropellerCodeLayoutParameters data_;
 };
 
 }  // namespace devtools_crosstool_autofdo

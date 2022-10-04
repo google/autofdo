@@ -3,6 +3,7 @@
 #include <fcntl.h>  // for "O_RDONLY"
 
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -20,9 +21,11 @@ namespace devtools_crosstool_autofdo {
 
 static std::unique_ptr<CFGNode> CreateNodeFromNodePb(const CFGNodePb &nodepb,
                                                      ControlFlowGraph *cfg) {
-  return std::make_unique<CFGNode>(nodepb.symbol_ordinal(), 0,
-                                   nodepb.bb_index(), nodepb.size(), cfg,
-                                   nodepb.freq());
+  return std::make_unique<CFGNode>(
+      /*symbol_ordinal=*/nodepb.symbol_ordinal(), /*addr=*/0,
+      /*bb_index=*/nodepb.bb_index(), /*size=*/nodepb.size(),
+      /*is_landing_pad=*/nodepb.is_landing_pad(), /*cfg=*/cfg,
+      /*freq=*/nodepb.freq());
 }
 
 absl::Status MockPropellerWholeProgramInfo::CreateCfgs(
@@ -70,7 +73,11 @@ void MockPropellerWholeProgramInfo::CreateCfgsFromProtobuf() {
     for (const auto &nodepb : cfgpb.node()) {
       std::unique_ptr<CFGNode> node = CreateNodeFromNodePb(nodepb, cfg.get());
       ordinal_to_node_map.try_emplace(node->symbol_ordinal(), node.get());
-      if (node->freq()) cfg->hot_tag_ = true;
+      if (node->freq()) {
+        cfg->hot_tag_ = true;
+        if (node->is_landing_pad()) ++cfg->n_hot_landing_pads_;
+      }
+      if (node->is_landing_pad()) ++cfg->n_landing_pads_;
       cfg->nodes_.emplace(std::move(node));
     }
     stats_.nodes_created += cfg->nodes_.size();

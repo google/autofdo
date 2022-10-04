@@ -7,7 +7,6 @@
 
 #include "llvm_propeller_perf_data_provider.h"
 #include "third_party/abseil/absl/status/status.h"
-#include "third_party/abseil/absl/strings/str_cat.h"
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/BinaryFormat/ELF.h"
@@ -16,6 +15,7 @@
 #include "llvm/Support/FormatAdapters.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/raw_ostream.h"
 #include "quipper/perf_parser.h"
 #include "quipper/perf_reader.h"
 
@@ -77,31 +77,6 @@ std::string ELFFileUtil<ELFT>::GetBuildId() {
                     "the first one will be returned";
   }
   return build_ids.front();
-}
-
-template <class ELFT>
-absl::StatusOr<std::vector<llvm::object::BBAddrMap>>
-ELFFileUtil<ELFT>::GetBbAddrMap(
-    const devtools_crosstool_autofdo::BinaryInfo &binary_info) {
-  if (!elf_file_) return absl::FailedPreconditionError("ELF file is null");
-  for (const typename ELFT::Shdr &sec : llvm::cantFail(elf_file_->sections())) {
-    if (sec.sh_type != llvm::ELF::SHT_LLVM_BB_ADDR_MAP) continue;
-    llvm::Expected<std::vector<BBAddrMap>> bb_addr_map =
-        elf_file_->decodeBBAddrMap(sec);
-    if (!bb_addr_map) {
-      return absl::InternalError(
-          llvm::formatv("Failed to read the {0} section {1} from {2}: {3}.",
-                        kBbAddrMapSectionName,
-                        llvm::cantFail(elf_file_->getSectionName(sec)),
-                        binary_info.file_name,
-                        llvm::fmt_consume(bb_addr_map.takeError()))
-              .str());
-    }
-    return *bb_addr_map;
-  }
-  return absl::FailedPreconditionError(
-      absl::StrFormat("'%s' does not have the '%s' section.",
-                      binary_info.file_name, kBbAddrMapSectionName));
 }
 
 template <class ELFT>
@@ -215,14 +190,19 @@ bool PerfDataReader::SelectBinaryInfo(const std::string &binary_file_name,
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> file =
       llvm::MemoryBuffer::getFile(binary_file_name);
   if (!file) {
-    LOG(ERROR) << "Failed to read file '" << binary_file_name << "'.";
+    LOG(ERROR) << "Failed to read file '" << binary_file_name
+               << "': " << file.getError().message();
     return false;
   }
   llvm::Expected<std::unique_ptr<llvm::object::ObjectFile>> obj =
       llvm::object::ObjectFile::createELFObjectFile(
           llvm::MemoryBufferRef(*(*file)));
   if (!obj) {
-    LOG(ERROR) << "Not a valid ELF file '" << binary_file_name << "'.";
+    std::string error_message;
+    llvm::raw_string_ostream raw_string_ostream(error_message);
+    raw_string_ostream << obj.takeError();
+    LOG(ERROR) << "Not a valid ELF file '" << binary_file_name
+               << "': " << raw_string_ostream.str();
     return false;
   }
   llvm::object::ELFObjectFileBase *elf_obj =
