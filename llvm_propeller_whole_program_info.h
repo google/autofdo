@@ -80,6 +80,8 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
 
   const PropellerOptions &options() const { return options_; }
 
+  const BinaryPerfInfo &binray_perf_info() const { return binary_perf_info_; }
+
   const BbAddrMapTy &bb_addr_map() const { return bb_addr_map_; }
 
   const AddressMapTy &address_map() const { return address_map_; }

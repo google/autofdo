@@ -348,7 +348,7 @@ function (config_with_llvm)
     llvm_profile_reader
     symbol_map)
   add_test(NAME llvm_profile_reader_test COMMAND llvm_profile_reader_test)
-
+  
   add_executable(llvm_profile_writer_test llvm_profile_writer_test.cc)
   target_include_directories(llvm_profile_writer_test PUBLIC
     libprotobuf
@@ -425,10 +425,8 @@ function (config_with_llvm)
     glog
     gtest
     gtest_main
-    llvm_profile_reader
     llvm_profile_writer
     llvm_propeller_cfg_proto
-    llvm_propeller_mock_whole_program_info
     llvm_propeller_objects
     perfdata_reader
     profile_creator
@@ -527,6 +525,87 @@ function (config_with_llvm)
     third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper)
   target_link_libraries(quipper_perf ${Protobuf_LIBRARIES} ${LIBELF_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
+
+  add_executable(hot_list_creator hot_list_creator.cc)
+  target_link_libraries(hot_list_creator 
+    absl::base
+    absl::flags
+    absl::flags_parse
+    absl::status
+    absl::str_format
+    absl::strings
+    glog
+    llvm_profile_reader
+    llvm_profile_writer
+    llvm_propeller_objects
+    perfdata_reader
+    profile_creator
+    quipper_perf
+    sample_reader
+    symbol_map
+    LLVMDebugInfoDWARF
+    LLVMSupport)
+
+  add_library(reg_profiler_objs OBJECT reg_profiler.cc)
+  add_executable(reg_profiler reg_profiler_main.cc)
+  target_link_libraries(reg_profiler
+    absl::base
+    absl::flags
+    absl::flags_parse
+    absl::status
+    absl::str_format
+    absl::strings
+    glog
+    llvm_profile_reader
+    llvm_profile_writer
+    reg_profiler_objs
+    llvm_propeller_objects
+    perfdata_reader
+    profile_creator
+    quipper_perf
+    sample_reader
+    symbol_map
+    LLVMDebugInfoDWARF
+    LLVMSupport
+    LLVMTarget
+    LLVMMC
+    LLVMMCA
+    LLVMMCDisassembler
+    LLVMX86Info
+    LLVMX86Desc
+    LLVMX86TargetMCA
+    LLVMX86Disassembler)
+
+  add_executable(reg_profiler_test reg_profiler_test.cc)
+  target_link_libraries(reg_profiler_test
+    absl::base
+    absl::flags
+    absl::flags_parse
+    absl::status
+    absl::str_format
+    absl::strings
+    glog
+    gtest
+    gtest_main
+    llvm_profile_reader
+    llvm_profile_writer
+    reg_profiler_objs
+    llvm_propeller_objects
+    perfdata_reader
+    profile_creator
+    quipper_perf
+    sample_reader
+    symbol_map
+    LLVMDebugInfoDWARF
+    LLVMSupport
+    LLVMTarget
+    LLVMMC
+    LLVMMCA
+    LLVMMCDisassembler
+    LLVMX86Info
+    LLVMX86Desc
+    LLVMX86TargetMCA
+    LLVMX86Disassembler)
 
   add_custom_command(PRE_BUILD
     OUTPUT prepare_cmds
