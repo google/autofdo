@@ -45,6 +45,7 @@ function (config_without_llvm)
     util/symbolize/dwarf2reader.cc
     util/symbolize/dwarf3ranges.cc
     util/symbolize/elf_reader.cc
+    util/symbolize/index_helper.cc
   )
   add_dependencies(create_gcov_lib perf_data_proto)
   add_dependencies(create_gcov_lib perf_parser_options_proto)

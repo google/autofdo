@@ -205,6 +205,11 @@ class InlineStackHandler: public Dwarf2Handler {
                                         enum DwarfForm form,
                                         uint64 data);
 
+  virtual void ProcessAttributeSigned(uint64 offset,
+                                        enum DwarfAttribute attr,
+                                        enum DwarfForm form,
+                                        int64 data);                                
+
   void set_directory_names(
       const DirectoryVector *directory_names) {
     directory_names_ = directory_names;
@@ -216,6 +221,10 @@ class InlineStackHandler: public Dwarf2Handler {
 
   void set_line_handler(LineInfoHandler *handler) {
     line_handler_ = handler;
+  }
+
+  void set_address_range_list(AddressRangeList *address_ranges) {
+    address_ranges_ = address_ranges;
   }
 
   const SubprogramInfo *GetSubprogramForAddress(uint64 address);
@@ -273,7 +282,7 @@ class InlineStackHandler: public Dwarf2Handler {
   int overlap_count_;
   bool have_two_level_line_tables_;
   bool subprogram_added_by_cu_;
-
+  
   DISALLOW_COPY_AND_ASSIGN(InlineStackHandler);
 };
 

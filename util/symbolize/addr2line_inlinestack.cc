@@ -18,6 +18,7 @@
 
 #include "base/logging.h"
 #include "symbolize/bytereader.h"
+#include "symbolize/dwarf2enums.h"
 
 namespace {
 
@@ -209,6 +210,7 @@ bool InlineStackHandler::StartDIE(uint64 offset,
       subprogram_added_by_cu_ = true;
       return true;
     }
+    case DW_TAG_skeleton_unit:
     case DW_TAG_compile_unit:
       return true;
     default:
@@ -217,6 +219,7 @@ bool InlineStackHandler::StartDIE(uint64 offset,
 }
 
 void InlineStackHandler::EndDIE(uint64 offset) {
+
   DwarfTag die = die_stack_.back();
   die_stack_.pop_back();
   if ((die == DW_TAG_subprogram ||
@@ -281,6 +284,16 @@ void InlineStackHandler::ProcessAttributeUnsigned(
         }
         break;
       }
+      case DW_AT_GNU_addr_base:
+      case DW_AT_addr_base: {
+        addr_base_ = data;
+        break;
+      }
+      case DW_AT_GNU_ranges_base:
+      case DW_AT_rnglists_base: {
+        ranges_base_ = data;
+        break;  
+      }
       case DW_AT_call_line:
         CHECK(form == DW_FORM_data1 ||
               form == DW_FORM_data2 ||
@@ -335,7 +348,14 @@ void InlineStackHandler::ProcessAttributeUnsigned(
       case DW_AT_ranges: {
         CHECK_EQ(0, subprogram_stack_.back()->address_ranges()->size());
         AddressRangeList::RangeList ranges;
-        address_ranges_->ReadRangeList(data, compilation_unit_base_, &ranges);
+        if (form == DW_FORM_sec_offset) {
+            address_ranges_->ReadRangeList(data, compilation_unit_base_, &ranges);
+        }
+        else {
+            CHECK(form == DW_FORM_rnglistx);
+            uint64 address_ = address_ranges_->GetRngListsElementOffsetByIndex(ranges_base_, data);
+            address_ranges_->ReadDwarfRngListwithOffsetArray(address_, compilation_unit_base_, &ranges, addr_base_, ranges_base_);
+        }
 
         if (subprogram_stack_.size() == 1) {
           if (sampled_functions_ != NULL) {
@@ -369,7 +389,8 @@ void InlineStackHandler::ProcessAttributeUnsigned(
       default:
         break;
     }
-  } else if (die_stack_.back() == DW_TAG_compile_unit) {
+  } else if (die_stack_.back() == DW_TAG_compile_unit
+             || die_stack_.back() == DW_TAG_skeleton_unit) {
     // The subprogram stack is empty.  This information is therefore
     // describing the compilation unit.
     switch (attr) {
@@ -378,33 +399,102 @@ void InlineStackHandler::ProcessAttributeUnsigned(
         break;
       case DW_AT_stmt_list:
         {
-          SectionMap::const_iterator iter =
-              sections_.find(".debug_line");
-          CHECK(iter != sections_.end()) << "unable to find .debug_line "
+          SectionMap::const_iterator line_sect = sections_.find(".debug_line");
+          CHECK(line_sect != sections_.end()) << "unable to find .debug_line "
               "in section map";
-          SectionMap::const_iterator line_str =
-              sections_.find(".debug_line_str");
+          SectionMap::const_iterator line_str = sections_.find(".debug_line_str");
           const char* line_str_buffer = NULL;
           uint64 line_str_size = 0;
           if (line_str != sections_.end()) {
             line_str_buffer = line_str->second.first;
             line_str_size = line_str->second.second;
           }
-          LineInfo lireader(iter->second.first + data,
-                            iter->second.second - data,
-                            line_str_buffer,
-                            line_str_size,
+          SectionMap::const_iterator str_section = sections_.find(".debug_str");
+          const char* str_buffer = NULL;
+          uint64 str_buffer_size = 0;
+          if (str_section != sections_.end()) {
+            str_buffer = line_str->second.first;
+            str_buffer_size = line_str->second.second;
+          }
+          SectionMap::const_iterator str_offsets = sections_.find(".debug_str_offsets");
+          const char* str_offsets_buffer = NULL;
+          uint64 str_offsets_size = 0;
+          if (str_offsets != sections_.end()) {
+            str_offsets_buffer = line_str->second.first;
+            str_offsets_size = line_str->second.second;
+          }                    
+          LineInfo lireader(line_sect->second.first + data, line_sect->second.second - data,
+                            line_str_buffer, line_str_size,
+                            str_buffer, str_buffer_size,
+                            str_offsets_buffer, str_offsets_size,
+                            get_str_offset_base(),
                             reader_, line_handler_);
+
           line_handler_->SetVaddrOfFirstLoadSegment(
               vaddr_of_first_load_segment_);
           lireader.Start();
           have_two_level_line_tables_ = lireader.have_two_level_line_tables();
         }
         break;
+      case DW_AT_str_offsets_base:
+        str_offset_base_ = data;
+        break;
+      case DW_AT_ranges: 
+        CHECK(form == DW_FORM_sec_offset);
+        FALLTHROUGH_INTENDED;
+      case DW_AT_GNU_ranges_base:
+      case DW_AT_rnglists_base:
+        ranges_base_ = data;     
+        break;
+      case DW_AT_GNU_addr_base:
+      case DW_AT_addr_base: 
+        addr_base_ = data;
+        break;
       default:
         break;
     }
   }
+}
+
+void InlineStackHandler::ProcessAttributeSigned(
+    uint64 offset,
+    enum DwarfAttribute attr,
+    enum DwarfForm form,
+    int64 data) {
+
+    switch (attr) {
+      case DW_AT_call_file: {
+        CHECK(form == DW_FORM_implicit_const);
+
+        if (data == 0 || data >= file_names_->size()) {
+          LOG(WARNING) << "unexpected reference to file_num " << data;
+          break;
+        }
+
+        if (file_names_ != NULL) {
+          const FileVector::value_type &file =
+              (*file_names_)[data];
+          if (directory_names_ != NULL) {
+            if (file.first < directory_names_->size()) {
+              const char *dir = (*directory_names_)[file.first];
+              subprogram_stack_.back()->set_callsite_directory(dir);
+            } else {
+              LOG(WARNING) << "unexpected reference to dir_num " << file.first;
+            }
+          }
+          subprogram_stack_.back()->set_callsite_filename(file.second);
+        }
+        break;
+      }
+      case DW_AT_call_line:
+        CHECK(form == DW_FORM_implicit_const);
+        subprogram_stack_.back()->set_callsite_line(data);
+        break;
+
+      default:
+        break;
+    }      
+
 }
 
 void InlineStackHandler::FindBadSubprograms(
