@@ -98,13 +98,13 @@ void LLVMAddr2line::GetInlineStack(uint64_t address, SourceStack *stack) const {
     std::string dir_name;
     if (line_table->hasFileAtIndex(file)) {
       const auto &entry = line_table->Prologue.getFileNameEntry(file);
-      file_name = llvm::dwarf::toString(entry.Name).getValue();
+      file_name = llvm::dwarf::toString(entry.Name).value();
       if (entry.DirIdx > 0 &&
           entry.DirIdx <= line_table->Prologue.IncludeDirectories.size())
         dir_name =
             llvm::dwarf::toString(
                 line_table->Prologue.IncludeDirectories[entry.DirIdx - 1])
-                .getValue();
+                .value();
     }
     stack->emplace_back(function_name, dir_name, file_name, start_line, line,
                         discriminator);

@@ -318,8 +318,8 @@ bool PropellerProfWriter::Write(
     // picked by the compiler.
     for (auto &func_name : func_names) {
       symorder_stream << func_name.str();
-      if (cluster_id.hasValue())
-        symorder_stream << ".__part." << cluster_id.getValue();
+      if (cluster_id.has_value())
+        symorder_stream << ".__part." << *cluster_id;
       symorder_stream << "\n";
     }
   }
