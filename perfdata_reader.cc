@@ -265,7 +265,7 @@ llvm::Optional<std::set<std::string>> FindFileNameInPerfDataWithFileBuildId(
     BinaryPerfInfo *info) {
   if (info->binary_info.build_id.empty()) {
     LOG(INFO) << "No Build Id found in '" << binary_file_name << "'.";
-    return llvm::None;
+    return std::nullopt;
   }
   LOG(INFO) << "Build Id found in '" << binary_file_name
             << "': " << info->binary_info.build_id;
@@ -277,7 +277,7 @@ llvm::Optional<std::set<std::string>> FindFileNameInPerfDataWithFileBuildId(
                 << "' has filename '" << fn << "'.";
     return buildid_names;
   }
-  return llvm::None;
+  return std::nullopt;
 }
 
 // Select mmaps from perf.data.
