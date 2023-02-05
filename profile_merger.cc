@@ -153,7 +153,7 @@ int main(int argc, char **argv) {
     using devtools_crosstool_autofdo::AutoFDOProfileReader;
     typedef std::unique_ptr<AutoFDOProfileReader> AutoFDOProfileReaderPtr;
     std::unique_ptr<AutoFDOProfileReaderPtr[]> readers(
-        new AutoFDOProfileReaderPtr[argc - 1]);
+        new AutoFDOProfileReaderPtr[positionalArguments.size() - 1]);
     // TODO(dehao): merge profile reader/writer into a single class
     for (int i = 1; i < positionalArguments.size(); i++) {
       readers[i - 1] =
