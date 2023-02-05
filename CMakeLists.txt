@@ -94,6 +94,29 @@ function (config_without_llvm)
     quipper_perf
   )
 
+  add_library(profile_merger_lib OBJECT
+    gcov.cc
+    instruction_map.cc
+    profile_merger.cc
+    profile.cc
+    profile_reader.cc
+    profile_writer.cc
+    symbol_map.cc
+    util/symbolize/elf_reader.cc
+  )
+  add_dependencies(profile_merger_lib perf_data_proto)
+  add_dependencies(profile_merger_lib perf_parser_options_proto)
+  add_dependencies(profile_merger_lib perf_stat_proto)
+
+  add_executable(profile_merger)
+  target_link_libraries(profile_merger
+    absl::flags
+    absl::flags_parse
+    profile_merger_lib
+    glog
+    quipper_perf
+  )
+
   add_library(dump_gcov_lib OBJECT
     dump_gcov.cc
     gcov.cc
