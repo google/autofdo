@@ -716,6 +716,7 @@ const char* CompilationUnit::ProcessAttribute(
       return start + datalen + len;
       break;
     }
+    case DW_FORM_line_strp:
     case DW_FORM_strp: {
       CHECK(string_buffer_ != NULL);
       const uint64 offset = reader_->ReadOffset(start);
