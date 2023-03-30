@@ -1,5 +1,6 @@
 #include "perfdata_reader.h"
 
+#include <optional>
 #include <string>
 
 #include "gmock/gmock.h"
@@ -118,7 +119,7 @@ TEST(PerfdataReaderTest, FirstLoadableSegmentNoneExecutable) {
       absl::StrCat(absl::GetFlag(FLAGS_test_srcdir),
                    "/google3/devtools/crosstool/autofdo/testdata/"
                    "binary_with_none_executable_first_loadable_segment.bin");
-  llvm::Optional<bool> v =
+  std::optional<bool> v =
       devtools_crosstool_autofdo::CheckFirstLoadableSegmentIsExecutable(binary);
   EXPECT_TRUE(v.hasValue() && !v.getValue());
 }
@@ -128,7 +129,7 @@ TEST(PerfdataReaderTest, FirstLoadableSegmentExecutable) {
       absl::StrCat(absl::GetFlag(FLAGS_test_srcdir),
                    "/google3/devtools/crosstool/autofdo/testdata/"
                    "binary_with_executable_first_loadable_segment.bin");
-  llvm::Optional<bool> v =
+  std::optional<bool> v =
       devtools_crosstool_autofdo::CheckFirstLoadableSegmentIsExecutable(binary);
   EXPECT_TRUE(v.hasValue() && v.getValue());
 }
