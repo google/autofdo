@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -82,7 +83,6 @@ void DumpCfgs(
 namespace devtools_crosstool_autofdo {
 
 using ::devtools_crosstool_autofdo::PropellerOptions;
-using ::llvm::Optional;
 using ::llvm::StringRef;
 
 absl::Status GeneratePropellerProfiles(const PropellerOptions &opts) {
@@ -252,8 +252,8 @@ bool PropellerProfWriter::Write(
     total_clusters += func_cluster_info.clusters.size();
 
   // Allocate the symbol order vector
-  std::vector<std::pair<llvm::SmallVector<StringRef, 3>, Optional<unsigned>>>
-      symbol_order(total_clusters);
+  std::vector<std::pair<llvm::SmallVector<StringRef, 3>,
+      std::optional<unsigned>>>symbol_order(total_clusters);
   // Allocate the cold symbol order vector equally sized as
   // all_functions_cluster_info, as there is (at most) one cold cluster per
   // function.
@@ -295,9 +295,9 @@ bool PropellerProfWriter::Write(
       // the function name is sufficient for section ordering. Otherwise,
       // the cluster number is required.
       symbol_order[cluster.layout_index] =
-          std::pair<llvm::SmallVector<StringRef, 3>, Optional<unsigned>>(
+          std::pair<llvm::SmallVector<StringRef, 3>, std::optional<unsigned>>(
               func_layout_info.cfg->names_, cluster.bb_indexes.front() == 0
-                                                ? Optional<unsigned>()
+                                                ? std::optional<unsigned>()
                                                 : cluster_id);
       for (int bbi = 0; bbi < cluster.bb_indexes.size(); ++bbi)
         out_stream << (bbi ? " " : "!!") << cluster.bb_indexes[bbi];
