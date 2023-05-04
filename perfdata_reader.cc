@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <list>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -260,7 +261,7 @@ bool PerfDataReader::SelectPerfInfo(PerfDataProvider::BufferHandle perf_data,
 
 // Find the set of file names in perf.data file which has the same build id as
 // found in "binary_file_name".
-llvm::Optional<std::set<std::string>> FindFileNameInPerfDataWithFileBuildId(
+std::optional<std::set<std::string>> FindFileNameInPerfDataWithFileBuildId(
     const std::string &binary_file_name, const quipper::PerfReader &perf_reader,
     BinaryPerfInfo *info) {
   if (info->binary_info.build_id.empty()) {
