@@ -7,6 +7,7 @@
 #include "symbol_map.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/ProfileData/SampleProfReader.h"
+#include "llvm/Support/VirtualFileSystem.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -25,7 +26,11 @@ bool LLVMProfileReader::ReadFromFile(const std::string &filename) {
 #if LLVM_VERSION_MAJOR >= 12
   llvm::sampleprof::FunctionSamples::ProfileIsFS = false;
   auto reader_or_err = llvm::sampleprof::SampleProfileReader::create(
-      filename, C, discriminator_pass);
+      filename, C,
+#if LLVM_VERSION_MAJOR >= 17
+      *llvm::vfs::getRealFileSystem(),
+#endif
+      discriminator_pass);
 #else
   auto reader_or_err =
       llvm::sampleprof::SampleProfileReader::create(filename, C);
