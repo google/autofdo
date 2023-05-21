@@ -81,7 +81,6 @@ void DumpCfgs(
 }  // namespace
 
 namespace devtools_crosstool_autofdo {
-
 using ::devtools_crosstool_autofdo::PropellerOptions;
 using ::llvm::StringRef;
 
@@ -252,7 +251,7 @@ bool PropellerProfWriter::Write(
     total_clusters += func_cluster_info.clusters.size();
 
   // Allocate the symbol order vector
-  std::vector<std::pair<llvm::SmallVector<StringRef, 3>,
+  std::vector<std::pair<::llvm::SmallVector<StringRef, 3>,
       std::optional<unsigned>>>symbol_order(total_clusters);
   // Allocate the cold symbol order vector equally sized as
   // all_functions_cluster_info, as there is (at most) one cold cluster per
@@ -272,7 +271,7 @@ bool PropellerProfWriter::Write(
         func_layout_info.optimized_score.inter_out_score;
 
     // Print all alias names of the function, separated by '/'.
-    out_stream << "!" << llvm::join(func_layout_info.cfg->names(), "/") << "\n";
+    out_stream << "!" << ::llvm::join(func_layout_info.cfg->names(), "/") << "\n";
 
     if (options_.verbose_cluster_output()) {
       // Print the layout score for intra-function and inter-function edges
@@ -295,7 +294,7 @@ bool PropellerProfWriter::Write(
       // the function name is sufficient for section ordering. Otherwise,
       // the cluster number is required.
       symbol_order[cluster.layout_index] =
-          std::pair<llvm::SmallVector<StringRef, 3>, std::optional<unsigned>>(
+          std::pair<::llvm::SmallVector<StringRef, 3>, std::optional<unsigned>>(
               func_layout_info.cfg->names_, cluster.bb_indexes.front() == 0
                                                 ? std::optional<unsigned>()
                                                 : cluster_id);
