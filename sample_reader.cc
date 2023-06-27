@@ -277,7 +277,7 @@ bool PerfDataSampleReader::Append(const std::string &profile_file) {
     if (focus_bins_.empty())
       return false;
   } else {
-    LOG(ERROR) << "No buildid found in binary";
+    LOG(WARNING) << "No buildid found in binary";
   }
 
   for (const auto &event : parser.parsed_events()) {
