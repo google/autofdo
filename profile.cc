@@ -194,7 +194,7 @@ void Profile::ComputeProfile() {
 
     for (const auto &[name, profile] : symbol_profile_maps_) {
       const uint64_t count = symbol_counts.at(absl::StripSuffix(name, ".cold"));
-      if (symbol_map_->ShouldEmit(count)) {
+      if (symbol_map_->ShouldEmit(count) && (profile->GetAggregatedCount() != 0)) {
         ProcessPerFunctionProfile(name, *profile);
       }
     }

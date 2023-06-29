@@ -29,8 +29,7 @@
 
 namespace {
 void GetSection(const devtools_crosstool_autofdo::SectionMap &sections,
-                const char *section_name, const char **data_p, size_t *size_p,
-                const string &file_name, const char *error) {
+                const char *section_name, const char **data_p, size_t *size_p) {
   const char *data;
   size_t size;
 
@@ -38,8 +37,6 @@ void GetSection(const devtools_crosstool_autofdo::SectionMap &sections,
       sections.find(section_name);
 
   if (section == sections.end()) {
-    LOG(WARNING) << "File '" << file_name << "' has no " << section_name
-                 << " section.  " << error;
     data = NULL;
     size = 0;
   } else {
@@ -119,15 +116,17 @@ bool Google3Addr2line::Prepare() {
   const char *debug_addr_data = NULL;
   const char *debug_ranges_data = NULL;
   bool is_rnglists_section = false;
-  GetSection(sections, ".debug_info", &debug_info_data, &debug_info_size, binary_name_, "");
-  GetSection(sections, ".debug_addr", &debug_addr_data, &debug_addr_size, binary_name_, "");
-  GetSection(sections, ".debug_ranges", &debug_ranges_data, &debug_ranges_size, binary_name_, "");
+  GetSection(sections, ".debug_info", &debug_info_data, &debug_info_size);
+  if (debug_info_data == NULL)
+    LOG(WARNING) << "File '" << binary_name_ << "' does not have .debug_info section.";
+  GetSection(sections, ".debug_addr", &debug_addr_data, &debug_addr_size);
+  GetSection(sections, ".debug_ranges", &debug_ranges_data, &debug_ranges_size);
   if (debug_ranges_data == NULL) {
-      GetSection(sections, ".debug_rnglists", &debug_ranges_data, &debug_ranges_size, binary_name_, "");
+      GetSection(sections, ".debug_rnglists", &debug_ranges_data, &debug_ranges_size);
       if (debug_ranges_data != NULL) 
         is_rnglists_section = true;
       else 
-        LOG(INFO) << "Executable does not have .debug_ranges nor .debug_rnglists.";
+        LOG(WARNING) << "File '" << binary_name_ << "' does not have .debug_ranges nor .debug_rnglists sections.";
   }
 
   AddressRangeList debug_ranges(debug_ranges_data,
@@ -168,7 +167,7 @@ bool Google3Addr2line::Prepare() {
   } else {
     const char *data;
     size_t size;
-    GetSection(sections, ".debug_line", &data, &size, binary_name_, "");
+    GetSection(sections, ".debug_line", &data, &size);
     if (data) {
       size_t pos = 0;
       while (pos < size) {
@@ -187,6 +186,8 @@ bool Google3Addr2line::Prepare() {
         pos += read;
       }
     }
+    else
+      LOG(WARNING) << "File '" << binary_name_ << "' does not have .debug_line section.";
   }
   inline_stack_handler_->PopulateSubprogramsByAddress();
 
