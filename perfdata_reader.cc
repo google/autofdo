@@ -58,7 +58,7 @@ std::string ELFFileUtil<ELFT>::GetBuildId() {
     for (const typename ELFT::Note &note : elf_file_->notes(shdr, err)) {
       llvm::StringRef r = note.getName();
       if (r == kBuildIdNoteName) {
-        llvm::ArrayRef<uint8_t> build_id = note.getDesc();
+        llvm::ArrayRef<uint8_t> build_id = note.getDesc(/*Align=*/0);
         std::string build_id_str(build_id.size() * 2, '0');
         int k = 0;
         for (uint8_t t : build_id) {

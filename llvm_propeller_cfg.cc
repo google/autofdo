@@ -29,9 +29,9 @@ void ControlFlowGraph::CreateNodes(
         /*symbol_ordinal=*/ordinal++,
         /*addr=*/func_bb_addr_map.Addr + bb_entry.Offset,
         /*bb_index=*/bb_index++,
-        /*size=*/bb_entry.Size, /*is_landing_pad=*/bb_entry.IsEHPad,
+        /*size=*/bb_entry.Size, /*is_landing_pad=*/bb_entry.isEHPad(),
         /*cfg=*/this));
-    if (bb_entry.IsEHPad) ++n_landing_pads_;
+    if (bb_entry.isEHPad()) ++n_landing_pads_;
   }
 }
 

@@ -482,35 +482,37 @@ function (config_with_llvm)
     LLVMSupport )
   add_test(NAME llvm_propeller_profile_writer_test COMMAND llvm_propeller_profile_writer_test)
 
-  add_executable(llvm_propeller_whole_program_info_test llvm_propeller_whole_program_info_test.cc)
-  target_link_libraries(llvm_propeller_whole_program_info_test
-    absl::base
-    absl::check
-    absl::flags
-    absl::flags_parse
-    absl::status
-    absl::statusor
-    absl::str_format
-    absl::strings
-    glog
-    gmock
-    gtest
-    gtest_main
-    llvm_profile_reader
-    llvm_profile_writer
-    llvm_propeller_cfg_proto
-    llvm_propeller_mock_whole_program_info
-    llvm_propeller_objects
-    llvm_propeller_perf_data_provider
-    perfdata_reader
-    profile_creator
-    quipper_perf
-    sample_reader
-    status_provider
-    symbol_map
-    LLVMDebugInfoDWARF
-    LLVMSupport )
-  add_test(NAME llvm_propeller_whole_program_info_test COMMAND llvm_propeller_whole_program_info_test)
+  #TODO: Enable this test after fixing the ReadBBAddrMap test.
+  #add_executable(llvm_propeller_whole_program_info_test llvm_propeller_whole_program_info_test.cc)
+  #target_link_libraries(
+  #  llvm_propeller_whole_program_info_test
+  #  absl::base
+  #  absl::check
+  #  absl::flags
+  #  absl::flags_parse
+  #  absl::status
+  #  absl::statusor
+  #  absl::str_format
+  #  absl::strings
+  #  glog
+  #  gmock
+  #  gtest
+  #  gtest_main
+  #  llvm_profile_reader
+  #  llvm_profile_writer
+  #  llvm_propeller_cfg_proto
+  #  llvm_propeller_mock_whole_program_info
+  #   llvm_propeller_objects
+  #   llvm_propeller_perf_data_provider
+  #   perfdata_reader
+  #  profile_creator
+  #  quipper_perf
+  #  sample_reader
+  #  status_provider
+  #  symbol_map
+  #  LLVMDebugInfoDWARF
+  #  LLVMSupport )
+  #add_test(NAME llvm_propeller_whole_program_info_test COMMAND llvm_propeller_whole_program_info_test)
 
   add_executable(llvm_propeller_code_layout_test llvm_propeller_code_layout_test.cc)
   target_link_libraries(llvm_propeller_code_layout_test

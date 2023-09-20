@@ -30,7 +30,6 @@
 #include "third_party/abseil/absl/status/statusor.h"
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "third_party/abseil/absl/strings/string_view.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELFObjectFile.h"
@@ -400,7 +399,7 @@ bool PropellerWholeProgramInfo::CreateEdges(
     // of a basic block for returns.
     // We also account for returns from external library functions which happen
     // when from_sym is null.
-    if ((!from_bb_index.has_value() || GetBBEntry(from_bb_handle).HasReturn ||
+    if ((!from_bb_index.has_value() || GetBBEntry(from_bb_handle).hasReturn() ||
          to_bb_handle.function_index != from_bb_handle.function_index) &&
         GetFunctionEntry(to_bb_handle).Addr != to &&  // Not a call
         // Jump to the beginning of the basicblock
@@ -417,7 +416,7 @@ bool PropellerWholeProgramInfo::CreateEdges(
       }
     }
     if (!from_bb_index.has_value()) continue;
-    if (!GetBBEntry(from_bb_handle).HasReturn &&
+    if (!GetBBEntry(from_bb_handle).hasReturn() &&
         GetAddress(to_bb_handle) != to) {
       // Jump is not a return and its target is not the beginning of a function
       // or a basic block.
@@ -428,7 +427,7 @@ bool PropellerWholeProgramInfo::CreateEdges(
     if (GetFunctionEntry(to_bb_handle).Addr == to) {
       edge_kind = CFGEdge::Kind::kCall;
     } else if (to != GetAddress(to_bb_handle) ||
-               GetBBEntry(from_bb_handle).HasReturn) {
+               GetBBEntry(from_bb_handle).hasReturn()) {
       edge_kind = CFGEdge::Kind::kRet;
     }
     InternalCreateEdge(from_bb_index.value(), to_bb_index.value(), weight,
@@ -511,7 +510,7 @@ bool PropellerWholeProgramInfo::CanFallThrough(int from, int to) {
                     "larger than end address. ***";
     return false;
   }
-  if (!GetBBEntry(from_bb).CanFallThrough) {
+  if (!GetBBEntry(from_bb).canFallThrough()) {
     LOG(WARNING) << "*** Skipping non-fallthrough ***" << GetName(from_bb);
     return false;
   }
@@ -529,7 +528,7 @@ bool PropellerWholeProgramInfo::CanFallThrough(int from, int to) {
     // the fallthrough path if any intermediate block (except the destination
     // block) does not fall through (source block is checked before entering
     // this loop).
-    if (!GetBBEntry(bb_sym).CanFallThrough) {
+    if (!GetBBEntry(bb_sym).canFallThrough()) {
       LOG(WARNING) << "*** Skipping non-fallthrough ***" << GetName(bb_sym);
       return false;
     }
