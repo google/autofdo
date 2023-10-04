@@ -7,21 +7,25 @@
 #if defined(HAVE_LLVM)
 #include <stdio.h>
 
-#include <algorithm>
 #include <map>
-#include <set>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
-#include "base/commandlineflags.h"
-#include "base/logging.h"
 #include "llvm_profile_writer.h"
 #include "profile_writer.h"
+#include "source_info.h"
+#include "symbol_map.h"
 #include "third_party/abseil/absl/flags/declare.h"
 #include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/log/check.h"
+#include "third_party/abseil/absl/log/log.h"
 #include "third_party/abseil/absl/strings/match.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/ProfileData/SampleProf.h"
+#include "llvm/ProfileData/SampleProfWriter.h"
 
 ABSL_DECLARE_FLAG(bool, debug_dump);
 
@@ -64,8 +68,8 @@ bool LLVMProfileBuilder::Write(
 const llvm::sampleprof::SampleProfileMap &LLVMProfileBuilder::ConvertProfiles(
     const SymbolMap &symbol_map) {
 #else
-const llvm::StringMap<llvm::sampleprof::FunctionSamples>
-    &LLVMProfileBuilder::ConvertProfiles(const SymbolMap &symbol_map) {
+const llvm::StringMap<llvm::sampleprof::FunctionSamples> &
+LLVMProfileBuilder::ConvertProfiles(const SymbolMap &symbol_map) {
 #endif
   Start(symbol_map);
   return GetProfiles();
@@ -154,8 +158,9 @@ llvm::StringRef LLVMProfileBuilder::GetNameRef(const std::string &str) {
   CHECK(ret != name_table_.end());
   // Suffixes should have been elided by SymbolMap::ElideSuffixesAndMerge()
   if (absl::StrContains(ret->first, ".llvm.")) {
-    LOG(WARNING) << "Unexpected character '.' in function name: " << ret->first
-               << ". Likely thin LTO .llvm.<hash> suffix has not been cleared.";
+    LOG(WARNING)
+        << "Unexpected character '.' in function name: " << ret->first
+        << ". Likely thin LTO .llvm.<hash> suffix has not been cleared.";
   }
   return llvm::StringRef(ret->first);
 }

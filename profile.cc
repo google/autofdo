@@ -5,19 +5,26 @@
 #include "profile.h"
 
 #include <cstdint>
+#include <ios>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "base/commandlineflags.h"
-#include "base/logging.h"
 #include "instruction_map.h"
+#include "mini_disassembler.h"
 #include "sample_reader.h"
+#include "source_info.h"
 #include "symbol_map.h"
+#include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/flags/flag.h"
-#include "third_party/abseil/absl/strings/match.h"
+#include "third_party/abseil/absl/log/check.h"
+#include "third_party/abseil/absl/log/log.h"
+#include "third_party/abseil/absl/status/statusor.h"
+#include "third_party/abseil/absl/strings/string_view.h"
 #include "third_party/abseil/absl/strings/strip.h"
+#include "llvm/Object/ObjectFile.h"
 
 ABSL_FLAG(bool, use_lbr, true,
             "Whether to use lbr profile.");
@@ -41,29 +48,66 @@ Profile::ProfileMaps *Profile::GetProfileMaps(uint64_t addr) {
   }
 }
 
-void Profile::AggregatePerFunctionProfile() {
-  uint64_t start = symbol_map_->base_addr();
+void Profile::AggregatePerFunctionProfile(bool check_lbr_entry) {
   const AddressCountMap *count_map = &sample_reader_->address_count_map();
   for (const auto &[addr, count] : *count_map) {
-    ProfileMaps *maps = GetProfileMaps(addr + start);
+    uint64_t vaddr = symbol_map_->get_static_vaddr(addr);
+    ProfileMaps *maps = GetProfileMaps(vaddr);
     if (maps != nullptr) {
-      maps->address_count_map[addr + start] += count;
+      maps->address_count_map[vaddr] += count;
     }
   }
+
+  std::unique_ptr<MiniDisassembler> Disassembler;
+  if (check_lbr_entry) {
+    const llvm::object::ObjectFile *Obj = addr2line_->getObject();
+    if (Obj) {
+      auto DisassemblerHandler = MiniDisassembler::Create(Obj);
+      if (DisassemblerHandler.ok()) {
+        Disassembler = std::move(DisassemblerHandler.value());
+      }
+    }
+    if (!Disassembler) {
+      LOG(WARNING) << "Cannot create MiniDisassembler and check lbr entry "
+                   << " will be disabled.";
+    }
+  }
+
   const RangeCountMap *range_map = &sample_reader_->range_count_map();
   for (const auto &[range, count] : *range_map) {
-    ProfileMaps *maps = GetProfileMaps(range.first + start);
+    uint64_t beg_vaddr = symbol_map_->get_static_vaddr(range.first);
+    uint64_t end_vaddr = symbol_map_->get_static_vaddr(range.second);
+    ProfileMaps *maps = GetProfileMaps(beg_vaddr);
+
+    // check if the range end_addr is a jump instruction.
+    if (Disassembler) {
+      auto BranchCheck = Disassembler->MayAffectControlFlow(end_vaddr);
+      if (BranchCheck.ok() && !BranchCheck.value())
+        LOG(WARNING)
+            << "Range end_addr (" << std::hex << end_vaddr
+            << ") is NOT a potentially-control-flow-affecting instruction.";
+    }
+
     if (maps != nullptr) {
-      maps->range_count_map[std::make_pair(range.first + start,
-                                           range.second + start)] += count;
+      maps->range_count_map[std::make_pair(beg_vaddr, end_vaddr)] += count;
     }
   }
   const BranchCountMap *branch_map = &sample_reader_->branch_count_map();
   for (const auto &[branch, count] : *branch_map) {
-    ProfileMaps *maps = GetProfileMaps(branch.first + start);
+    uint64_t from_vaddr = symbol_map_->get_static_vaddr(branch.first);
+    uint64_t to_vaddr = symbol_map_->get_static_vaddr(branch.second);
+    ProfileMaps *maps = GetProfileMaps(from_vaddr);
+
+    if (Disassembler) {
+      auto BranchCheck = Disassembler->MayAffectControlFlow(from_vaddr);
+      if (BranchCheck.ok() && !BranchCheck.value())
+        LOG(WARNING)
+            << "Branch from_addr (" << std::hex << from_vaddr
+            << ") is NOT a potentially-control-flow-affecting instruction.";
+    }
+
     if (maps != nullptr) {
-      maps->branch_count_map[std::make_pair(branch.first + start,
-                                            branch.second + start)] += count;
+      maps->branch_count_map[std::make_pair(from_vaddr, to_vaddr)] += count;
     }
   }
 
@@ -147,10 +191,10 @@ void Profile::ProcessPerFunctionProfile(const std::string &func_name,
   }
 }
 
-void Profile::ComputeProfile() {
+void Profile::ComputeProfile(bool check_lbr_entry) {
   symbol_map_->CalculateThresholdFromTotalCount(
       sample_reader_->GetTotalCount());
-  AggregatePerFunctionProfile();
+  AggregatePerFunctionProfile(check_lbr_entry);
 
   if (absl::GetFlag(FLAGS_llc_misses)) {
     for (const auto &[func_name, maps] : symbol_profile_maps_) {
@@ -194,7 +238,7 @@ void Profile::ComputeProfile() {
 
     for (const auto &[name, profile] : symbol_profile_maps_) {
       const uint64_t count = symbol_counts.at(absl::StripSuffix(name, ".cold"));
-      if (symbol_map_->ShouldEmit(count) && (profile->GetAggregatedCount() != 0)) {
+      if (symbol_map_->ShouldEmit(count)) {
         ProcessPerFunctionProfile(name, *profile);
       }
     }

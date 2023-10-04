@@ -3,16 +3,16 @@
 
 #include <algorithm>
 #include <iterator>
-#include <list>
-#include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_code_layout_scorer.h"
 #include "third_party/abseil/absl/algorithm/container.h"
-#include "third_party/abseil/absl/container/btree_set.h"
+#include "third_party/abseil/absl/container/flat_hash_map.h"
+#include "third_party/abseil/absl/container/flat_hash_set.h"
 
 // A node chain represents an ordered list of CFG nodes, which are further
 // split into multiple (ordered) list of nodes called bundles. For example
@@ -34,30 +34,113 @@
 // contained in exactly one chain.
 
 namespace devtools_crosstool_autofdo {
-
 class NodeChain;
 class NodeChainAssembly;
+class NodeToBundleMapper;
 
 class CFGNodeBundle {
-  // TODO(b/160191690): Make classes' data members private and add accessors.
  public:
+  // This struct contains information about the position of a `CFGNodeBundle`
+  // inside its containing `NodeChain`.
+  struct ChainMappingEntry {
+    // Containing chain for this bundle.
+    NodeChain *chain;
+    // Index of the bundle in `chain->node_bundles()`.
+    int chain_index;
+    // Binary size offset at which this bundle is located in its containing
+    // chain.
+    int chain_offset;
+  };
+
+  // Constructor for building a bundle for a single CFG node and mapping it back
+  // to its containing `chain`. `chain` must outlive the created CFGNodeBundle.
+  CFGNodeBundle(const CFGNode *n, NodeChain &chain, int chain_index,
+                int chain_offset)
+
+      : nodes_(1, n),
+        chain_mapping_({.chain = &chain,
+                        .chain_index = chain_index,
+                        .chain_offset = chain_offset}),
+        size_(n->size()),
+        freq_(n->CalculateFrequency()) {}
+
+  // Constructor for building a bundle for a list of CFG nodes and mapping it
+  // back to its containing `chain`. `chain` must outlive the created
+  // `CFGNodeBundle`.
+  explicit CFGNodeBundle(std::vector<const CFGNode *> nodes, NodeChain &chain,
+                         int chain_index, int chain_offset)
+      : nodes_(std::move(nodes)),
+        chain_mapping_({.chain = &chain,
+                        .chain_index = chain_index,
+                        .chain_offset = chain_offset}),
+
+        size_(0),
+        freq_(0) {
+    for (const CFGNode *n : nodes_) {
+      size_ += n->size();
+      freq_ += n->CalculateFrequency();
+    }
+  }
+
+  // CFGNodeBundle is a moveonly object.
+  CFGNodeBundle(const CFGNodeBundle &other) = delete;
+  CFGNodeBundle &operator=(const CFGNodeBundle &other) = delete;
+  CFGNodeBundle(CFGNodeBundle &&other) = default;
+  CFGNodeBundle &operator=(CFGNodeBundle &&other) = default;
+
+  int size() const { return size_; }
+  int freq() const { return freq_; }
+  const std::vector<const CFGNode *> &nodes() const { return nodes_; }
+  const ChainMappingEntry &chain_mapping() const { return chain_mapping_; }
+  const std::vector<const CFGEdge *> &intra_chain_out_edges() const {
+    return intra_chain_out_edges_;
+  }
+  std::vector<const CFGEdge *> &mutable_intra_chain_out_edges() {
+    return intra_chain_out_edges_;
+  }
+
+  // Adjusts `chain_mapping` by setting the containing chain and
+  // applying the displacement specified by
+  // `chain_mapping_adjustment` to `chain_mapping_`.
+  void AdjustChainMappingEntry(ChainMappingEntry chain_mapping_adjustment) {
+    chain_mapping_.chain = chain_mapping_adjustment.chain;
+    chain_mapping_.chain_index += chain_mapping_adjustment.chain_index;
+    chain_mapping_.chain_offset += chain_mapping_adjustment.chain_offset;
+  }
+
+  void SetChainMappingEntry(ChainMappingEntry chain_mapping) {
+    chain_mapping_ = chain_mapping;
+  }
+
+  void SortIntraChainEdges(const NodeToBundleMapper &node_to_bundle_mapper);
+
+  // Iterates over all nodes in this bundle (in order) while calling `func` on
+  // each node.
+  void VisitEachNodeRef(absl::FunctionRef<void(const CFGNode &)> func) const {
+    for (const CFGNode *node : nodes_) func(*node);
+  }
+
+  // Merges the `other` CFGNodeBundle into `*this` by moving `other.nodes_`
+  // to the end of `this->nodes_`.
+  void MergeWith(CFGNodeBundle &other) {
+    absl::c_move(std::move(other.nodes_), std::back_inserter(nodes_));
+    size_ += other.size_;
+    freq_ += other.freq_;
+    absl::c_move(std::move(other.intra_chain_out_edges_),
+                 std::back_inserter(intra_chain_out_edges_));
+  }
+
+ private:
   // All the CFG nodes in this bundle.
-  std::vector<CFGNode *> nodes_;
+  std::vector<const CFGNode *> nodes_;
 
-  // Containing chain for this bundle.
-  NodeChain *chain_;
-
-  // Index of the bundle in the chain.
-  int chain_index_;
-
-  // Offset at which this bundle is located in its containing chain.
-  int64_t chain_offset_;
+  ChainMappingEntry chain_mapping_;
 
   // Total binary size of this bundle.
-  uint64_t size_;
+  int size_;
 
   // Total execution frequency of this bundle.
-  int64_t freq_;
+  int freq_;
 
   // Edges from this bundle to other bundles of `chain_`. Ordered in increasing
   // order of the sink bundle's `chain_index_`. This ordering should be enforced
@@ -66,156 +149,120 @@ class CFGNodeBundle {
   // intra-chain edges when the chain is split in a `NodeChainAssembly`.
   // Always initialized to empty since every chain is initialized as a single
   // bundle.
-  std::vector<CFGEdge *> intra_chain_out_edges_ = {};
-
-  // Constructor for building a bundle for a single CFG node and mapping it back
-  // to its containing `chain`. `chain` must outlive the created CFGNodeBundle.
-  CFGNodeBundle(CFGNode *n, NodeChain &chain, int chain_index,
-                int64_t chain_offset)
-      : nodes_(1, n),
-        chain_(&chain),
-        chain_index_(chain_index),
-        chain_offset_(chain_offset),
-        size_(n->size()),
-        freq_(n->freq()) {
-    n->set_bundle(this);
-    n->set_bundle_offset(0);
-  }
-
-  // Constructor for building a bundle for a list of CFG nodes and mapping it
-  // back to its containing `chain`. `chain` must outlive the created
-  // `CFGNodeBundle`.
-  explicit CFGNodeBundle(std::vector<CFGNode *> nodes, NodeChain &chain,
-                int chain_index, int64_t chain_offset)
-      : nodes_(std::move(nodes)),
-        chain_(&chain),
-        chain_index_(chain_index),
-        chain_offset_(chain_offset),
-        size_(0),
-        freq_(0) {
-    for (CFGNode *n : nodes_) {
-      n->set_bundle(this);
-      n->set_bundle_offset(size_);
-      size_ += n->size_;
-      freq_ += n->freq_;
-    }
-  }
-
-  // Iterates over all nodes in this bundle (in order) while calling `func` on
-  // each node.
-  void VisitEachNodeRef(absl::FunctionRef<void(const CFGNode &)> func) const {
-    for (CFGNode *node : nodes_)
-      func(*node);
-  }
-
-  // Merges the `other` CFGNodeBundle into `*this` by moving `other.nodes_`
-  // to the end of `this->nodes_`.
-  void MergeWith(CFGNodeBundle other) {
-    for (CFGNode *node : other.nodes_) {
-      node->bundle_ = this;
-      node->bundle_offset_ += size_;
-    }
-    absl::c_move(std::move(other.nodes_), std::back_inserter(nodes_));
-    size_ += other.size_;
-    freq_ += other.freq_;
-    absl::c_move(std::move(other.intra_chain_out_edges_),
-                 std::back_inserter(intra_chain_out_edges_));
-  }
+  std::vector<const CFGEdge *> intra_chain_out_edges_ = {};
 };
 
 // Represents a chain of nodes (basic blocks).
 class NodeChain {
-  // TODO(b/160191690): Make classes' data members private and add accessors.
  public:
-  // Representative node for the chain.
-  CFGNode *delegate_node_;
+  // Enum class to describe how to bundle the nodes in a chain.
+  enum class BundleMode { kBundleAllNodesTogether, kBundleEachSingleNode };
 
-  // ControlFlowGraph of the nodes in this chain (This will be null if the nodes
-  // come from more than one cfg).
-  ControlFlowGraph *cfg_;
-
-  // Ordered list of the bundles of the chain.
-  std::vector<std::unique_ptr<CFGNodeBundle>> node_bundles_;
-  // Total binary size of the chain.
-  uint64_t size_;
-  // Total execution frequency of the chain.
-  int64_t freq_;
-  // Total score for this chain.
-  int64_t score_ = 0;
-
-  struct RefComparator {
-    bool operator()(const NodeChain &nc1, const NodeChain &nc2) const {
-      return nc1.id() < nc2.id();
+  // Constructor for building a chain from a vector of nodes and with bundling
+  // mode specified by `bundle_mode`. If `bundle_mode ==
+  // BundleMode::kBundleAllNodesTogether` nodes will be placed in one
+  // `CFGNodeBundle`. Otherwise (when `bundle_mode ==
+  // BundleMode::kBundleEachSingleNode`) each node is placed in its own
+  // `CFGNodeBundle`.
+  NodeChain(std::vector<const CFGNode *> nodes, BundleMode bundle_mode)
+      : id_(nodes.front()->inter_cfg_id()),
+        function_index_(nodes.front()->function_index()) {
+    switch (bundle_mode) {
+      case BundleMode::kBundleAllNodesTogether:
+        node_bundles_.push_back(
+            std::make_unique<CFGNodeBundle>(std::move(nodes), *this, 0, 0));
+        size_ = node_bundles_.front()->size();
+        freq_ = node_bundles_.front()->freq();
+        return;
+      case BundleMode::kBundleEachSingleNode:
+        int chain_index = 0;
+        int chain_offset = 0;
+        freq_ = 0;
+        for (const CFGNode *node : nodes) {
+          node_bundles_.push_back(std::make_unique<CFGNodeBundle>(
+              node, *this, chain_index++, chain_offset));
+          chain_offset += node->size();
+          freq_ += node->CalculateFrequency();
+        }
+        size_ = chain_offset;
+        return;
     }
-  };
+  }
 
-  struct PtrComparator {
-    bool operator()(const NodeChain *nc1, const NodeChain *nc2) const {
-      return RefComparator()(*nc1, *nc2);
-    }
-  };
+  // NodeChain is a moveable-only object.
+  NodeChain(const NodeChain &other) = delete;
+  NodeChain &operator=(const NodeChain &other) = delete;
+  NodeChain(NodeChain &&other) = default;
+  NodeChain &operator=(NodeChain &&other) = default;
 
-  // Each map key is a NodeChain which has (at least) one CFGNode that is
-  // the sink node of an edge in `inter_outs_` or `intra_outs_` of CFGNodes in
-  // "this" NodeChain. The corresponding map value is the collection of CFGEdges
-  // which have have a sink node equal to one of the CFGNodes of the
-  // corresponding map key. Note, we use "NodeChain::PtrComparator" to make sure
-  // the iterating order is deterministic. Note, intra-chain edges won't be
-  // inserted in this map, i.e., this map cannot have "this" NodeChain as a key.
-  std::map<NodeChain *, std::vector<CFGEdge *>, NodeChain::PtrComparator>
-      inter_chain_out_edges_;
-
-  // Chains which have outgoing edges to `*this`. We use
-  // `NodeChain::PtrComparator` to make sure the iterating order is
-  // deterministic.
-  absl::btree_set<NodeChain *, NodeChain::PtrComparator> inter_chain_in_edges_;
-
-  uint64_t id() const { return delegate_node_->symbol_ordinal(); }
+  const CFGNode::InterCfgId &id() const { return id_; }
+  std::optional<int> function_index() const { return function_index_; }
+  double score() const { return score_; }
+  int size() const { return size_; }
+  int freq() const { return freq_; }
+  std::vector<std::unique_ptr<CFGNodeBundle>> &mutable_node_bundles() {
+    return node_bundles_;
+  }
+  const std::vector<std::unique_ptr<CFGNodeBundle>> &node_bundles() const {
+    return node_bundles_;
+  }
+  absl::flat_hash_map<NodeChain *, std::vector<const CFGEdge *>> &
+  mutable_inter_chain_out_edges() {
+    return inter_chain_out_edges_;
+  }
+  absl::flat_hash_set<NodeChain *> &mutable_inter_chain_in_edges() {
+    return inter_chain_in_edges_;
+  }
+  const absl::flat_hash_map<NodeChain *, std::vector<const CFGEdge *>> &
+  inter_chain_out_edges() const {
+    return inter_chain_out_edges_;
+  }
+  const absl::flat_hash_set<NodeChain *> &inter_chain_in_edges() const {
+    return inter_chain_in_edges_;
+  }
 
   // Gives the execution density for this chain.
   double exec_density() const {
-    return (static_cast<double>(freq_)) /
-           std::max(size_, static_cast<uint64_t>(1));
+    return (static_cast<double>(freq_)) / std::max(size_, 1);
   }
 
-  CFGNode *GetLastNode() const {
-    return node_bundles_.back()->nodes_.back();
+  // Calculates the total score of this chain based on `scorer`. This function
+  // aggregates the score of all edges whose src and sink belong to this chain.
+  double ComputeScore(const NodeToBundleMapper &bundle_mapper,
+                      const PropellerCodeLayoutScorer &scorer) const;
+
+  void SetScore(double score) { score_ = score; }
+
+  const CFGNode *GetLastNode() const {
+    return node_bundles_.back()->nodes().back();
   }
 
-  CFGNode *GetFirstNode() const {
-    return node_bundles_.front()->nodes_.front();
-  }
-
-  // Constructor for building a chain from a vector of nodes, all placed in one
-  // bundle.
-  explicit NodeChain(std::vector<CFGNode *> nodes) {
-    delegate_node_ = nodes.front();
-    node_bundles_.push_back(
-        std::make_unique<CFGNodeBundle>(std::move(nodes), *this, 0, 0));
-    cfg_ = delegate_node_->cfg();
-    size_ = node_bundles_.front()->size_;
-    freq_ = node_bundles_.front()->freq_;
+  const CFGNode *GetFirstNode() const {
+    return node_bundles_.front()->nodes().front();
   }
 
   // Merges `inter_chain_out_edges_`, `inter_chain_in_edges`, and
   // `CFGNodeBundle::intra_chain_out_edges_` of the chain `other` into `*this`.
-  void MergeChainEdges(NodeChain &other);
+  void MergeChainEdges(NodeChain &other,
+                       const NodeToBundleMapper &node_to_bundle_mapper);
 
   // This moves the bundles from another chain into this chain and updates the
   // bundle and chain fields accordingly. After this is called, the 'other'
   // chain becomes empty.
   void MergeWith(NodeChain &other) {
     for (auto &bundle : other.node_bundles_) {
-      bundle->chain_ = this;
-      bundle->chain_offset_ += size_;
-      bundle->chain_index_ += node_bundles_.size();
+      bundle->AdjustChainMappingEntry(
+          {.chain = this,
+           .chain_index = static_cast<int>(node_bundles_.size()),
+           .chain_offset = size_});
     }
     std::move(other.node_bundles_.begin(), other.node_bundles_.end(),
               std::back_inserter(node_bundles_));
     size_ += other.size_;
     freq_ += other.freq_;
-    // Nullify cfg_ if the other chain's nodes come from a different CFG.
-    if (cfg_ && cfg_ != other.cfg_) cfg_ = nullptr;
+    // Nullify function_index_ if the other chain's nodes come from a different
+    // CFG.
+    if (function_index_ != other.function_index_) function_index_.reset();
   }
 
   // Given a NodeChainAssembly `assembly`, merges `assembly.unsplit_chain()`
@@ -223,8 +270,8 @@ class NodeChain {
   // `assembly`.
   // Note, requires `this == &assembly.split_chain()`.
   void MergeWith(NodeChainAssembly assembly,
+                 NodeToBundleMapper &node_to_bundle_mapper,
                  const PropellerCodeLayoutScorer &scorer);
-
   // Visit each candidate chain of this chain. This includes all the chains
   // that this chain has edges to or from, excluding itself.
   void VisitEachCandidateChain(absl::FunctionRef<void(NodeChain *)> func) {
@@ -247,33 +294,127 @@ class NodeChain {
 
   // Sorts `intra_chain_out_edges_` of every bundle in the chain. This should be
   // called every time `intra_chain_out_edges_` is modified.
-  void SortIntraChainEdges() {
-    for (std::unique_ptr<CFGNodeBundle> &bundle : node_bundles_) {
-      // Sort edges based on the position of the sink node's bundle in the
-      // chain.
-      absl::c_sort(bundle->intra_chain_out_edges_, [](const CFGEdge *e1,
-                                                      const CFGEdge *e2) {
-        return std::forward_as_tuple(e1->sink()->bundle()->chain_index_,
-                                     e1->src()->symbol_ordinal()) <
-               std::forward_as_tuple(e2->sink()->bundle()->chain_index_,
-                                     e2->src()->symbol_ordinal());
-      });
-    }
-  }
+  void SortIntraChainEdges(const NodeToBundleMapper &node_to_bundle_mapper);
 
   // Removes intra-bundle edges and updates `score_`.
   // After bundles are merged together, their `intra_chain_out_edges_` may
   // include intra-bundle edges. This function removes them while also deducting
   // their contribution to `score_` since intra-bundle edges should not
   // contribute to the chain's `score_`.
-  void RemoveIntraBundleEdges(const PropellerCodeLayoutScorer &scorer);
+  void RemoveIntraBundleEdges(
+      const NodeToBundleMapper &bundle_mapper,
+      const PropellerCodeLayoutScorer &code_layout_scorer);
+
+ private:
+  CFGNode::InterCfgId id_;
+  // function_index of CFG corresponding to the nodes in this chain (or
+  // std::nullopt if nodes are from different CFGs).
+  std::optional<int> function_index_;
+
+  // Ordered list of the bundles of the chain.
+  std::vector<std::unique_ptr<CFGNodeBundle>> node_bundles_;
+  // Total binary size of the chain.
+  int size_;
+  // Total execution frequency of the chain.
+  int freq_;
+  // Total score for this chain.
+  double score_ = 0;
+
+  // Each map key is a NodeChain which has (at least) one CFGNode that is
+  // the sink node of an edge in `inter_outs_` or `intra_outs_` of CFGNodes in
+  // "this" NodeChain. The corresponding map value is the collection of CFGEdges
+  // which have have a sink node equal to one of the CFGNodes of the
+  // corresponding map key. Note that intra-chain edges won't be
+  // inserted in this map, i.e., this map cannot have "this" NodeChain as a key.
+  absl::flat_hash_map<NodeChain *, std::vector<const CFGEdge *>>
+      inter_chain_out_edges_;
+
+  // Chains which have outgoing edges to `*this`.
+  absl::flat_hash_set<NodeChain *> inter_chain_in_edges_;
 };
 
-// Gets the chain containing a given node.
-NodeChain &GetNodeChain(const CFGNode *n);
+// Maps `CFGNode`s to their associated bundles during the chain building
+// process.
+class NodeToBundleMapper {
+ public:
+  // This struct contains information about the position of a `CFGNode`
+  // within its containing `CFGNodebundle`.
+  struct BundleMappingEntry {
+    // Containing `CFGNodeBundle`.
+    CFGNodeBundle *bundle = nullptr;
+    // Binary offset within `bundle`.
+    int bundle_offset = 0;
 
-// Gets the offset of a node in its containing chain.
-int64_t GetNodeOffset(const CFGNode *n);
+    // Returns the offset of the node in its containing chain.
+    int GetNodeOffset() const {
+      return bundle->chain_mapping().chain_offset + bundle_offset;
+    }
+  };
+
+  // Creates and returns a `NodeToBundleMapper` for mapping nodes of CFGs in
+  // `cfgs`.
+  static std::unique_ptr<NodeToBundleMapper> CreateNodeToBundleMapper(
+      const std::vector<const ControlFlowGraph *> &cfgs);
+
+  virtual ~NodeToBundleMapper() = default;
+
+  // NodeToBundleMapper is non-copyable and non-movable.
+  NodeToBundleMapper(const NodeToBundleMapper &) = delete;
+  NodeToBundleMapper &operator=(const NodeToBundleMapper &) = delete;
+  NodeToBundleMapper(NodeToBundleMapper &&) = delete;
+  NodeToBundleMapper &operator=(NodeToBundleMapper &&) = delete;
+
+  // Implementation of this function must return the index associated with
+  // `node` in `node_bundle_mapping_`.
+  virtual int GetNodeIndex(const CFGNode *node) const = 0;
+
+  const BundleMappingEntry &GetBundleMappingEntry(int node_index) const {
+    return node_bundle_mapping_[node_index];
+  }
+
+  const BundleMappingEntry &GetBundleMappingEntry(const CFGNode *node) const {
+    return GetBundleMappingEntry(GetNodeIndex(node));
+  }
+
+  // Returns the offset of node associated with `node_index` in its chain.
+  int GetNodeOffset(int node_index) const {
+    return GetBundleMappingEntry(node_index).GetNodeOffset();
+  }
+
+  // Returns the offset of CFGNode `node` in its containing chain.
+  int GetNodeOffset(CFGNode *node) const {
+    return GetNodeOffset(GetNodeIndex(node));
+  }
+
+  // Sets the BundleMappingEntry associated with `node` equal to
+  // `bundle_mapping`.
+  void SetBundleMappingEntry(const CFGNode *node,
+                             BundleMappingEntry bundle_mapping) {
+    int node_index = GetNodeIndex(node);
+    node_bundle_mapping_[node_index] = std::move(bundle_mapping);
+  }
+
+  // Adjusts the BundleMappingEntry associated with `node` according to
+  // `bundle_mapping`, where its bundle_offset is incremented by
+  // `bundle_mapping.bundle_offset`.
+  void AdjustBundleMappingEntry(const CFGNode *node,
+                                const BundleMappingEntry &bundle_mapping) {
+    int node_index = GetNodeIndex(node);
+    auto &current_bundle_mapping = node_bundle_mapping_[node_index];
+    current_bundle_mapping.bundle = bundle_mapping.bundle;
+    current_bundle_mapping.bundle_offset += bundle_mapping.bundle_offset;
+  }
+
+ protected:
+  explicit NodeToBundleMapper(int index_range)
+      : node_bundle_mapping_(index_range) {}
+
+ private:
+  // Stores the `BundleMappingEntry` object associated with each node.
+  // For each CFGNode `node`, the information must be in
+  // `node_bundle_mapping_[GetNodeIndex(node)]`.
+  std::vector<BundleMappingEntry> node_bundle_mapping_;
+};
 }  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_LLVM_PROPELLER_NODE_CHAIN_H_

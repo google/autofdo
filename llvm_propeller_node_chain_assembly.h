@@ -8,11 +8,11 @@
 #include <vector>
 
 #include "llvm_propeller_cfg.h"
+#include "llvm_propeller_chain_merge_order.h"
 #include "llvm_propeller_code_layout_scorer.h"
 #include "llvm_propeller_node_chain.h"
 #include "third_party/abseil/absl/functional/function_ref.h"
 #include "third_party/abseil/absl/status/statusor.h"
-#include "third_party/abseil/absl/strings/string_view.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -45,12 +45,10 @@ class NodeChainSlice {
   // Additionally, any changes to the bundles of the chain would invalidate the
   // slice.
   explicit NodeChainSlice(NodeChain &chain, int begin, int end)
-      : chain_(&chain),
-        begin_index_(begin),
-        end_index_(end) {
+      : chain_(&chain), begin_index_(begin), end_index_(end) {
     CHECK_LE(begin, end);
-    CHECK_LE(begin, chain.node_bundles_.size());
-    CHECK_LE(end, chain.node_bundles_.size());
+    CHECK_LE(begin, chain.node_bundles().size());
+    CHECK_LE(end, chain.node_bundles().size());
   }
 
   // Constructor for building a chain slice from a node chain containing all
@@ -58,34 +56,37 @@ class NodeChainSlice {
   explicit NodeChainSlice(NodeChain &chain)
       : chain_(&chain),
         begin_index_(0),
-        end_index_(chain.node_bundles_.size()) {}
+        end_index_(chain.node_bundles().size()) {}
 
   // NodeChainSlice is copyable.
-  NodeChainSlice(const NodeChainSlice&) = default;
-  NodeChainSlice& operator=(const NodeChainSlice&) = default;
-  NodeChainSlice(NodeChainSlice&&) = default;
-  NodeChainSlice& operator=(NodeChainSlice&&) = default;
+  NodeChainSlice(const NodeChainSlice &) = default;
+  NodeChainSlice &operator=(const NodeChainSlice &) = default;
+  NodeChainSlice(NodeChainSlice &&) = default;
+  NodeChainSlice &operator=(NodeChainSlice &&) = default;
 
   NodeChain &chain() const { return *chain_; }
   // Iterator to the beginning of the slice.
   std::vector<std::unique_ptr<CFGNodeBundle>>::iterator begin_pos() const {
-    return chain_->node_bundles_.begin() + begin_index_;
+    return chain_->mutable_node_bundles().begin() + begin_index_;
   }
 
   // Iterator to the end of the slice.
   std::vector<std::unique_ptr<CFGNodeBundle>>::iterator end_pos() const {
-    return chain_->node_bundles_.begin() + end_index_;
+    return chain_->mutable_node_bundles().begin() + end_index_;
   }
 
   // The binary-size offsets corresponding to the two end-points of the slice.
-  int64_t begin_offset() const { return (*begin_pos())->chain_offset_; }
-  int64_t end_offset() const {
-    return end_index_ == chain_->node_bundles_.size() ? chain_->size_
-                                                 : (*end_pos())->chain_offset_;
+  int begin_offset() const {
+    return (*begin_pos())->chain_mapping().chain_offset;
+  }
+  int end_offset() const {
+    return end_index_ == chain_->node_bundles().size()
+               ? chain_->size()
+               : (*end_pos())->chain_mapping().chain_offset;
   }
 
   // (Binary) size of this slice
-  int64_t size() const { return end_offset() - begin_offset(); }
+  int size() const { return end_offset() - begin_offset(); }
 
   bool empty() const { return begin_index_ == end_index_; }
 
@@ -98,19 +99,6 @@ class NodeChainSlice {
   // included index.
   int begin_index_, end_index_;
 };
-
-// This enum represents different merge orders for two chains S and U.
-// S1 and S2 are the slices of the S chain when it is split. S2US1 is ignored
-// since it is rarely beneficial.
-enum class MergeOrder {
-  kSU,
-  kS2S1U,
-  kS1US2,
-  kUS2S1,
-  kS2US1,
-};
-
-absl::string_view GetMergeOrderName(MergeOrder merge_order);
 
 // This class abstracts the strategy for assembling two chains together with one
 // of the chains potentially being split into two chains. This strategy is
@@ -127,7 +115,7 @@ class NodeChainAssembly {
   // `NodeChainAssembly::BuildNodeChainAssembly`.
   struct NodeChainAssemblyBuildingOptions {
     // The merge order for concatenating the three/two resulting chain slices.
-    MergeOrder merge_order = MergeOrder::kSU;
+    ChainMergeOrder merge_order = ChainMergeOrder::kSU;
     // The split position in the split_chain (if split_chain must be split).
     std::optional<int> slice_pos = std::nullopt;
     // Whether `NodeChainAssembly::BuildNodeChainAssembly` should return error
@@ -153,16 +141,17 @@ class NodeChainAssembly {
   // 3- The constructed assembly has a negative score gain or it has zero
   //    score gain and `options.error_on_zero_score_gain == true`.
   static absl::StatusOr<NodeChainAssembly> BuildNodeChainAssembly(
+      const NodeToBundleMapper &bundle_mapper,
       const PropellerCodeLayoutScorer &scorer, NodeChain &split_chain,
       NodeChain &unsplit_chain, NodeChainAssemblyBuildingOptions options);
 
   // NodeChainAssembly is copyable and moveable.
-  NodeChainAssembly(const NodeChainAssembly&) = default;
-  NodeChainAssembly& operator=(const NodeChainAssembly&) = default;
-  NodeChainAssembly(NodeChainAssembly&&) = default;
-  NodeChainAssembly& operator=(NodeChainAssembly&&) = default;
+  NodeChainAssembly(const NodeChainAssembly &) = default;
+  NodeChainAssembly &operator=(const NodeChainAssembly &) = default;
+  NodeChainAssembly(NodeChainAssembly &&) = default;
+  NodeChainAssembly &operator=(NodeChainAssembly &&) = default;
 
-  MergeOrder merge_order() const { return merge_order_; }
+  ChainMergeOrder merge_order() const { return merge_order_; }
 
   std::optional<int> slice_pos() const { return slice_pos_; }
 
@@ -170,12 +159,12 @@ class NodeChainAssembly {
   NodeChain &split_chain() const { return *chain_pair_.split_chain; }
   NodeChain &unsplit_chain() const { return *chain_pair_.unsplit_chain; }
 
-  const std::vector<NodeChainSlice>& slices() const { return slices_; }
+  const std::vector<NodeChainSlice> &slices() const { return slices_; }
 
   // Returns whether this assembly actually splits the split_chain.
-  bool splits() const { return merge_order_ != MergeOrder::kSU; }
+  bool splits() const { return merge_order_ != ChainMergeOrder::kSU; }
 
-  int64_t score_gain() const { return score_gain_; }
+  double score_gain() const { return score_gain_; }
 
   // Iterates over all node bundles in the resulting assembled chain while
   // applying a given function to every node bundle.
@@ -195,39 +184,42 @@ class NodeChainAssembly {
   }
 
   // Gets the first node in the resulting assembled chain.
-  CFGNode *GetFirstNode() const {
-    return (*slices_.front().begin_pos())->nodes_.front();
+  const CFGNode *GetFirstNode() const {
+    return (*slices_.front().begin_pos())->nodes().front();
   }
 
   // Finds the NodeChainSlice in this NodeChainAssembly which contains the given
   // node. If the node is not contained in this NodeChainAssembly, then return
   // a std::nullopt. Otherwise, return the corresponding index for the slice.
-  std::optional<int> FindSliceIndex(const CFGNode *node) const;
+  std::optional<int> FindSliceIndex(
+      const CFGNode *node,
+      const NodeToBundleMapper::BundleMappingEntry &bundle_mapping) const;
 
  private:
-  explicit NodeChainAssembly(const PropellerCodeLayoutScorer &scorer,
+  explicit NodeChainAssembly(const NodeToBundleMapper &bundle_mapper,
+                             const PropellerCodeLayoutScorer &scorer,
                              NodeChain &split_chain, NodeChain &unsplit_chain,
-                             MergeOrder merge_order,
+                             ChainMergeOrder merge_order,
                              std::optional<int> slice_pos)
       : chain_pair_{.split_chain = &split_chain,
                     .unsplit_chain = &unsplit_chain},
         merge_order_(merge_order),
         slice_pos_(slice_pos),
         slices_(ConstructSlices()),
-        score_gain_(ComputeScoreGain(scorer)) {}
+        score_gain_(ComputeScoreGain(bundle_mapper, scorer)) {}
 
   // Index of the unsplit_chain in the slices_ vector.
   int unsplit_chain_slice_index() const {
     switch (merge_order_) {
-      case MergeOrder::kSU:
+      case ChainMergeOrder::kSU:
         return 1;
-      case MergeOrder::kS2S1U:
+      case ChainMergeOrder::kS2S1U:
         return 2;
-      case MergeOrder::kS1US2:
+      case ChainMergeOrder::kS1US2:
         return 1;
-      case MergeOrder::kUS2S1:
+      case ChainMergeOrder::kUS2S1:
         return 0;
-      case MergeOrder::kS2US1:
+      case ChainMergeOrder::kS2US1:
         return 1;
     }
     LOG(FATAL) << "Invalid merge order.";
@@ -236,20 +228,19 @@ class NodeChainAssembly {
   // Indices of the split_chain slices in the slices_ vector.
   std::vector<int> split_chain_slice_indexes() const {
     switch (merge_order_) {
-      case MergeOrder::kSU:
+      case ChainMergeOrder::kSU:
         return {0};
-      case MergeOrder::kS2S1U:
+      case ChainMergeOrder::kS2S1U:
         return {1, 0};
-      case MergeOrder::kS1US2:
+      case ChainMergeOrder::kS1US2:
         return {0, 2};
-      case MergeOrder::kUS2S1:
+      case ChainMergeOrder::kUS2S1:
         return {2, 1};
-      case MergeOrder::kS2US1:
+      case ChainMergeOrder::kS2US1:
         return {0, 2};
     }
     LOG(FATAL) << "Invalid merge_order";
   }
-
 
   // Constructs and returns the node chain slices that are characterized by the
   // specified slice position and merge order.
@@ -257,13 +248,15 @@ class NodeChainAssembly {
 
   // Returns the gain in Ext-TSP score if this assembly is applied. May return 0
   // if the actual score gain is negative.
-  int64_t ComputeScoreGain(const PropellerCodeLayoutScorer &scorer) const;
+  double ComputeScoreGain(const NodeToBundleMapper &bundle_mapper,
+                          const PropellerCodeLayoutScorer &scorer) const;
 
   // Returns the total score contribution of edges running from `from_chain` to
   // `to_chain` for this assembly.
-  int64_t ComputeInterChainScore(const PropellerCodeLayoutScorer &scorer,
-                                 NodeChain &from_chain,
-                                 NodeChain &to_chain) const;
+  double ComputeInterChainScore(const NodeToBundleMapper &bundle_mapper,
+                                const PropellerCodeLayoutScorer &scorer,
+                                const NodeChain &from_chain,
+                                const NodeChain &to_chain) const;
 
   // Returns the total score gain from `split_chain()`'s intra-chain edges for
   // this assembly. This is more efficient than calling
@@ -271,18 +264,20 @@ class NodeChainAssembly {
   // delta in score from edges which run between different slices of
   // `split_chain()` (i.e., their source-to-sink distance has changed by
   // splitting).
-  int64_t ComputeSplitChainScoreGain(
+  double ComputeSplitChainScoreGain(
+      const NodeToBundleMapper &bundle_mapper,
       const PropellerCodeLayoutScorer &scorer) const;
 
   // Returns the score contribution of a single edge for this assembly.
-  int64_t ComputeEdgeScore(const PropellerCodeLayoutScorer &scorer,
-                            const CFGEdge &edge) const;
+  double ComputeEdgeScore(const NodeToBundleMapper &bundle_mapper,
+                          const PropellerCodeLayoutScorer &scorer,
+                          const CFGEdge &edge) const;
 
   // The two chains in the assembly.
   NodeChainPair chain_pair_;
 
   // The merge order of the slices
-  MergeOrder merge_order_;
+  ChainMergeOrder merge_order_;
 
   // The splitting position in split_chain; split_chain is split into
   // s1[0, slice_pos_ - 1] and s2[slice_pos_, split_chain.size()-1]
@@ -298,7 +293,7 @@ class NodeChainAssembly {
   // [assembled_chain]->score - split_chain->score - unsplit_chain->score".
   // This value is computed by calling ComputeScoreGain upon construction and is
   // cached here for efficiency.
-  int64_t score_gain_;
+  double score_gain_;
 };
 }  // namespace devtools_crosstool_autofdo
 

@@ -1,0 +1,27 @@
+#section .text
+!this_is_very_code
+#ext-tsp score: [intra: 0.000000 -> 0.000000] [inter: 0.000000 -> 0.000000]
+#entry-freq 1
+!!0
+#cfg-prof 0:1
+!compute_flag
+#ext-tsp score: [intra: 6623481.570312 -> 8331372.579044] [inter: 0.000000 -> 0.000000]
+#entry-freq 660951
+!!0 2 3 1
+#cfg-prof 0:660951 2:399491 1:209568
+#cfg-prof 1:216625 3:216625
+#cfg-prof 2:399491 3:391962
+#cfg-prof 3:621619
+!main
+#ext-tsp score: [intra: 18135856.959720 -> 27862902.978596] [inter: 506405.558824 -> 615769.724609]
+#entry-freq 1
+!!0 3 4 6 7 1 2 5
+#cfg-prof 0:1 1:1
+#cfg-prof 1:646312 2:642381
+#cfg-prof 2:660951 4:415979 3:191807
+#cfg-prof 3:191807 4:191807
+#cfg-prof 4:622992 6:619100 5:3892
+#cfg-prof 5:3892 6:3892
+#cfg-prof 6:634928 7:634928
+#cfg-prof 7:646311 1:646311
+#cfg-prof 8:0

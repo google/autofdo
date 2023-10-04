@@ -1,5 +1,6 @@
 #include "status_consumer_registry.h"
 
+#include <memory>
 #include <utility>
 
 #include "status_provider.h"

@@ -1,17 +1,18 @@
-#include "llvm_propeller_abstract_whole_program_info.h"
-#include "llvm_propeller_protobuf.h"
-#include "third_party/abseil/absl/flags/flag.h"
-#include "third_party/abseil/absl/flags/parse.h"
-#include "third_party/abseil/absl/flags/usage.h"
 #if defined(HAVE_LLVM)
 
 #include <memory>
+#include <utility>
 
 #include "base/commandlineflags.h"
 #include "base/logging.h"
 #include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_options_builder.h"
-#include "llvm_propeller_whole_program_info.h"
+#include "llvm_propeller_profile_computer.h"
+#include "llvm_propeller_program_cfg.h"
+#include "llvm_propeller_program_cfg_proto_builder.h"
+#include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/log/check.h"
+#include "third_party/abseil/absl/status/statusor.h"
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
 
@@ -27,11 +28,11 @@ DEFINE_bool(ignore_build_id, false,
             "Ignore build id, use file name to match data in perfdata file. "
             "Same as the option in create_llvm_prof.");
 
-using ::devtools_crosstool_autofdo::CfgCreationMode;
+using ::devtools_crosstool_autofdo::ProgramCfg;
+using ::devtools_crosstool_autofdo::ProgramCfgProtoBuilder;
 using ::devtools_crosstool_autofdo::PropellerOptions;
 using ::devtools_crosstool_autofdo::PropellerOptionsBuilder;
-using ::devtools_crosstool_autofdo::PropellerWholeProgramInfo;
-using ::devtools_crosstool_autofdo::PropProt;
+using ::devtools_crosstool_autofdo::PropellerProfileComputer;
 
 // This binary is used to generate text protobuf format files for use as
 // testdata for codelayout tests. Example usage:
@@ -54,24 +55,28 @@ int main(int argc, char **argv) {
           .SetBinaryName(absl::GetFlag(FLAGS_binary))
           .AddPerfNames(absl::GetFlag(FLAGS_profile))
           .SetProfiledBinaryName(absl::GetFlag(FLAGS_profiled_binary_name))
-          .SetIgnoreBuildId(absl::GetFlag(FLAGS_ignore_build_id))
-          .SetKeepFrontendIntermediateData(true));
+          .SetIgnoreBuildId(absl::GetFlag(FLAGS_ignore_build_id)));
 
-  std::unique_ptr<PropellerWholeProgramInfo> whole_program_info =
-      PropellerWholeProgramInfo::Create(options);
+  absl::StatusOr<std::unique_ptr<PropellerProfileComputer>> profile_computer =
+      PropellerProfileComputer::Create(options);
+  CHECK_OK(profile_computer);
 
-  if (!whole_program_info->CreateCfgs(CfgCreationMode::kAllFunctions).ok()) {
+  absl::StatusOr<std::unique_ptr<ProgramCfg>> program_cfg =
+      (*profile_computer)->GetProgramCfg();
+  if (!program_cfg.ok()) {
     LOG(ERROR) << "Could not create cfs for whole program.";
     return 1;
   }
 
-  PropProt prop_prot;
-  if (!prop_prot.InitWriter(absl::GetFlag(FLAGS_propeller_protobuf_out))) {
+  ProgramCfgProtoBuilder program_cfg_proto_builder;
+  if (!program_cfg_proto_builder.InitWriter(
+          absl::GetFlag(FLAGS_propeller_protobuf_out))) {
     LOG(ERROR) << "Could not initialize protobuf writer.";
     return 1;
   }
-  prop_prot.AddCfgs(whole_program_info->cfgs());
-  if (!prop_prot.WriteAndClose()) {
+  program_cfg_proto_builder.AddCfgs(
+      std::move(**std::move(program_cfg)).release_cfgs_by_index());
+  if (!program_cfg_proto_builder.WriteAndClose()) {
     LOG(ERROR) << "Could not write testdata protobuf file.";
     return 1;
   }

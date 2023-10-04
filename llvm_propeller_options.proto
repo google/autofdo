@@ -2,8 +2,7 @@ syntax = "proto2";
 
 package devtools_crosstool_autofdo;
 
-
-// Next Available: 12.
+// Next Available: 13.
 message PropellerOptions {
   // binary file name.
   optional string binary_name = 1;
@@ -25,22 +24,25 @@ message PropellerOptions {
   // match MMAP events. Otherwise, use buildid (if exists) to match.
   optional bool ignore_build_id = 6;
 
-  // Internal options used by unittest to keep frontend data.
-  optional bool keep_frontend_intermediate_data = 7;
-
   // Parameters used to calculate the Extended TSP score for layout.
-  optional PropellerCodeLayoutParameters code_layout_params = 8;
+  optional PropellerCodeLayoutParameters code_layout_params = 7;
 
   // Include extra information such as per-function layout scores in the
   // propeller cluster file.
-  optional bool verbose_cluster_output = 9 [default = false];
+  optional bool verbose_cluster_output = 8 [default = false];
 
   // Directory path for dumping the (hot) cfgs in dot format. Dumping won't be
   // done if field is unset.
-  optional string cfg_dump_dir_name = 10;
+  optional string cfg_dump_dir_name = 9;
 
   // Start a http-server to handle /statusz.
-  optional bool http = 11 [default = false];
+  optional bool http = 10 [default = false];
+
+  // Output module name for function clusters.
+  optional bool output_module_name = 11 [default = false];
+
+  // Filter out functions not in .text sections
+  optional bool filter_non_text_functions = 12 [default = true];
 }
 
 // Next Available: 13.
@@ -51,11 +53,11 @@ message PropellerCodeLayoutParameters {
   optional uint32 forward_jump_distance = 4 [default = 1024];
   optional uint32 backward_jump_distance = 5 [default = 680];
   // Whether splitting will be done when merging chains.
-  optional bool chain_split = 6 [default = false];
+  optional bool chain_split = 6 [default = true];
   // Maximum chain size for which splitting is considered at every node bundle.
   optional uint32 chain_split_threshold = 7 [default = 0];
   // Whether to use the call chain clustering algorithm to reorder functions.
-  optional bool call_chain_clustering = 8 [default = false];
+  optional bool call_chain_clustering = 8 [default = true];
   // Maximum cluster size for call chain clustering (No further clustering is
   // done on a cluster when it exceeds this size).
   optional uint32 cluster_merge_size_threshold = 9 [default = 2097152];

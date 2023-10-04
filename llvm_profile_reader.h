@@ -3,10 +3,10 @@
 #ifndef AUTOFDO_LLVM_PROFILE_READER_H_
 #define AUTOFDO_LLVM_PROFILE_READER_H_
 
+#include <memory>
 #include <string>
 #include <utility>
 
-#include "base/commandlineflags.h"
 #include "base_profile_reader.h"
 #include "source_info.h"
 #include "third_party/abseil/absl/container/node_hash_set.h"

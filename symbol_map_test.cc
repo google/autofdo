@@ -6,15 +6,19 @@
 #include "symbol_map.h"
 
 #include <cstdint>
+#include <cstdlib>
+#include <ctime>
+#include <iostream>
+#include <optional>
+#include <string>
+#include <utility>
 
-#include "base/logging.h"
 #include "llvm_profile_reader.h"
 #include "source_info.h"
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "third_party/abseil/absl/container/node_hash_set.h"
 #include "third_party/abseil/absl/flags/flag.h"
-#include "third_party/abseil/absl/types/optional.h"
+#include "third_party/abseil/absl/log/log.h"
 
 #define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 
@@ -196,9 +200,9 @@ TEST(SymbolMapTest, TestInterestingSymbolNames) {
             pos_counts.begin()->second.target_map;
 
         auto get_count =
-            [&](std::string target_name) -> absl::optional<uint64> {
+            [&](std::string target_name) -> std::optional<uint64_t> {
           auto iter = target_counts.find(target_name);
-          if (iter == target_counts.end()) return absl::nullopt;
+          if (iter == target_counts.end()) return std::nullopt;
           return iter->second;
         };
 

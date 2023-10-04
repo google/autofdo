@@ -440,19 +440,36 @@ class ElfReaderImpl {
     return NULL;
   }
 
+  // Return SegmentInfo vector read from program header.
+  std::vector<ElfReader::SegmentInfo> GetSegmentInfo() const {
+    std::vector<ElfReader::SegmentInfo> si_vec;
+    for (int i = 0, num_phdr = GetNumProgramHeaders(); i < num_phdr; ++i) {
+      si_vec.emplace_back();
+      auto &info = si_vec.back();
+      const auto &phdr = program_headers_[i];
+      info.type = phdr.p_type;
+      info.flags = phdr.p_flags;
+      info.offset = phdr.p_offset;
+      info.vaddr = phdr.p_vaddr;
+      info.paddr = phdr.p_paddr;
+      info.filesz = phdr.p_filesz;
+      info.memsz = phdr.p_memsz;
+      info.align = phdr.p_align;
+    }
+    return si_vec;
+  }
+
   // p_vaddr of the first PT_LOAD segment (if any), or 0 if no PT_LOAD
   // segments are present. This is the address an ELF image was linked
   // (by static linker) to be loaded at. Usually (but not always) 0 for
   // shared libraries and position-independent executables.
-  uint64 VaddrOfFirstLoadSegment() const {
+  uint64_t VaddrOfFirstLoadSegment() const {
     // Relocatable objects (of type ET_REL) do not have LOAD segments.
     if (header_.e_type == ET_REL) {
       return 0;
     }
-    for (int i = 0; i < GetNumProgramHeaders(); ++i) {
-      if (program_headers_[i].p_type == PT_LOAD) {
-        return program_headers_[i].p_vaddr;
-      }
+    for (const auto &info : GetSegmentInfo()) {
+      if (info.type == PT_LOAD) return info.vaddr;
     }
     LOG(ERROR) << "Could not find LOAD from program header: " << path_;
     return 0;
@@ -477,7 +494,7 @@ class ElfReaderImpl {
   }
 
  private:
-  typedef vector<pair<uint64, const typename ElfArch::Sym *> > AddrToSymMap;
+  typedef std::vector<std::pair<uint64, const typename ElfArch::Sym *> > AddrToSymMap;
 
   static bool AddrToSymSorter(const typename AddrToSymMap::value_type& lhs,
                               const typename AddrToSymMap::value_type& rhs) {
@@ -660,7 +677,7 @@ class ElfReaderImpl {
   // An array of pointers to ElfSectionReaders. Sections are
   // mmaped as they're needed and not released until this object is
   // destroyed.
-  vector<ElfSectionReader<ElfArch>*> sections_;
+  std::vector<ElfSectionReader<ElfArch>*> sections_;
 
   // True if this is a .dwp file.
   bool is_dwp_;
@@ -777,6 +794,17 @@ int ElfReader::GetSectionIndexByType(uint32_t type, int start_index) {
   } else {
     LOG(ERROR) << "not an elf binary: " << path_;
     return -1;
+  }
+}
+
+std::vector<ElfReader::SegmentInfo> ElfReader::GetSegmentInfo() {
+  if (IsElf32File()) {
+    return GetImpl32()->GetSegmentInfo();
+  } else if (IsElf64File()) {
+    return GetImpl64()->GetSegmentInfo();
+  } else {
+    LOG(ERROR) << "not an elf binary: " << path_;
+    return {};
   }
 }
 

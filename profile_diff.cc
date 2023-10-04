@@ -1,16 +1,13 @@
 // Diff two .afdo files.
 
-#include <map>
+#include <cstdio>
 #include <string>
-#include <utility>
-#include <vector>
 
-#include "base/commandlineflags.h"
-#include "base/logging.h"
 #include "llvm_profile_reader.h"
 #include "symbol_map.h"
 #include "third_party/abseil/absl/container/node_hash_set.h"
 #include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/log/log.h"
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
 

@@ -14,27 +14,13 @@ class PropellerCodeLayoutScorer {
  public:
   explicit PropellerCodeLayoutScorer(
       const PropellerCodeLayoutParameters &params);
-
-  int64_t GetEdgeScore(const CFGEdge &edge, int64_t src_sink_distance) const;
-
+  double GetEdgeScore(const CFGEdge &edge, int src_sink_distance) const;
   const PropellerCodeLayoutParameters &code_layout_params() const {
     return code_layout_params_;
-  }
-  uint32_t scalled_fallthrough_weight() const {
-    return scaled_fallthrough_weight_;
-  }
-  uint32_t scaled_forward_jump_weight() const {
-    return scaled_forward_jump_weight_;
-  }
-  uint32_t scaled_backward_jump_weight() const {
-    return scaled_backward_jump_weight_;
   }
 
  private:
   const PropellerCodeLayoutParameters code_layout_params_;
-  const uint32_t scaled_fallthrough_weight_;
-  const uint32_t scaled_forward_jump_weight_;
-  const uint32_t scaled_backward_jump_weight_;
 };
 
 }  // namespace devtools_crosstool_autofdo

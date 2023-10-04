@@ -14,9 +14,9 @@
 
 #include "symbolize/dwarf3ranges.h"
 
-#include "base/logging.h"
 #include "symbolize/bytereader.h"
 #include "symbolize/bytereader-inl.h"
+#include "third_party/abseil/absl/log/log.h"
 
 namespace devtools_crosstool_autofdo {
 

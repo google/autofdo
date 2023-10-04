@@ -1,0 +1,8 @@
+!anycall
+!!0
+!othercall
+!!0 2
+!compute_flag
+!!0
+!main
+!!0 5 1 2 3

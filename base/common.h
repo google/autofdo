@@ -16,13 +16,11 @@
 #define BASE_COMMON_H_
 
 #include "base/basictypes.h"
-#include "base/logging.h"
+#include "third_party/abseil/absl/log/log.h"
+#include "third_party/abseil/absl/log/check.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <string>
 
-namespace std {}
-using namespace std;
-
-#endif  // BASE_PORT_H_
+#endif  // BASE_COMMON_H_

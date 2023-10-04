@@ -1,33 +1,27 @@
 // Merge the .afdo files.
 
-#include <map>
 #include <memory>
 #include <string>
-#include <utility>
-#include <vector>
 
-#include "base/commandlineflags.h"
-#include "base/logging.h"
 #include "gcov.h"
-#if defined(HAVE_LLVM)
 #include "llvm_profile_reader.h"
 #include "llvm_profile_writer.h"
-#endif
 #include "profile_reader.h"
 #include "profile_writer.h"
+#include "source_info.h"
 #include "symbol_map.h"
 #include "third_party/abseil/absl/base/macros.h"
 #include "third_party/abseil/absl/container/node_hash_set.h"
 #include "third_party/abseil/absl/flags/flag.h"
-#include "third_party/abseil/absl/memory/memory.h"
-#if defined(HAVE_LLVM)
+#include "third_party/abseil/absl/log/check.h"
+#include "third_party/abseil/absl/log/log.h"
 #include "llvm/Config/llvm-config.h"
-#endif
+#include "llvm/ProfileData/SampleProf.h"
+#include "llvm/ProfileData/SampleProfWriter.h"
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
 
 ABSL_FLAG(std::string, output_file, "fbdata.afdo", "Output file name");
-#if defined(HAVE_LLVM)
 ABSL_FLAG(bool, is_llvm, false, "Whether the profile is for LLVM");
 ABSL_FLAG(std::string, format, "binary",
           "LLVM profile format to emit. Possible values are 'text', "
@@ -69,7 +63,7 @@ ABSL_FLAG(std::string, strip_symbols_regex, "",
           "matching the regular expression in the merged profile. ");
 
 namespace {
-// Some sepcial symbols or symbol patterns we are going to handle.
+// Some special symbols or symbol patterns we are going to handle.
 // strip_all means for the set of symbols, we are going to strip their
 // copies from all the profiles during the merge.
 static const char* strip_all[] = {
@@ -131,18 +125,16 @@ bool verifyProperFlags(bool has_prof_sym_list) {
   return true;
 }
 }  // namespace
-#endif
 
 int main(int argc, char **argv) {
   absl::SetProgramUsageMessage(argv[0]);
-  std::vector<char*> positionalArguments = absl::ParseCommandLine(argc, argv);
+  absl::ParseCommandLine(argc, argv);
   devtools_crosstool_autofdo::SymbolMap symbol_map;
 
   if (argc < 2) {
     LOG(FATAL) << "Please at least specify an input profile";
   }
 
-#if defined(HAVE_LLVM)
   if (absl::GetFlag(FLAGS_include_symbol_list) &&
       absl::GetFlag(FLAGS_format) != "extbinary") {
     LOG(WARNING) << "--include_symbol_list is true, but symbol list is only "
@@ -157,16 +149,15 @@ int main(int argc, char **argv) {
   absl::node_hash_set<std::string> names;
 
   if (!absl::GetFlag(FLAGS_is_llvm)) {
-#endif
     using devtools_crosstool_autofdo::AutoFDOProfileReader;
     typedef std::unique_ptr<AutoFDOProfileReader> AutoFDOProfileReaderPtr;
     std::unique_ptr<AutoFDOProfileReaderPtr[]> readers(
-        new AutoFDOProfileReaderPtr[positionalArguments.size() - 1]);
+        new AutoFDOProfileReaderPtr[argc - 1]);
     // TODO(dehao): merge profile reader/writer into a single class
-    for (int i = 1; i < positionalArguments.size(); i++) {
+    for (int i = 1; i < argc; i++) {
       readers[i - 1] =
           std::make_unique<AutoFDOProfileReader>(&symbol_map, true);
-      readers[i - 1]->ReadFromFile(positionalArguments[i]);
+      readers[i - 1]->ReadFromFile(argv[i]);
     }
 
     symbol_map.CalculateThreshold();
@@ -175,14 +166,13 @@ int main(int argc, char **argv) {
     if (!writer.WriteToFile(absl::GetFlag(FLAGS_output_file))) {
       LOG(FATAL) << "Error writing to " << absl::GetFlag(FLAGS_output_file);
     }
-#if defined(HAVE_LLVM)
   } else {
     using devtools_crosstool_autofdo::LLVMProfileReader;
     using devtools_crosstool_autofdo::LLVMProfileWriter;
     typedef std::unique_ptr<LLVMProfileReader> LLVMProfileReaderPtr;
 
     std::unique_ptr<LLVMProfileReaderPtr[]> readers(
-        new LLVMProfileReaderPtr[positionalArguments.size() - 1]);
+        new LLVMProfileReaderPtr[argc - 1]);
     llvm::sampleprof::ProfileSymbolList prof_sym_list;
 
 #if LLVM_VERSION_MAJOR >= 12
@@ -190,11 +180,11 @@ int main(int argc, char **argv) {
     int numFSDProfiles = 0;
 #endif
 
-    for (int i = 1; i < positionalArguments.size(); i++) {
+    for (int i = 1; i < argc; i++) {
       auto reader = std::make_unique<LLVMProfileReader>(
           &symbol_map, names,
           absl::GetFlag(FLAGS_merge_special_syms) ? nullptr : &special_syms);
-      CHECK(reader->ReadFromFile(positionalArguments[i])) << "when reading " << positionalArguments[i];
+      CHECK(reader->ReadFromFile(argv[i])) << "when reading " << argv[i];
 
 #if LLVM_VERSION_MAJOR >= 12
       if (reader->ProfileIsFS()) {
@@ -280,6 +270,5 @@ int main(int argc, char **argv) {
       LOG(FATAL) << "Error writing to " << absl::GetFlag(FLAGS_output_file);
     }
   }
-#endif
   return 0;
 }

@@ -3,12 +3,13 @@
 
 #include <algorithm>
 #include <functional>
+#include <iterator>
 #include <numeric>
 #include <string>
 #include <vector>
 
 #include "symbol_map.h"
-#include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/log/log.h"
 #include "llvm/ProfileData/SampleProf.h"
 
 namespace devtools_crosstool_autofdo {
