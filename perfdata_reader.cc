@@ -7,6 +7,8 @@
 #include <utility>
 
 #include "llvm_propeller_perf_data_provider.h"
+#include "third_party/abseil/absl/log/check.h"
+#include "third_party/abseil/absl/log/log.h"
 #include "third_party/abseil/absl/status/status.h"
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "llvm/ADT/ArrayRef.h"

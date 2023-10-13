@@ -76,7 +76,7 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   bool binary_is_pie() const { return binary_perf_info_.binary_info.is_pie; }
 
   // Getters.
-  const string binary_build_id() const {
+  const std::string binary_build_id() const {
     return binary_perf_info_.binary_info.build_id;
   }
 

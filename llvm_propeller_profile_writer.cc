@@ -21,6 +21,7 @@
 #include "llvm_propeller_whole_program_info.h"
 #include "status_consumer_registry.h"
 #include "status_provider.h"
+#include "third_party/abseil/absl/log/log.h"
 #include "third_party/abseil/absl/memory/memory.h"
 #include "third_party/abseil/absl/status/status.h"
 #include "third_party/abseil/absl/strings/str_cat.h"

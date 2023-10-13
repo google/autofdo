@@ -585,7 +585,7 @@ function (config_with_llvm)
 
   add_custom_command(PRE_BUILD
     OUTPUT prepare_cmds
-    COMMAND ln -s -f ../testdata testdata)
+    COMMAND ln -s -f ${CMAKE_SOURCE_DIR}/testdata testdata)
   add_custom_target(prepare ALL
     DEPENDS prepare_cmds)
 endfunction()
