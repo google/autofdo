@@ -3,23 +3,21 @@
 
 // This program creates an LLVM profile from an AutoFDO source.
 
+#include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/strings/match.h"
 #if defined(HAVE_LLVM)
-#include <cstdint>
 #include <fstream>
 #include <memory>
 #include <string>
-#include <vector>
 
+#include "base/commandlineflags.h"
+#include "base/logging.h"
 #include "llvm_profile_writer.h"
 #include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_options_builder.h"
-#include "llvm_propeller_profile_generator.h"
+#include "llvm_propeller_profile_writer.h"
 #include "profile_creator.h"
-#include "symbol_map.h"
-#include "third_party/abseil/absl/flags/flag.h"
-#include "third_party/abseil/absl/log/log.h"
 #include "third_party/abseil/absl/status/status.h"
-#include "third_party/abseil/absl/strings/match.h"
 #include "third_party/abseil/absl/strings/str_split.h"
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
@@ -57,12 +55,12 @@ ABSL_FLAG(std::string, propeller_cfg_dump_dir, "",
 ABSL_FLAG(uint32_t, propeller_chain_split_threshold, 0,
           "Maximum chain length (in number of nodes) for which propeller tries "
           "splitting and remerging at every splitting position.");
-ABSL_FLAG(bool, propeller_chain_split, true,
+ABSL_FLAG(bool, propeller_chain_split, false,
           "Whether propeller is allowed to split chains before merging with "
           "other chains.");
 ABSL_FLAG(bool, propeller_verbose_cluster_output, false,
           "Whether to print statistics inline in the cluster profile.");
-ABSL_FLAG(bool, propeller_call_chain_clustering, true,
+ABSL_FLAG(bool, propeller_call_chain_clustering, false,
           "Whether propeller should order functions based on the "
           "call-chain-clustering algorithm.");
 ABSL_FLAG(bool, propeller_inter_function_ordering, false,
@@ -87,7 +85,8 @@ ABSL_FLAG(bool, prof_sym_list, false,
           "Generate profile symbol list from the binary. The symbol list will "
           "be kept and saved in the profile. The option can only be enabled "
           "when --format=extbinary.");
-ABSL_FLAG(bool, http, false, "Enable http to server statusz requests.");
+ABSL_FLAG(bool, http, false,
+          "Enable http to server statusz requests.");
 
 // While reading perfdata file, we use build id to match a binary and its pids
 // in perf file. We may also want to use file name to do the match, which is
@@ -107,22 +106,6 @@ ABSL_FLAG(bool, propeller_layout_only, false,
           "Instruct the propeller layout optimizer to place cold bbs after "
           "hot ones. Default to \"false\". Mutually exclusive with "
           "--propeller_split_only. Only valid when --format=propeller.");
-
-ABSL_FLAG(bool, propeller_output_module_name, false,
-          "Embed module names in the function cluster information. This "
-          "requires debug info - the binary has to be built with \"-g\" or "
-          "\"-g -gsplit-dwarf\", in the latter case, a dwp file whose name "
-          "equals to the original binary filename with a \".dwp\" suffix is "
-          "required to exist alongside with the original binary, an error will "
-          "be reported if such file is not found.");
-
-ABSL_FLAG(
-    bool, propeller_filter_non_text_functions, true,
-    "Filter out functions which are not in .text sections (.text or .text.*).");
-
-ABSL_FLAG(bool, check_lbr_entry, true,
-          "Use MiniDisassembler to check whether the from address of lbr "
-          "brstack entries is a branch, call, or return instruction.");
 
 devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
   devtools_crosstool_autofdo::PropellerOptionsBuilder option_builder;
@@ -169,11 +152,7 @@ devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
               absl::GetFlag(FLAGS_propeller_inter_function_ordering))
           .SetHttp(absl::GetFlag(FLAGS_http))
           .SetVerboseClusterOutput(
-              absl::GetFlag(FLAGS_propeller_verbose_cluster_output))
-          .SetOutputModuleName(
-              absl::GetFlag(FLAGS_propeller_output_module_name))
-          .SetFilterNonTextFunctions(
-              absl::GetFlag(FLAGS_propeller_filter_non_text_functions)));
+              absl::GetFlag(FLAGS_propeller_verbose_cluster_output)));
 }
 
 int main(int argc, char **argv) {
@@ -268,8 +247,7 @@ int main(int argc, char **argv) {
   if (creator.CreateProfile(absl::GetFlag(FLAGS_profile),
                             absl::GetFlag(FLAGS_profiler), writer.get(),
                             absl::GetFlag(FLAGS_out),
-                            absl::GetFlag(FLAGS_prof_sym_list),
-                            absl::GetFlag(FLAGS_check_lbr_entry))) {
+                            absl::GetFlag(FLAGS_prof_sym_list))) {
     return 0;
   } else {
     return -1;

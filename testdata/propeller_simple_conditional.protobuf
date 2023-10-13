@@ -1,0 +1,78 @@
+## CFG consisting of a function with two conditionals
+##
+##     foo
+##      |\
+##      | \100
+##      |  \
+##      |   v
+##   150|  a.BB.foo
+##      |   /  \
+##      |  /100 \0
+##      | /      \
+##      vv        v
+##   raa.BB.foo  ra.BB.foo
+##
+
+cfg {
+  name: "foo"
+  node {
+    symbol_ordinal: 1
+    bb_index: 0
+    size: 10
+    freq: 250
+    intra_outs {
+      source: 1
+      sink: 2
+      weight: 100
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    intra_outs {
+      source: 1
+      sink: 3
+      weight: 150
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    symbol_ordinal: 2
+    bb_index: 1
+    size: 4
+    freq: 100
+    intra_outs {
+      source: 2
+      sink: 3
+      weight: 100
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    intra_ins {
+      source: 1
+      sink: 2
+      weight: 100
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    symbol_ordinal: 3
+    bb_index: 3
+    size: 6
+    freq: 150
+    intra_ins {
+      source: 1
+      sink: 3
+      weight: 150
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    symbol_ordinal: 4
+    bb_index: 2
+    size: 2
+    freq: 0
+    intra_ins {
+      source: 1
+      sink: 4
+      weight: 0
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+}

@@ -2,9 +2,7 @@
 #define AUTOFDO_LLVM_PROFILE_WRITER_H_
 
 #if defined(HAVE_LLVM)
-#include <memory>
 #include <string>
-#include <vector>
 
 #include "profile_writer.h"
 #include "llvm/Config/llvm-config.h"
@@ -20,10 +18,6 @@ class LLVMProfileWriter : public ProfileWriter {
       llvm::sampleprof::SampleProfileFormat output_format)
       : format_(output_format) {}
 
-  // This type is neither copyable nor movable.
-  LLVMProfileWriter(const LLVMProfileWriter &) = delete;
-  LLVMProfileWriter &operator=(const LLVMProfileWriter &) = delete;
-
   llvm::sampleprof::SampleProfileWriter *CreateSampleWriter(
       const std::string &output_filename);
 
@@ -36,6 +30,8 @@ class LLVMProfileWriter : public ProfileWriter {
  private:
   llvm::sampleprof::SampleProfileFormat format_;
   std::unique_ptr<llvm::sampleprof::SampleProfileWriter> sample_prof_writer_;
+
+  DISALLOW_COPY_AND_ASSIGN(LLVMProfileWriter);
 };
 
 class LLVMProfileBuilder : public SymbolTraverser {
@@ -45,10 +41,6 @@ class LLVMProfileBuilder : public SymbolTraverser {
         result_(llvm::sampleprof_error::success),
         inline_stack_(),
         name_table_(name_table) {}
-
-  // This type is neither copyable nor movable.
-  LLVMProfileBuilder(const LLVMProfileBuilder &) = delete;
-  LLVMProfileBuilder &operator=(const LLVMProfileBuilder &) = delete;
 
   static bool Write(
       const std::string &output_filename,
@@ -92,6 +84,8 @@ class LLVMProfileBuilder : public SymbolTraverser {
   llvm::sampleprof_error result_;
   std::vector<llvm::sampleprof::FunctionSamples *> inline_stack_;
   const StringIndexMap &name_table_;
+
+  DISALLOW_COPY_AND_ASSIGN(LLVMProfileBuilder);
 };
 }  // namespace devtools_crosstool_autofdo
 

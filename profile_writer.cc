@@ -9,20 +9,19 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "base/commandlineflags.h"
+#include "base/integral_types.h"
+#include "base/logging.h"
 #include "gcov.h"
 #include "profile.h"
-#include "source_info.h"
 #include "symbol_map.h"
 #include "third_party/abseil/absl/flags/flag.h"
-#include "third_party/abseil/absl/log/check.h"
-#include "third_party/abseil/absl/log/log.h"
 #include "third_party/abseil/absl/strings/str_format.h"
 
 // sizeof(gcov_unsigned_t)
@@ -61,10 +60,6 @@ class SourceProfileLengther: public SymbolTraverser {
     Start(symbol_map);
   }
 
-  // This type is neither copyable nor movable.
-  SourceProfileLengther(const SourceProfileLengther &) = delete;
-  SourceProfileLengther &operator=(const SourceProfileLengther &) = delete;
-
   int length() {return length_ + num_functions_ * 2;}
   int num_functions() {return num_functions_;}
 
@@ -89,14 +84,11 @@ class SourceProfileLengther: public SymbolTraverser {
  private:
   int length_;
   int num_functions_;
+  DISALLOW_COPY_AND_ASSIGN(SourceProfileLengther);
 };
 
 class SourceProfileWriter: public SymbolTraverser {
  public:
-  // This type is neither copyable nor movable.
-  SourceProfileWriter(const SourceProfileWriter &) = delete;
-  SourceProfileWriter &operator=(const SourceProfileWriter &) = delete;
-
   static void Write(const SymbolMap &symbol_map, const StringIndexMap &map) {
     SourceProfileWriter writer(map);
     writer.Start(symbol_map);
@@ -142,6 +134,7 @@ class SourceProfileWriter: public SymbolTraverser {
   }
 
   const StringIndexMap &map_;
+  DISALLOW_COPY_AND_ASSIGN(SourceProfileWriter);
 };
 
 void AutoFDOProfileWriter::WriteFunctionProfile() {
@@ -230,10 +223,6 @@ bool AutoFDOProfileWriter::WriteToFile(const std::string &output_filename) {
 // of the input profile.
 class ProfileDumper : public SymbolTraverser {
  public:
-  // This type is neither copyable nor movable.
-  ProfileDumper(const ProfileDumper &) = delete;
-  ProfileDumper &operator=(const ProfileDumper &) = delete;
-
   static void Write(const SymbolMap &symbol_map, const StringIndexMap &map) {
     ProfileDumper writer(map);
     writer.Start(symbol_map);
@@ -345,6 +334,7 @@ class ProfileDumper : public SymbolTraverser {
   }
 
   const StringIndexMap &map_;
+  DISALLOW_COPY_AND_ASSIGN(ProfileDumper);
 };
 
 // Emit a dump of the input profile on stdout.

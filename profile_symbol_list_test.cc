@@ -2,8 +2,8 @@
 
 #include <memory>
 
-#include "symbol_map.h"
-#include "llvm/ProfileData/SampleProf.h"
+#include "gmock/gmock.h"
+#include "third_party/abseil/absl/memory/memory.h"
 
 #define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 

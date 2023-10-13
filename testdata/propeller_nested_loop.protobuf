@@ -25,87 +25,124 @@
 ##
 cfg {
   name: "foo"
-  function_index: 1
   node {
-    bb_id: 0
+    symbol_ordinal: 1
+    bb_index: 0
     size: 10
-    out_edges {
-      sink: {
-        function_index: 1
-        bb_index: 3
-      }
+    freq: 5
+    intra_outs {
+      source: 1
+      sink: 4
       weight: 5
       kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
-    bb_id: 1
+    symbol_ordinal: 4
+    bb_index: 3
     size: 10
-    out_edges {
-      sink: {
-        function_index: 1
-        bb_index: 4
-      }
+    freq: 60
+    intra_outs {
+      source: 4
+      sink: 2
+      weight: 60
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    intra_ins {
+      source: 6
+      sink: 4
+      weight: 40
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    intra_ins {
+      source: 1
+      sink: 4
+      weight: 5
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    symbol_ordinal: 2
+    bb_index: 1
+    size: 10
+    freq: 600
+    intra_outs {
+      source: 2
+      sink: 5
+      weight: 600
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    intra_ins {
+      source: 5
+      sink: 2
+      weight: 550
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    intra_ins {
+      source: 4
+      sink: 2
+    	weight: 60
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    symbol_ordinal: 5
+    bb_index: 4
+    size: 10
+    freq: 605
+    intra_outs {
+      source: 5
+      sink: 6
+      weight: 55
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    intra_outs {
+      source: 5
+      sink: 2
+      weight: 550
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    intra_ins {
+      source: 2
+      sink: 5
       weight: 600
       kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
-    bb_id: 2
+    symbol_ordinal: 6
+    bb_index: 5
     size: 10
-  }
-  node {
-    bb_id: 3
-    size: 10
-    out_edges {
-      sink: {
-        function_index: 1
-        bb_index: 1
-      }
-      weight: 60
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-  }
-
-  node {
-    bb_id: 4
-    size: 10
-    out_edges {
-      sink: {
-        function_index: 1
-        bb_index: 5
-      }
-      weight: 55
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-    out_edges {
-      sink: {
-        function_index: 1
-        bb_index: 1
-      }
-      weight: 550
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-  }
-  node {
-    bb_id: 5
-    size: 10
-    out_edges {
-      sink: {
-        function_index: 1
-        bb_index: 3
-      }
+    freq: 55
+    intra_outs {
+      source: 6
+      sink: 4
       weight: 40
       kind: BRANCH_OR_FALLTHROUGH
     }
-    out_edges {
-      sink: {
-        function_index: 1
-        bb_index: 2
-      }
+    intra_outs {
+      source: 6
+      sink: 3
+      weight: 10
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    intra_ins {
+      source: 5
+      sink: 6
+      weight: 55
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    symbol_ordinal: 3
+    bb_index: 2
+    size: 10
+    freq: 10
+    intra_ins {
+      source: 6
+      sink: 3
       weight: 10
       kind: BRANCH_OR_FALLTHROUGH
     }
   }
-
 }

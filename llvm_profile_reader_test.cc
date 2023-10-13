@@ -2,10 +2,9 @@
 
 #include "llvm_profile_reader.h"
 
-#include <cstdint>
 #include <string>
 
-#include "source_info.h"
+#include "base/commandlineflags.h"
 #include "symbol_map.h"
 #include "gtest/gtest.h"
 #include "third_party/abseil/absl/container/node_hash_set.h"

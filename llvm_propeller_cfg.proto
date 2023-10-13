@@ -5,15 +5,11 @@ package devtools_crosstool_autofdo;
 // // Edges.
 // // Next Available: 5.
 message CFGEdgePb {
-  // Whole-program identifier for a CFGNode.
-  // Next Available: 3
-  message NodeId {
-    optional uint32 function_index = 1;
-    optional uint32 bb_index = 2;
-  }
+  // Symbol ordinal of source bb.
+  optional uint64 source = 1;
 
-  // Id of sink bb.
-  optional NodeId sink = 2;
+  // Symbol ordinal of sink bb.
+  optional uint64 sink = 2;
 
   // Frequency count of the jump from profile.
   optional uint64 weight = 3;
@@ -29,34 +25,31 @@ message CFGEdgePb {
 }
 
 // Basic blocks.
-// Next Available: 5.
+// Next Available: 10.
 message CFGNodePb {
-  // Next available: 5
-  message MetadataPb {
-    optional bool can_fallthrough = 1;
-    optional bool has_return = 2;
-    optional bool has_tail_call = 3;
-    optional bool is_landing_pad = 4;
-  }
+  optional uint64 symbol_ordinal = 1;
 
-  optional uint64 size = 1;
+  optional uint64 size = 2;
 
-  repeated CFGEdgePb out_edges = 2;
+  optional uint64 freq = 3;
 
-  optional uint32 bb_id = 3;
-  optional MetadataPb metadata = 4;
+  repeated CFGEdgePb intra_outs = 4;
+  repeated CFGEdgePb intra_ins = 5;
+  repeated CFGEdgePb inter_outs = 6;
+  repeated CFGEdgePb inter_ins = 7;
+
+  optional uint32 bb_index = 8;
+  optional bool is_landing_pad = 9;
 }
 //
 // Control flow graph where basic blocks are vertices and jumps are edges.
-// Next Available: 5
+// Next Available: 3
 message ControlFlowGraphPb {
   repeated CFGNodePb node = 1;
   repeated string name = 2;
-  optional uint32 function_index = 3;
-  optional string section_name = 4;
 }
 
 // Next Available: 2.
-message ProgramCfgPb {
+message PropellerPb {
   repeated ControlFlowGraphPb cfg = 1;
 }

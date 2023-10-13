@@ -1,4 +1,0 @@
-main
-compute_flag
-this_is_very_code
-main.cold

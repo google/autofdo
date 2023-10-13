@@ -1,16 +1,12 @@
 #include "llvm_propeller_chain_cluster_builder.h"
 
-#include <cstdint>
-#include <memory>
-#include <tuple>
 #include <utility>
-#include <vector>
 
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_node_chain.h"
 #include "third_party/abseil/absl/algorithm/container.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
-#include "third_party/abseil/absl/types/span.h"
+#include "third_party/abseil/absl/numeric/int128.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -20,38 +16,11 @@ namespace {
 constexpr int kHotEdgeRelativeFrequencyThreshold = 10;
 // We avoid clustering if it reduces the density by more than
 // 1/kDensityDegradationThreshold.
-constexpr int64_t kExecutionDensityDegradationThreshold = 8;
+constexpr absl::int128 kExecutionDensityDegradationThreshold = 8;
 // We avoid clustering chains with less than kChainExecutionDensityThreshold
 // execution density.
 constexpr double kChainExecutionDensityThreshold = 0.005;
-
-absl::flat_hash_map<const CFGNode *, const NodeChain *> BuildNodeToChainMap(
-    absl::Span<const std::unique_ptr<const NodeChain>> chains) {
-  absl::flat_hash_map<const CFGNode *, const NodeChain *> result;
-  for (auto &chain : chains) {
-    chain->VisitEachNodeRef(
-        [&](const CFGNode &node) { result.emplace(&node, chain.get()); });
-  }
-  return result;
-}
 }  // namespace
-
-ChainClusterBuilder::ChainClusterBuilder(
-    const PropellerCodeLayoutParameters &code_layout_params,
-    std::vector<std::unique_ptr<const NodeChain>> chains)
-    : code_layout_params_(code_layout_params),
-      node_to_chain_map_(BuildNodeToChainMap(chains)) {
-  for (auto &chain : chains) {
-    const NodeChain *chain_ptr = chain.get();
-    // Transfer the ownership of chains to clusters.
-    auto cluster = std::make_unique<ChainCluster>(std::move(chain));
-    chain_to_cluster_map_.emplace(chain_ptr, cluster.get());
-    auto cluster_id = cluster->id();
-    bool inserted = clusters_.emplace(cluster_id, std::move(cluster)).second;
-    CHECK(inserted) << "Duplicate cluster id: " << cluster_id << ".";
-  }
-  chains.clear();
-}
 
 void ChainClusterBuilder::MergeWithBestPredecessorCluster(
     const NodeChain &chain) {
@@ -63,7 +32,7 @@ void ChainClusterBuilder::MergeWithBestPredecessorCluster(
 
   // Create a map to compute the total incoming edge weight to `cluster`
   // from each other cluster.
-  absl::flat_hash_map<ChainCluster *, int64_t> weight_from;
+  absl::flat_hash_map<ChainCluster *, uint64_t> weight_from;
 
   // Update the `weight_from` edges by visiting all incoming edges to the given
   // `node`.
@@ -71,14 +40,12 @@ void ChainClusterBuilder::MergeWithBestPredecessorCluster(
     node.ForEachInEdgeRef([&](const CFGEdge &edge) {
       // Omit return edges since optimizing them does not improve performance.
       if (edge.IsReturn()) return;
-      if (edge.inter_section()) return;
       // Omit the edge if it's cold relative to the sink.
-      if (edge.weight() == 0 ||
-          edge.weight() * kHotEdgeRelativeFrequencyThreshold <
-              edge.sink()->CalculateFrequency()) {
+      if (edge.weight() * kHotEdgeRelativeFrequencyThreshold <
+          edge.sink()->freq()) {
         return;
       }
-      const NodeChain &src_chain = *node_to_chain_map_.at(edge.src());
+      const NodeChain &src_chain = GetNodeChain(edge.src());
       // Omit intra-chain edges.
       if (src_chain.id() == chain.id()) return;
       ChainCluster *src_cluster = chain_to_cluster_map_.at(&src_chain);
@@ -92,8 +59,7 @@ void ChainClusterBuilder::MergeWithBestPredecessorCluster(
       // more than 1/kDensityDegradationThreshold by the merge.
       if (kExecutionDensityDegradationThreshold * src_cluster->size() *
               (cluster->freq() + src_cluster->freq()) <
-          static_cast<int64_t>(src_cluster->freq()) *
-              (cluster->size() + src_cluster->size())) {
+          src_cluster->freq() * (cluster->size() + src_cluster->size())) {
         return;
       }
       weight_from[src_cluster] += edge.weight();
@@ -102,8 +68,8 @@ void ChainClusterBuilder::MergeWithBestPredecessorCluster(
 
   if (!code_layout_params_.inter_function_reordering()) {
     CHECK(chain.GetFirstNode()->is_entry())
-        << "First node in the chain for function #" << *chain.function_index()
-        << " is not an entry block.";
+        << "First node in the chain for function \""
+        << chain.cfg_->GetPrimaryName().str() << "\" is not an entry block.";
     inspect_in_edges(*chain.GetFirstNode());
   } else {
     chain.VisitEachNodeRef(inspect_in_edges);
@@ -153,14 +119,13 @@ ChainClusterBuilder::BuildClusters() && {
 
   // Total incoming edge weight to each chain excluding return edges and
   // intra-chain edges.
-  absl::flat_hash_map<const NodeChain *, int64_t> weight_to;
-  for (const auto &[chain, unused] : chain_to_cluster_map_) {
-    int64_t weight = 0;
-    auto chain_id = chain->id();
+  absl::flat_hash_map<const NodeChain *, uint64_t> weight_to;
+  for (const auto &[chain, unused] : chain_to_cluster_map_){
+    uint64_t chain_id = chain->id();
+    uint64_t weight = 0;
     chain->VisitEachNodeRef([&](const CFGNode &node) {
       node.ForEachInEdgeRef([&](CFGEdge &edge) {
-        if (edge.weight() == 0 || edge.IsReturn() || edge.inter_section() ||
-            node_to_chain_map_.at(edge.src())->id() == chain_id) {
+        if (edge.IsReturn() || GetNodeChain(edge.src()).id() == chain_id) {
           return;
         }
         weight += edge.weight();

@@ -11,6 +11,7 @@
 
 #include "llvm_propeller_perf_data_provider.h"
 #include "third_party/abseil/absl/status/statusor.h"
+#include "llvm/Support/MemoryBuffer.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -27,11 +28,6 @@ class FilePerfDataProvider : public PerfDataProvider {
 
   absl::StatusOr<std::optional<PerfDataProvider::BufferHandle>> GetNext()
       override;
-
-  // Returns all perf data files upon the first call. Every next call returns an
-  // empty vector.
-  absl::StatusOr<std::vector<PerfDataProvider::BufferHandle>>
-      GetAllAvailableOrNext() override;
 
  private:
   std::vector<std::string> file_names_;

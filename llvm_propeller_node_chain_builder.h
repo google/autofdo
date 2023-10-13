@@ -1,32 +1,19 @@
 #ifndef AUTOFDO_LLVM_PROPELLER_NODE_CHAIN_BUILDER_H_
 #define AUTOFDO_LLVM_PROPELLER_NODE_CHAIN_BUILDER_H_
 
-#include <iterator>
+#include <map>
 #include <memory>
-#include <set>
 #include <utility>
 #include <vector>
 
 #include "llvm_propeller_cfg.h"
+#include "llvm_propeller_code_layout.h"
 #include "llvm_propeller_code_layout_scorer.h"
 #include "llvm_propeller_node_chain.h"
 #include "llvm_propeller_node_chain_assembly.h"
-#include "llvm_propeller_statistics.h"
-#include "third_party/abseil/absl/algorithm/container.h"
-#include "third_party/abseil/absl/container/btree_map.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
-#include "third_party/abseil/absl/log/check.h"
 
 namespace devtools_crosstool_autofdo {
-// Comparator for comparing CFGNode pointers from a single CFG.
-struct CFGNodePtrComparator {
-  bool operator()(const CFGNode *a, const CFGNode *b) const {
-    CHECK_NE(a, nullptr);
-    CHECK_NE(b, nullptr);
-    CHECK_EQ(a->function_index(), b->function_index());
-    return a->intra_cfg_id() < b->intra_cfg_id();
-  }
-};
 
 // Interface for storing NodeChainAssemblies in a priority queue.
 class NodeChainAssemblyQueue {
@@ -94,10 +81,9 @@ class NodeChainAssemblyBalancedTreeQueue : public NodeChainAssemblyQueue {
   // `assemblies_` is deleted, its iterator in this map should also be removed
   // and vice versa. Other iterators will remain valid as this is guaranteed by
   // std::set.
-  absl::flat_hash_map<
-      NodeChainPair,
-      std::set<NodeChainAssembly,
-               NodeChainAssembly::NodeChainAssemblyComparator>::iterator>
+  absl::flat_hash_map<NodeChainPair,
+           std::set<NodeChainAssembly,
+                    NodeChainAssembly::NodeChainAssemblyComparator>::iterator>
       handles_;
 };
 
@@ -133,20 +119,12 @@ class NodeChainAssemblyIterativeQueue : public NodeChainAssemblyQueue {
 // This class builds BB chains for one or multiple CFGs.
 class NodeChainBuilder {
  public:
-  // Creates and returns a `NodeChainBuilder` for the given `cfgs` with initial
-  // chains specified by `initial_chains` (as a map from function indexes to
-  // their initial chains given by vectors of bb indexes), code layout scorer
-  // `scorer`, and code layout statistics handle `stats`.
   template <class AssemblyQueueImpl = NodeChainAssemblyIterativeQueue>
   static NodeChainBuilder CreateNodeChainBuilder(
       const PropellerCodeLayoutScorer &scorer,
-      const std::vector<const ControlFlowGraph *> &cfgs,
-      const absl::flat_hash_map<
-          int, std::vector<std::vector<CFGNode::IntraCfgId>>> &initial_chains,
-      PropellerStats::CodeLayoutStats &stats);
-
-  const NodeToBundleMapper &node_to_bundle_mapper() const {
-    return *node_to_bundle_mapper_;
+      const std::vector<ControlFlowGraph *> &cfgs, CodeLayoutStats &stats) {
+    return NodeChainBuilder(scorer, cfgs, stats,
+                            std::make_unique<AssemblyQueueImpl>());
   }
 
   const PropellerCodeLayoutScorer &code_layout_scorer() const {
@@ -155,10 +133,9 @@ class NodeChainBuilder {
 
   // Const public accessors for the internal data structures of chain. Used for
   // testing only.
-  const std::vector<const ControlFlowGraph *> &cfgs() const { return cfgs_; }
+  const std::vector<ControlFlowGraph *> &cfgs() const { return cfgs_; }
 
-  const absl::flat_hash_map<CFGNode::InterCfgId, std::unique_ptr<NodeChain>> &
-  chains() const {
+  const std::map<uint64_t, std::unique_ptr<NodeChain>> &chains() const {
     return chains_;
   }
 
@@ -199,37 +176,17 @@ class NodeChainBuilder {
   void MergeChains(NodeChain &left_chain, NodeChain &right_chain);
 
  private:
-  NodeChainBuilder(
+  explicit NodeChainBuilder(
       const PropellerCodeLayoutScorer &scorer,
-      const std::vector<const ControlFlowGraph *> &cfgs,
-      absl::flat_hash_map<int, std::vector<std::vector<CFGNode::IntraCfgId>>>
-          initial_chains,
-      PropellerStats::CodeLayoutStats &stats,
+      const std::vector<ControlFlowGraph *> &cfgs, CodeLayoutStats &stats,
       std::unique_ptr<NodeChainAssemblyQueue> node_chain_assemblies)
       : code_layout_scorer_(scorer),
         cfgs_(cfgs),
-        node_to_bundle_mapper_(
-            NodeToBundleMapper::CreateNodeToBundleMapper(cfgs)),
-        initial_chains_(std::move(initial_chains)),
         stats_(stats),
-        node_chain_assemblies_(std::move(node_chain_assemblies)) {
-    // Accept only one CFG for intra-function-ordering.
-    if (!code_layout_scorer_.code_layout_params().inter_function_reordering())
-      CHECK_EQ(cfgs_.size(), 1);
-  }
+        node_chain_assemblies_(std::move(node_chain_assemblies)) {}
 
-  // Merges `inter_chain_out_edges_`, `inter_chain_in_edges`, and
-  // `CFGNodeBundle::intra_chain_out_edges_` of the chain `merge_from_chain`
-  // into `merge_to_chain`.
-  void MergeChainEdges(NodeChain &merge_from_chain,
-                       NodeChain &merge_to_chain) const;
-
-  // Removes intra-bundle edges and updates `score_`.
-  // After bundles are merged together, their `intra_chain_out_edges_` may
-  // include intra-bundle edges. This function removes them while also deducting
-  // their contribution to `score_` since intra-bundle edges should not
-  // contribute to the chain's `score_`.
-  void RemoveIntraBundleEdges(NodeChain &chain) const;
+  // Returns the score for `chain`.
+  int64_t ComputeScore(NodeChain &chain) const;
 
   // Updates and removes the assemblies for `kept_chain` and `defunct_chain`.
   // This method is called after `defunct_chain` is merged into `kept_chain` and
@@ -246,30 +203,21 @@ class NodeChainBuilder {
   // Returns whether `edge` should be considered in constructing the chains.
   bool ShouldVisitEdge(const CFGEdge &edge) {
     return edge.weight() != 0 && !edge.IsReturn() &&
-           ((code_layout_scorer_.code_layout_params()
-                 .inter_function_reordering() &&
-             cfgs_.size() > 1 && !edge.inter_section()) ||
+           (code_layout_scorer_.code_layout_params()
+                .inter_function_reordering() ||
             !edge.IsCall());
   }
 
   const PropellerCodeLayoutScorer code_layout_scorer_;
 
   // CFGs targeted for BB chaining.
-  const std::vector<const ControlFlowGraph *> cfgs_;
+  const std::vector<ControlFlowGraph *> cfgs_;
 
-  std::unique_ptr<NodeToBundleMapper> node_to_bundle_mapper_;
-
-  // Initial node chains, specified as a map from every function index to the
-  // vector of initial node chains for the corresponding CFG. Each node chain is
-  // specified by a vector of intra_cfg_ids of its nodes.
-  const absl::flat_hash_map<int, std::vector<std::vector<CFGNode::IntraCfgId>>>
-      initial_chains_;
-
-  PropellerStats::CodeLayoutStats &stats_;
+  CodeLayoutStats &stats_;
 
   // Constructed chains. This starts by having one chain for every CFGNode and
   // as chains keep merging together, defunct chains are removed from this.
-  absl::flat_hash_map<CFGNode::InterCfgId, std::unique_ptr<NodeChain>> chains_;
+  std::map<uint64_t, std::unique_ptr<NodeChain>> chains_;
 
   // Assembly (merge) candidates. This maps every pair of chains to its
   // (non-zero) merge score.
@@ -295,19 +243,18 @@ class NodeChainBuilder {
 // of how other edges are treated by the layout algorithm.
 // Note: The returned paths are sorted in increasing order of their first node's
 // symbol ordinal.
-std::vector<std::vector<const CFGNode *>> GetForcedPaths(
-    const ControlFlowGraph &cfg);
+std::vector<std::vector<CFGNode *>> GetForcedPaths(const ControlFlowGraph &cfg);
 
 // Returns all mutually-forced edges as a map from their source to their sink.
 // These are the edges which -- based on the profile -- are the only outgoing
 // edges from their source and the only incoming edges to their sinks.
 // Note that the paths represented by these edges may include cycles.
-absl::btree_map<const CFGNode *, const CFGNode *, CFGNodePtrComparator>
-GetForcedEdges(const ControlFlowGraph &cfg);
+std::map<CFGNode *, CFGNode *, CFGNodePtrLessComparator> GetForcedEdges(
+    const ControlFlowGraph &cfg);
 
 // Breaks cycles in the `path_next` map by cutting the edge sinking to the
 // smallest address in every cycle (hopefully a loop backedge).
-void BreakCycles(absl::btree_map<const CFGNode *, const CFGNode *,
-                                 CFGNodePtrComparator> &path_next);
+void BreakCycles(
+    std::map<CFGNode *, CFGNode *, CFGNodePtrLessComparator> &path_next);
 }  // namespace devtools_crosstool_autofdo
 #endif  // AUTOFDO_LLVM_PROPELLER_NODE_CHAIN_BUILDER_H_

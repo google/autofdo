@@ -1,6 +1,0 @@
-anycall
-othercall
-othercall.cold
-main
-compute_flag
-main.cold

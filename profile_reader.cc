@@ -3,11 +3,12 @@
 #include <cstdint>
 #include <string>
 
+#include "base/commandlineflags.h"
+#include "base/logging.h"
+#include "addr2line.h"
 #include "gcov.h"
-#include "source_info.h"
 #include "symbol_map.h"
 #include "third_party/abseil/absl/flags/flag.h"
-#include "third_party/abseil/absl/log/check.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -111,8 +112,7 @@ bool AutoFDOProfileReader::ReadFromFile(const std::string &output_file) {
 
   // Read tags
   CHECK_EQ(gcov_read_unsigned(), GCOV_DATA_MAGIC) << output_file;
-  CHECK_EQ(gcov_read_unsigned(), absl::GetFlag(FLAGS_gcov_version))
-      << output_file;
+  absl::SetFlag(&FLAGS_gcov_version, gcov_read_unsigned());
   gcov_read_unsigned();
 
   ReadNameTable();

@@ -6,7 +6,6 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "third_party/abseil/absl/algorithm/container.h"
 #include "third_party/abseil/absl/strings/string_view.h"
@@ -102,7 +101,7 @@ class MultiStatusProvider : public StatusProvider {
     return i->status_provider.get();
   }
 
-  std::string job_;
+  const std::string job_;
   std::vector<WeightedStatusProvider> weighted_statuses_;
   int total_weight_ = 0;
 };

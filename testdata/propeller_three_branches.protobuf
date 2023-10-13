@@ -19,64 +19,100 @@
 cfg {
   name: "foo"
   node {
-    bb_id: 0
+    symbol_ordinal: 1
+    bb_index: 0
     size: 10
-    out_edges {
-      sink: {
-        bb_index: 1
-      }
+    freq: 100
+    intra_outs {
+      source: 1
+      sink: 2
       weight: 100
     }
-    out_edges {
-      sink: {
-        bb_index: 2
-      }
+    intra_outs {
+      source: 1
+      sink: 3
       weight: 0
     }
   }
   node {
-    bb_id: 1
+    symbol_ordinal: 2
+    bb_index: 1
     size: 4
-    out_edges {
-      sink: {
-        bb_index: 4
-      }
+    freq: 100
+    intra_outs {
+      source: 2
+      sink: 5
       weight: 80
     }
-    out_edges {
-      sink: {
-        bb_index: 5
-      }
+    intra_outs {
+      source: 2
+      sink: 6
       weight: 20
+    }
+    intra_ins {
+      source: 1
+      sink: 2
+      weight: 100
     }
   }
   node {
-    bb_id: 2
+    symbol_ordinal: 3
+    bb_index: 2
     size: 6
-    out_edges {
-      sink: {
-        bb_index: 3
-      }
+    freq: 10
+    intra_outs {
+      source: 3
+      sink: 4
       weight: 10
     }
-    out_edges {
-      sink: {
-        bb_index: 4
-      }
+    intra_outs {
+      source: 3
+      sink: 5
       weight: 0
       kind: BRANCH_OR_FALLTHROUGH
     }
+    intra_ins {
+      source: 1
+      sink: 3
+      weight: 0
+    }
   }
   node {
-    bb_id: 3
+    symbol_ordinal: 4
+    bb_index: 3
     size: 2
+    freq: 10
+    intra_ins {
+      source: 3
+      sink: 4
+      weight: 10
+    }
   }
   node {
-    bb_id: 4
+    symbol_ordinal: 5
+    bb_index: 4
     size: 6
+    freq: 80
+    intra_ins {
+      source: 2
+      sink: 5
+      weight: 80
+    }
+    intra_ins {
+      source: 3
+      sink: 5
+      weight: 0
+    }
   }
   node {
-    bb_id: 5
+    symbol_ordinal: 6
+    bb_index: 5
     size: 4
+    freq: 20
+    intra_ins {
+      source: 2
+      sink: 5
+      weight: 0
+    }
   }
 }

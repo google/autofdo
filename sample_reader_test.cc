@@ -8,13 +8,14 @@
 
 #include "sample_reader.h"
 
-#include <cstdint>
 #include <string>
 #include <utility>
 
+#include "base/commandlineflags.h"
 #include "gtest/gtest.h"
 #include "third_party/abseil/absl/flags/declare.h"
 #include "third_party/abseil/absl/flags/flag.h"
+#include "third_party/abseil/absl/strings/str_cat.h"
 
 ABSL_DECLARE_FLAG(uint64_t, strip_dup_backedge_stride_limit);
 

@@ -2,15 +2,13 @@
 
 #include <string>
 
+#include "addr2line.h"
 #include "profile_creator.h"
-#include "profile_writer.h"
-#include "source_info.h"
 #include "symbol_map.h"
-#include "gtest/gtest.h"
+#include "gmock/gmock.h"
 #include "third_party/abseil/absl/flags/flag.h"
-#include "third_party/abseil/absl/log/check.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
-#include "llvm/ProfileData/SampleProf.h"
+#include "llvm/Config/llvm-config.h"
 
 #define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 
@@ -33,8 +31,7 @@ TEST(LlvmProfileWriterTest, ReadProfile) {
   ASSERT_TRUE(creator.ReadSample(profile, "perf"));
 
   SymbolMap symbol_map(binary);
-  symbol_map.ReadLoadableExecSegmentInfo(false);
-  ASSERT_TRUE(creator.ComputeProfile(&symbol_map, true));
+  ASSERT_TRUE(creator.ComputeProfile(&symbol_map));
 
   StringIndexMap name_table;
   StringTableUpdater::Update(symbol_map, &name_table);

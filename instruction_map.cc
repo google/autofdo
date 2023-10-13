@@ -5,12 +5,13 @@
 
 #include "instruction_map.h"
 
+#include <string.h>
+
 #include <cstdint>
 #include <string>
 
 #include "addr2line.h"
 #include "symbol_map.h"
-#include "third_party/abseil/absl/log/check.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -29,7 +30,7 @@ void InstructionMap::BuildPerFunctionInstructionMap(const std::string &name,
   for (uint64_t addr = start_addr; addr < end_addr; addr++) {
     InstInfo *info = &inst_map_[addr - start_addr];
     addr2line_->GetInlineStack(addr, &info->source_stack);
-    if (!info->source_stack.empty()) {
+    if (info->source_stack.size() > 0) {
       symbol_map_->AddSourceCount(name, info->source_stack, 0, 1, 1,
                                   SymbolMap::PERFDATA);
     }

@@ -7,7 +7,6 @@
 #define AUTOFDO_PROFILE_WRITER_H_
 
 #include <cstdint>
-#include <map>
 #include <string>
 
 #include "symbol_map.h"
@@ -113,10 +112,6 @@ class AutoFDOProfileWriter : public ProfileWriter {
 
 class SymbolTraverser {
  public:
-  // This type is neither copyable nor movable.
-  SymbolTraverser(const SymbolTraverser &) = delete;
-  SymbolTraverser &operator=(const SymbolTraverser &) = delete;
-
   virtual ~SymbolTraverser() {}
 
  protected:
@@ -145,16 +140,13 @@ class SymbolTraverser {
     }
     level_--;
   }
+  DISALLOW_COPY_AND_ASSIGN(SymbolTraverser);
 };
 
 typedef std::map<std::string, int> StringIndexMap;
 
 class StringTableUpdater: public SymbolTraverser {
  public:
-  // This type is neither copyable nor movable.
-  StringTableUpdater(const StringTableUpdater &) = delete;
-  StringTableUpdater &operator=(const StringTableUpdater &) = delete;
-
   static void Update(const SymbolMap &symbol_map, StringIndexMap *map) {
     StringTableUpdater updater(map);
     updater.Start(symbol_map);
@@ -169,7 +161,7 @@ class StringTableUpdater: public SymbolTraverser {
     }
   }
 
-  void VisitCallsite(const Callsite &callsite) override {
+  void VisitCallsite(const Callsite &callsite) {
     (*map_)[Symbol::Name(callsite.second)] = 0;
   }
 
@@ -180,6 +172,7 @@ class StringTableUpdater: public SymbolTraverser {
  private:
   explicit StringTableUpdater(StringIndexMap *map) : map_(map) {}
   StringIndexMap *map_;
+  DISALLOW_COPY_AND_ASSIGN(StringTableUpdater);
 };
 
 }  // namespace devtools_crosstool_autofdo

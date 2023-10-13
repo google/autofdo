@@ -16,9 +16,9 @@
 
 #include <utility>
 
+#include "base/logging.h"
 #include "symbolize/bytereader.h"
 #include "symbolize/dwarf2enums.h"
-#include "third_party/abseil/absl/log/log.h"
 
 namespace {
 

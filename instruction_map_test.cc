@@ -6,8 +6,7 @@
 
 #include "instruction_map.h"
 
-#include <string>
-
+#include "base/commandlineflags.h"
 #include "addr2line.h"
 #include "sample_reader.h"
 #include "symbol_map.h"
@@ -28,7 +27,8 @@ class InstructionMapTest : public testing::Test {
  protected:
   static const char kTestDataDir[];
 
-  InstructionMapTest() {}
+  InstructionMapTest() {
+  }
 };
 
 const char InstructionMapTest::kTestDataDir[] =
@@ -43,7 +43,8 @@ TEST_F(InstructionMapTest, PerFunctionInstructionMap) {
       FLAGS_test_srcdir + kTestDataDir + "test.lbr",
       "test.binary", "");
   ASSERT_TRUE(sample_reader.ReadAndSetTotalCount());
-  devtools_crosstool_autofdo::InstructionMap inst_map(addr2line, &symbol_map);
+  devtools_crosstool_autofdo::InstructionMap inst_map(
+      addr2line, &symbol_map);
   symbol_map.AddSymbol("longest_match");
   inst_map.BuildPerFunctionInstructionMap("longest_match", 0x401680, 0x401871);
   delete addr2line;

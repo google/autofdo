@@ -4,7 +4,6 @@
 #include <optional>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "llvm_propeller_perf_data_provider.h"
 #include "third_party/abseil/absl/status/status.h"
@@ -13,7 +12,6 @@
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "status_macros.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -36,18 +34,6 @@ FilePerfDataProvider::GetNext() {
   ++index_;
   return BufferHandle{.description = std::move(description),
                       .buffer = std::move(*perf_file_content)};
-}
-
-absl::StatusOr<std::vector<PerfDataProvider::BufferHandle>>
-FilePerfDataProvider::GetAllAvailableOrNext() {
-  std::vector<PerfDataProvider::BufferHandle> result;
-  while (true) {
-    ASSIGN_OR_RETURN(std::optional<PerfDataProvider::BufferHandle> next,
-                     GetNext());
-    if (!next.has_value()) return result;
-    result.push_back(std::move(next.value()));
-  }
-  return result;
 }
 
 }  // namespace devtools_crosstool_autofdo

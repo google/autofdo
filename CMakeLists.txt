@@ -1,20 +1,22 @@
 cmake_minimum_required(VERSION 3.10)
 set(CMAKE_CXX_STANDARD 17)
 set(ABSL_PROPAGATE_CXX_STD on)
-set(NDEBUG on)
 
 project(autofdo)
 
 function (config_without_llvm)
   add_subdirectory(third_party/abseil)
+  add_subdirectory(third_party/glog)
 
   include_directories(${LLVM_INCLUDE_DIRS}
     ${CMAKE_HOME_DIRECTORY}
+    third_party/glog/src
     third_party/abseil
     third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper
     util
-    ${PROJECT_BINARY_DIR})
+    ${PROJECT_BINARY_DIR}
+    ${PROJECT_BINARY_DIR}/third_party/glog)
 
   find_library (LIBELF_LIBRARIES NAMES elf REQUIRED)
   find_library (LIBCRYPTO_LIBRARIES NAMES crypto REQUIRED)
@@ -49,7 +51,7 @@ function (config_without_llvm)
   add_dependencies(create_gcov_lib perf_parser_options_proto)
   add_dependencies(create_gcov_lib perf_stat_proto)
 
-  add_library(quipper_perf OBJECT
+  add_library(quipper_perf OBJECT 
     third_party/perf_data_converter/src/quipper/address_mapper.cc
     third_party/perf_data_converter/src/quipper/base/logging.cc
     third_party/perf_data_converter/src/quipper/binary_data_utils.cc
@@ -88,6 +90,7 @@ function (config_without_llvm)
     absl::flags
     absl::flags_parse
     create_gcov_lib
+    glog
     quipper_perf
   )
 
@@ -110,7 +113,7 @@ function (config_without_llvm)
     absl::flags
     absl::flags_parse
     profile_merger_lib
-    mini_disassembler
+    glog
     quipper_perf
   )
 
@@ -132,6 +135,7 @@ function (config_without_llvm)
     absl::flags
     absl::flags_parse
     dump_gcov_lib
+    glog
   )
 endfunction ()
 
@@ -147,21 +151,25 @@ function (config_with_llvm)
   #set (protobuf_BUILD_TESTS OFF)
 
   add_subdirectory(third_party/abseil)
+  add_subdirectory(third_party/glog)
   add_subdirectory(third_party/googletest)
 
   add_custom_target(exclude_extlib_tests ALL 
     COMMAND rm -f ${gtest_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${gmock_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${googletest-distribution_BINARY_DIR}/CTestTestfile.cmake
+    COMMAND rm -f ${glog_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${absl_BINARY_DIR}/CTestTestfile.cmake)
 
   add_definitions(-DHAVE_LLVM=1)
   include_directories(${LLVM_INCLUDE_DIRS}
     ${CMAKE_HOME_DIRECTORY}
+    third_party/glog/src
     third_party/abseil
     third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper
     ${PROJECT_BINARY_DIR}
+    ${PROJECT_BINARY_DIR}/third_party/glog
     ${gtest_SOURCE_DIR}/include
     ${gmock_SOURCE_DIR}/include
     third_party/perf_data_converter/src
@@ -173,7 +181,6 @@ function (config_with_llvm)
 
   set (CMAKE_REQUIRED_INCLUDES ${LLVM_INCLUDE_DIRS})
   set (CMAKE_REQUIRED_LIBRARIES LLVMObject)
-  set (CMAKE_REQUIRED_LIBRARIES LLVMDebugInfoDWARF)
   check_cxx_source_compiles(
     "
     #include \"llvm/Object/ELFObjectFile.h\"
@@ -231,12 +238,16 @@ function (config_with_llvm)
   add_library(llvm_propeller_options OBJECT llvm_propeller_options_builder.cc ${LLVM_PROPELLER_OPTIONS_PROTO_CC})
   add_dependencies(llvm_propeller_options quipper_perf)
 
+  add_library(llvm_propeller_mock_whole_program_info OBJECT
+    llvm_propeller_mock_whole_program_info.cc)
+  add_dependencies(llvm_propeller_mock_whole_program_info llvm_propeller_options)
+  add_dependencies(llvm_propeller_mock_whole_program_info llvm_propeller_cfg_proto)
   add_library(create_llvm_prof_object OBJECT create_llvm_prof.cc)
   add_dependencies(create_llvm_prof_object llvm_propeller_options)
 
   add_library(sample_reader OBJECT sample_reader.cc)
   target_include_directories(sample_reader PUBLIC util)
-  target_link_libraries(sample_reader absl::base absl::log absl::check quipper_perf LLVMObject)
+  target_link_libraries(sample_reader absl::base quipper_perf LLVMObject)
   add_dependencies(sample_reader perf_data_proto)
 
   add_library(perfdata_reader OBJECT perfdata_reader.cc)
@@ -255,8 +266,7 @@ function (config_with_llvm)
     absl::strings
     absl::memory
     absl::flags
-    absl::check
-    absl::log
+    glog
     LLVMCore
     LLVMProfileData)
 
@@ -275,21 +285,11 @@ function (config_with_llvm)
     absl::node_hash_set
     absl::flags
     symbol_map)
-  add_library(mini_disassembler OBJECT mini_disassembler.cc)
-  target_link_libraries(mini_disassembler
-    LLVMObject
-    LLVMMC
-    LLVMSupport
-    LLVMX86Disassembler
-    LLVMX86AsmParser
-    LLVMX86Desc
-  )
   add_library(llvm_profile_reader OBJECT llvm_profile_reader.cc)
   target_link_libraries(llvm_profile_reader
     absl::flat_hash_map
     absl::node_hash_set
-    symbol_map
-  )
+    symbol_map)
   add_library(profile_reader OBJECT profile_reader.cc)
 
   add_library(profile_creator OBJECT
@@ -309,11 +309,19 @@ function (config_with_llvm)
   target_link_libraries(profile_diff
     absl::flags_parse
     llvm_profile_reader
-    mini_disassembler
+    symbol_map)
+
+  add_executable(profile_merger profile_merger.cc)
+  target_link_libraries(profile_merger
+    absl::flags_parse
+    llvm_profile_reader
+    llvm_profile_writer
+    profile_creator
+    profile_reader
+    quipper_perf
+    sample_reader
     symbol_map
-    absl::check
-    absl::log
-    absl::statusor)
+    LLVMDebugInfoDWARF)
 
   add_executable(sample_merger sample_merger.cc)
   target_link_libraries(sample_merger
@@ -321,19 +329,13 @@ function (config_with_llvm)
     llvm_profile_reader
     llvm_profile_writer
     profile_creator
-    mini_disassembler
     quipper_perf
     sample_reader
     symbol_map
-    LLVMDebugInfoDWARF
-    LLVMSupport
-    absl::log
-    absl::check
-    absl::status
-    absl::statusor)
+    LLVMDebugInfoDWARF)
 
   add_executable(create_llvm_prof)
-  target_link_libraries(create_llvm_prof
+  target_link_libraries(create_llvm_prof 
     absl::base
     absl::check
     absl::flags
@@ -343,10 +345,11 @@ function (config_with_llvm)
     absl::str_format
     absl::strings
     create_llvm_prof_object
-    mini_disassembler
+    glog
     llvm_profile_reader
     llvm_profile_writer
     llvm_propeller_objects
+    llvm_propeller_perf_data_provider
     perfdata_reader
     profile_creator
     quipper_perf
@@ -361,7 +364,6 @@ function (config_with_llvm)
   target_link_libraries(symbol_map_test
     gtest
     gtest_main
-    absl::check
     llvm_profile_reader
     symbol_map)
   add_test(NAME symbol_map_test COMMAND symbol_map_test)
@@ -373,7 +375,6 @@ function (config_with_llvm)
   target_link_libraries(llvm_profile_reader_test
     gtest
     gtest_main
-    absl::check
     llvm_profile_reader
     symbol_map)
   add_test(NAME llvm_profile_reader_test COMMAND llvm_profile_reader_test)
@@ -387,13 +388,10 @@ function (config_with_llvm)
   target_link_libraries(llvm_profile_writer_test
     gtest
     gtest_main
-    absl::check
-    absl::statusor
     llvm_profile_writer
     profile_creator
     quipper_perf
     sample_reader
-    mini_disassembler
     symbol_map
     LLVMDebugInfoDWARF
     LLVMProfileData)
@@ -403,35 +401,28 @@ function (config_with_llvm)
     status_provider.cc
     status_consumer_registry.cc)
 
+  add_library(llvm_propeller_perf_data_provider OBJECT
+    llvm_propeller_file_perf_data_provider.cc)
+
   add_library(llvm_propeller_objects OBJECT
-    addr2cu.cc
     llvm_propeller_cfg.cc
-    llvm_propeller_chain_cluster_builder.cc
+    llvm_propeller_chain_cluster_builder.cc 
     llvm_propeller_code_layout.cc
     llvm_propeller_code_layout_scorer.cc
     llvm_propeller_formatting.cc
-    llvm_propeller_program_cfg.cc
-    llvm_propeller_program_cfg_builder.cc
-    llvm_propeller_binary_address_mapper.cc
-    llvm_propeller_binary_content.cc
-    llvm_propeller_file_perf_data_provider.cc
-    llvm_propeller_statistics.cc
     llvm_propeller_node_chain.cc
     llvm_propeller_node_chain_assembly.cc
     llvm_propeller_node_chain_builder.cc
     llvm_propeller_options_builder.cc
     ${LLVM_PROPELLER_OPTIONS_PROTO_CC}
     llvm_propeller_profile_writer.cc
-    llvm_propeller_profile_computer.cc
-    llvm_propeller_profile_generator.cc
-    llvm_propeller_telemetry_reporter.cc)
-  add_dependencies(llvm_propeller_objects absl::statusor status_provider)
+    llvm_propeller_whole_program_info.cc)
+  add_dependencies(llvm_propeller_objects absl::statusor llvm_profile_writer status_provider)
 
   add_executable(instruction_map_test addr2line.cc instruction_map.cc instruction_map_test.cc)
   target_link_libraries(instruction_map_test
     gtest
     gtest_main
-    absl::check
     quipper_perf
     sample_reader
     symbol_map
@@ -442,18 +433,18 @@ function (config_with_llvm)
   target_link_libraries(profile_symbol_list_test
     gtest
     gtest_main
-    absl::check
     symbol_map)
   add_test(NAME profile_symbol_list_test COMMAND profile_symbol_list_test)
 
   add_executable(sample_reader_test sample_reader_test.cc)
   target_link_libraries(sample_reader_test
+    absl::base
     absl::check
-    absl::statusor
+    absl::strings
+    glog
     gtest
     gtest_main
     llvm_profile_writer
-    mini_disassembler
     profile_creator
     quipper_perf
     sample_reader
@@ -462,46 +453,103 @@ function (config_with_llvm)
     LLVMDebugInfoDWARF)
   add_test(NAME sample_reader_test COMMAND sample_reader_test)
 
-  add_executable(perfdata_reader_test perfdata_reader_test.cc)
-  target_link_libraries(perfdata_reader_test
-    gtest
-    gtest_main
-    absl::flat_hash_map
-    absl::flags_parse
+  add_executable(llvm_propeller_profile_writer_test llvm_propeller_profile_writer_test.cc)
+  target_link_libraries(llvm_propeller_profile_writer_test
+    absl::base
     absl::check
-    absl::status
-    absl::statusor
-    llvm_propeller_objects
-    mini_disassembler
-    status_provider
-    quipper_perf
-    perfdata_reader
-    LLVMObject
-    LLVMDebugInfoDWARF)
-  add_test(NAME perfdata_reader_test COMMAND perfdata_reader_test)
-
-  add_executable(llvm_propeller_profile_generator_test llvm_propeller_profile_generator_test.cc)
-  target_link_libraries(llvm_propeller_profile_generator_test
-    gtest
-    gmock
-    gtest_main
     absl::flags
-    absl::flat_hash_map
     absl::flags_parse
-    absl::check
     absl::status
     absl::statusor
+    absl::str_format
     absl::strings
+    glog
+    gtest
+    gtest_main
+    llvm_profile_reader
+    llvm_profile_writer
+    llvm_propeller_cfg_proto
+    llvm_propeller_mock_whole_program_info
     llvm_propeller_objects
-    mini_disassembler
-    status_provider
-    quipper_perf
+    llvm_propeller_perf_data_provider
     perfdata_reader
-    LLVMObject
-    LLVMDebugInfoDWARF)
-  add_test(NAME llvm_propeller_profile_generator_test COMMAND llvm_propeller_profile_generator_test)
+    profile_creator
+    quipper_perf
+    sample_reader
+    status_provider
+    symbol_map
+    LLVMDebugInfoDWARF
+    LLVMSupport )
+  add_test(NAME llvm_propeller_profile_writer_test COMMAND llvm_propeller_profile_writer_test)
 
-  add_library(quipper_perf OBJECT
+  #TODO: Enable this test after fixing the ReadBBAddrMap test.
+  #add_executable(llvm_propeller_whole_program_info_test llvm_propeller_whole_program_info_test.cc)
+  #target_link_libraries(
+  #  llvm_propeller_whole_program_info_test
+  #  absl::base
+  #  absl::check
+  #  absl::flags
+  #  absl::flags_parse
+  #  absl::status
+  #  absl::statusor
+  #  absl::str_format
+  #  absl::strings
+  #  glog
+  #  gmock
+  #  gtest
+  #  gtest_main
+  #  llvm_profile_reader
+  #  llvm_profile_writer
+  #  llvm_propeller_cfg_proto
+  #  llvm_propeller_mock_whole_program_info
+  #   llvm_propeller_objects
+  #   llvm_propeller_perf_data_provider
+  #   perfdata_reader
+  #  profile_creator
+  #  quipper_perf
+  #  sample_reader
+  #  status_provider
+  #  symbol_map
+  #  LLVMDebugInfoDWARF
+  #  LLVMSupport )
+  #add_test(NAME llvm_propeller_whole_program_info_test COMMAND llvm_propeller_whole_program_info_test)
+
+  add_executable(llvm_propeller_code_layout_test llvm_propeller_code_layout_test.cc)
+  target_link_libraries(llvm_propeller_code_layout_test
+    absl::base
+    absl::check
+    absl::flags
+    absl::flags_parse
+    absl::status
+    absl::statusor
+    absl::str_format
+    absl::strings
+    gmock
+    glog
+    gtest
+    gtest_main
+    llvm_profile_reader
+    llvm_profile_writer
+    llvm_propeller_cfg_proto
+    llvm_propeller_mock_whole_program_info
+    llvm_propeller_objects
+    llvm_propeller_perf_data_provider
+    perfdata_reader
+    profile_creator
+    quipper_perf
+    sample_reader
+    status_provider
+    symbol_map
+    LLVMDebugInfoDWARF
+    LLVMSupport )
+  add_test(NAME llvm_propeller_code_layout_test COMMAND llvm_propeller_code_layout_test)
+
+  add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
+  add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
+  add_library(llvm_propeller_whole_program_info OBJECT llvm_propeller_whole_program_info.cc)
+  add_dependencies(llvm_propeller_whole_program_info llvm_propeller_options)
+
+  add_library(quipper_perf OBJECT 
     third_party/perf_data_converter/src/quipper/address_mapper.cc
     third_party/perf_data_converter/src/quipper/base/logging.cc
     third_party/perf_data_converter/src/quipper/binary_data_utils.cc
@@ -537,7 +585,7 @@ function (config_with_llvm)
 
   add_custom_command(PRE_BUILD
     OUTPUT prepare_cmds
-    COMMAND ln -s -f ${CMAKE_SOURCE_DIR}/testdata testdata)
+    COMMAND ln -s -f ../testdata testdata)
   add_custom_target(prepare ALL
     DEPENDS prepare_cmds)
 endfunction()

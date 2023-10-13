@@ -28,8 +28,6 @@
 #include <vector>
 
 #include "base/common.h"
-#include "third_party/abseil/absl/log/check.h"
-#include "third_party/abseil/absl/log/log.h"
 #include "symbolize/dwarf2enums.h"
 #include "symbolize/line_state_machine.h"
 

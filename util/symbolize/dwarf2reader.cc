@@ -22,6 +22,7 @@
 #include <stack>
 #include <utility>
 
+#include "base/logging.h"
 #include "symbolize/bytereader.h"
 #include "symbolize/bytereader-inl.h"
 #include "symbolize/dwarf2enums.h"
@@ -29,7 +30,6 @@
 #include "symbolize/line_state_machine.h"
 #include "symbolize/addr2line_inlinestack.h"
 #include "symbolize/index_helper.h"
-#include "third_party/abseil/absl/log/log.h"
 
 namespace devtools_crosstool_autofdo {
 
