@@ -685,6 +685,11 @@ class CompilationUnit {
   const char* str_offsets_buffer_;
   uint64 str_offsets_buffer_length_;
 
+  // Add a string section specific to the line number table (.debug_line_str)
+  // since DWARF5.
+  const char* line_str_buffer_;
+  uint64 line_str_buffer_length_;
+
   // Address section buffer and length, if we have an address section
   // (.debug_addr).
   const char* addr_buffer_;

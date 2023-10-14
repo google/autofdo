@@ -39,6 +39,7 @@ CompilationUnit::CompilationUnit(const string& path,
     : path_(path), offset_from_section_start_(offset), reader_(reader),
       sections_(sections), handler_(handler), abbrevs_(NULL),
       string_buffer_(NULL), string_buffer_length_(0),
+      line_str_buffer_(NULL), line_str_buffer_length_(0),
       str_offsets_buffer_(NULL), str_offsets_buffer_length_(0),
       addr_buffer_(NULL), addr_buffer_length_(0),
       is_split_dwarf_(false), dwo_name_(),
@@ -51,6 +52,7 @@ CompilationUnit::CompilationUnit(const string& path, const string& dwp_path,
     : path_(path), offset_from_section_start_(offset), reader_(reader),
       sections_(sections), handler_(handler), abbrevs_(),
       string_buffer_(NULL), string_buffer_length_(0),
+      line_str_buffer_(NULL), line_str_buffer_length_(0),
       str_offsets_buffer_(NULL), str_offsets_buffer_length_(0),
       addr_buffer_(NULL), addr_buffer_length_(0),
       is_split_dwarf_(false), dwo_name_(),
@@ -471,6 +473,9 @@ uint64 CompilationUnit::Start(uint64 offset) {
   string_buffer_ = NULL;
   string_buffer_length_ = 0;
 
+  line_str_buffer_ = NULL;
+  line_str_buffer_length_ = 0;
+
   str_offsets_buffer_ = NULL;
   str_offsets_buffer_length_ = 0;
 
@@ -539,6 +544,13 @@ uint64 CompilationUnit::Start() {
   if (iter != sections_.end()) {
     string_buffer_ = iter->second.first;
     string_buffer_length_ = iter->second.second;
+  }
+
+  // Set the string section specific to the line number table if we have one.
+  iter = sections_.find(".debug_line_str");
+  if (iter != sections_.end()) {
+    line_str_buffer_ = iter->second.first;
+    line_str_buffer_length_ = iter->second.second;
   }
 
   // Set the string offsets section if we have one.
@@ -714,6 +726,14 @@ const char* CompilationUnit::ProcessAttribute(
       ProcessAttributeBuffer(dieoffset, attr, form, start + len,
                                       datalen);
       return start + datalen + len;
+      break;
+    }
+    case DW_FORM_line_strp: {
+      CHECK(line_str_buffer_ != NULL);
+      const uint64 offset = reader_->ReadOffset(start);
+      ProcessAttributeString(dieoffset, attr, form,
+                             get_string_with_offsets(line_str_buffer_, line_str_buffer_length_, offset));
+      return start + reader_->OffsetSize();
       break;
     }
     case DW_FORM_strp: {
