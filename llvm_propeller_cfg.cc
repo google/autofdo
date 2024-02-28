@@ -24,14 +24,15 @@ void ControlFlowGraph::CreateNodes(
     const llvm::object::BBAddrMap &func_bb_addr_map, uint64_t ordinal) {
   CHECK(nodes_.empty());
   int bb_index = 0;
-  for (const auto &bb_entry : func_bb_addr_map.BBEntries) {
+  for (const auto &bb_entry : func_bb_addr_map.getBBEntries()) {
     nodes_.insert(std::make_unique<CFGNode>(
         /*symbol_ordinal=*/ordinal++,
-        /*addr=*/func_bb_addr_map.Addr + bb_entry.Offset,
+        /*addr=*/func_bb_addr_map.getFunctionAddress() + bb_entry.Offset,
         /*bb_index=*/bb_index++,
         /*size=*/bb_entry.Size, /*is_landing_pad=*/bb_entry.isEHPad(),
         /*cfg=*/this));
-    if (bb_entry.isEHPad()) ++n_landing_pads_;
+    if (bb_entry.isEHPad())
+      ++n_landing_pads_;
   }
 }
 

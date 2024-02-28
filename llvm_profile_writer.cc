@@ -22,6 +22,7 @@
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/match.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/ProfileData/FunctionId.h"
 
 ABSL_DECLARE_FLAG(bool, debug_dump);
 
@@ -85,7 +86,7 @@ void LLVMProfileBuilder::VisitTopSymbol(const std::string &name,
     LOG(FATAL) << "Error updating total samples for '" << name
                << "': " << EC.message();
 
-  profile.setName(name_ref);
+  profile.setFunction(llvm::sampleprof::FunctionId(name_ref));
   inline_stack_.clear();
   inline_stack_.push_back(&profile);
 }
@@ -99,11 +100,12 @@ void LLVMProfileBuilder::VisitCallsite(const Callsite &callsite) {
     inline_stack_.pop_back();
   }
   auto &caller_profile = *(inline_stack_.back());
-  auto CalleeName = GetNameRef(Symbol::Name(callsite.second));
+  llvm::sampleprof::FunctionId Callee(
+      GetNameRef(Symbol::Name(callsite.second)));
   auto &callee_profile =
       caller_profile.functionSamplesAt(llvm::sampleprof::LineLocation(
-          line, discriminator))[std::string(CalleeName)];
-  callee_profile.setName(CalleeName);
+          line, discriminator))[llvm::sampleprof::FunctionId(Callee)];
+  callee_profile.setFunction(Callee);
   inline_stack_.push_back(&callee_profile);
 }
 
@@ -137,11 +139,12 @@ void LLVMProfileBuilder::Visit(const Symbol *node) {
     const auto &target_map = pos_count.second.target_map;
     for (const auto &target_count : target_map) {
       if (std::error_code EC = llvm::MergeResult(
-              result_, profile.addCalledTargetSamples(
-                           line, discriminator,
-                           llvm::StringRef(target_count.first.data(),
-                                           target_count.first.size()),
-                           target_count.second)))
+              result_,
+              profile.addCalledTargetSamples(
+                  line, discriminator,
+                  llvm::sampleprof::FunctionId(llvm::StringRef(
+                      target_count.first.data(), target_count.first.size())),
+                  target_count.second)))
         LOG(FATAL) << "Error updating called target samples for '"
                    << node->info.func_name << "': " << EC.message();
     }

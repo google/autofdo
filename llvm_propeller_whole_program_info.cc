@@ -128,10 +128,10 @@ SetFunctionIndexToNamesMap(const SymTabTy &symtab,
   absl::flat_hash_map<int, llvm::SmallVector<llvm::StringRef, 3>>
       function_index_to_names;
   for (int i = 0; i != bb_addr_map.size(); ++i) {
-    auto iter = symtab.find(bb_addr_map[i].Addr);
+    auto iter = symtab.find(bb_addr_map[i].getFunctionAddress());
     if (iter == symtab.end()) {
       LOG(WARNING) << "BB address map for function at "
-                   << absl::StrCat(absl::Hex(bb_addr_map[i].Addr))
+                   << absl::StrCat(absl::Hex(bb_addr_map[i].getFunctionAddress()))
                    << " has no associated symbol table entry!";
       continue;
     }
@@ -288,11 +288,11 @@ absl::Status PropellerWholeProgramInfo::DoCreateCfgs(
   uint64_t ordinal = 0;
   for (int func_index : selected_functions) {
     const BBAddrMap &func_bb_addr_map = bb_addr_map_[func_index];
-    CHECK(!func_bb_addr_map.BBEntries.empty());
+    CHECK(!func_bb_addr_map.getBBEntries().empty());
     auto cfg = std::make_unique<ControlFlowGraph>(
         function_index_to_names_map_[func_index]);
     cfg->CreateNodes(func_bb_addr_map, ordinal);
-    CHECK_EQ(cfg->nodes().size(), func_bb_addr_map.BBEntries.size());
+    CHECK_EQ(cfg->nodes().size(), func_bb_addr_map.getBBEntries().size());
     ordinal += cfg->nodes().size();
     stats_.nodes_created += cfg->nodes().size();
     // Setup mapping from symbol ordinals <-> nodes
@@ -401,7 +401,8 @@ bool PropellerWholeProgramInfo::CreateEdges(
     // when from_sym is null.
     if ((!from_bb_index.has_value() || GetBBEntry(from_bb_handle).hasReturn() ||
          to_bb_handle.function_index != from_bb_handle.function_index) &&
-        GetFunctionEntry(to_bb_handle).Addr != to &&  // Not a call
+        // Not a call
+        GetFunctionEntry(to_bb_handle).getFunctionAddress() != to &&
         // Jump to the beginning of the basicblock
         to == GetAddress(to_bb_handle)) {
       if (to_bb_handle.bb_index != 0) {
@@ -424,7 +425,7 @@ bool PropellerWholeProgramInfo::CreateEdges(
     }
 
     CFGEdge::Kind edge_kind = CFGEdge::Kind::kBranchOrFallthough;
-    if (GetFunctionEntry(to_bb_handle).Addr == to) {
+    if (GetFunctionEntry(to_bb_handle).getFunctionAddress() == to) {
       edge_kind = CFGEdge::Kind::kCall;
     } else if (to != GetAddress(to_bb_handle) ||
                GetBBEntry(from_bb_handle).hasReturn()) {
@@ -551,14 +552,16 @@ absl::btree_set<int> PropellerWholeProgramInfo::CalculateHotFunctions(
     auto it =
         absl::c_upper_bound(bb_addr_map_, binary_address,
                             [](uint64_t addr, const BBAddrMap &func_entry) {
-                              return addr < func_entry.Addr;
+                              return addr < func_entry.getFunctionAddress();
                             });
-    if (it == bb_addr_map_.begin()) return;
+    if (it == bb_addr_map_.begin())
+      return;
     it = std::prev(it);
     // We know the address is bigger than or equal to the function address. Make
     // sure that it doesn't point beyond the last basic block.
-    if (binary_address >=
-        it->Addr + it->BBEntries.back().Offset + it->BBEntries.back().Size)
+    if (binary_address >= it->getFunctionAddress() +
+                              it->getBBEntries().back().Offset +
+                              it->getBBEntries().back().Size)
       return;
     hot_functions.insert(it - bb_addr_map_.begin());
   };
@@ -573,11 +576,12 @@ absl::btree_set<int> PropellerWholeProgramInfo::CalculateHotFunctions(
 void PropellerWholeProgramInfo::DropNonSelectedFunctions(
     const absl::btree_set<int> &selected_functions) {
   for (int i = 0; i != bb_addr_map_.size(); ++i) {
-    if (selected_functions.contains(i)) continue;
-    bb_addr_map_[i].BBEntries.clear();
-    bb_addr_map_[i].BBEntries.shrink_to_fit();
+    if (selected_functions.contains(i))
+      continue;
+    bb_addr_map_[i].BBRanges.clear();
+    bb_addr_map_[i].BBRanges.shrink_to_fit();
     if (!options_.keep_frontend_intermediate_data())
-      symtab_.erase(bb_addr_map_[i].Addr);
+      symtab_.erase(bb_addr_map_[i].getFunctionAddress());
   }
 }
 
@@ -586,7 +590,8 @@ void PropellerWholeProgramInfo::FilterNoNameFunctions(
   for (auto it = selected_functions.begin(); it != selected_functions.end();) {
     if (!function_index_to_names_map_.contains(*it)) {
       LOG(WARNING) << "Hot function at address: 0x"
-                   << absl::StrCat(absl::Hex(bb_addr_map_[*it].Addr))
+                   << absl::StrCat(
+                          absl::Hex(bb_addr_map_[*it].getFunctionAddress()))
                    << " does not have an associated symbol name.";
       it = selected_functions.erase(it);
     } else {
@@ -601,7 +606,7 @@ void PropellerWholeProgramInfo::FilterNonTextFunctions(
        func_it != selected_functions.end();) {
     int function_index = *func_it;
     llvm::object::SymbolRef symbol_ref =
-        symtab_.at(bb_addr_map_[function_index].Addr).front();
+        symtab_.at(bb_addr_map_[function_index].getFunctionAddress()).front();
     StringRef section_name =
         llvm::cantFail(llvm::cantFail(symbol_ref.getSection())->getName());
     if (section_name.startswith(".text")) {
@@ -643,7 +648,7 @@ int PropellerWholeProgramInfo::FilterDuplicateNameFunctions(
       // If the uniq-named functions have the same structure, we assume
       // they are the same and thus we keep one copy of them.
       bool same_structure = absl::c_all_of(func_indices, [&](int i) {
-        return absl::c_equal(func_addr_map.BBEntries, bb_addr_map_[i].BBEntries,
+        return absl::c_equal(func_addr_map.getBBEntries(), bb_addr_map_[i].getBBEntries(),
                              [](const llvm::object::BBAddrMap::BBEntry &e1,
                                 const llvm::object::BBAddrMap::BBEntry &e2) {
                                return e1.Offset == e2.Offset &&
@@ -687,11 +692,12 @@ absl::btree_set<int> PropellerWholeProgramInfo::SelectFunctions(
   for (int function_index : selected_functions) {
     const auto &function_bb_addr_map = bb_addr_map_[function_index];
     if (last_function_address.has_value())
-      CHECK_GT(function_bb_addr_map.Addr, *last_function_address);
-    for (int bb_index = 0; bb_index != function_bb_addr_map.BBEntries.size();
-         ++bb_index)
+      CHECK_GT(function_bb_addr_map.getFunctionAddress(),
+               *last_function_address);
+    for (int bb_index = 0;
+         bb_index != function_bb_addr_map.getBBEntries().size(); ++bb_index)
       bb_handles_.push_back({function_index, bb_index});
-    last_function_address = function_bb_addr_map.Addr;
+    last_function_address = function_bb_addr_map.getFunctionAddress();
   }
 
   return selected_functions;

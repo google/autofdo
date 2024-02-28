@@ -482,6 +482,7 @@ function (config_with_llvm)
     LLVMSupport )
   add_test(NAME llvm_propeller_profile_writer_test COMMAND llvm_propeller_profile_writer_test)
 
+<<<<<<< HEAD
   #TODO: Enable this test after fixing the ReadBBAddrMap test.
   #add_executable(llvm_propeller_whole_program_info_test llvm_propeller_whole_program_info_test.cc)
   #target_link_libraries(

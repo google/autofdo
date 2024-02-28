@@ -41,11 +41,12 @@ namespace devtools_crosstool_autofdo {
 using ::llvm::object::BBAddrMap;
 
 // TODO(shenhan): remove the following code once it is upstreamed.
-template <class ELFT>
-std::string ELFFileUtil<ELFT>::GetBuildId() {
-  if (!elf_file_) return "";
+template <class ELFT> std::string ELFFileUtil<ELFT>::GetBuildId() {
+  if (!elf_file_)
+    return "";
   auto hex_to_char = [](uint8_t v) -> char {
-    if (v < 10) return '0' + v;
+    if (v < 10)
+      return '0' + v;
     return 'a' + (v - 10);
   };
   std::vector<std::string> build_ids;
@@ -60,6 +61,7 @@ std::string ELFFileUtil<ELFT>::GetBuildId() {
     for (const typename ELFT::Note &note : elf_file_->notes(shdr, err)) {
       llvm::StringRef r = note.getName();
       if (r == kBuildIdNoteName) {
+        // Or use shdr.sh_addralign instead of 0?
         llvm::ArrayRef<uint8_t> build_id = note.getDesc(/*Align=*/0);
         std::string build_id_str(build_id.size() * 2, '0');
         int k = 0;
@@ -74,7 +76,8 @@ std::string ELFFileUtil<ELFT>::GetBuildId() {
       LOG(WARNING) << "error happened iterating note entries in '"
                    << section_name->str() << "'";
   }
-  if (build_ids.empty()) return "";
+  if (build_ids.empty())
+    return "";
   if (build_ids.size() > 1) {
     LOG(WARNING) << "more than 1 build id entries found in the binary, only "
                     "the first one will be returned";

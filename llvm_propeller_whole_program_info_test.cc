@@ -62,9 +62,9 @@ using ::testing::UnorderedElementsAre;
 using ::llvm::object::BBAddrMap;
 
 MATCHER_P2(BbAddrMapIs, function_address_matcher, bb_entries_matcher, "") {
-  return ExplainMatchResult(function_address_matcher, arg.Addr,
+  return ExplainMatchResult(function_address_matcher, arg.getFunctionAddress(),
                             result_listener) &&
-         ExplainMatchResult(bb_entries_matcher, arg.BBEntries, result_listener);
+         ExplainMatchResult(bb_entries_matcher, arg.getBBEntries(), result_listener);
 }
 
 MATCHER_P6(

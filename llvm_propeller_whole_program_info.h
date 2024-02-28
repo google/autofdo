@@ -182,11 +182,13 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
   // `bb_handle`.
   const llvm::object::BBAddrMap::BBEntry &GetBBEntry(BbHandle bb_handle) const {
     return bb_addr_map_.at(bb_handle.function_index)
-        .BBEntries.at(bb_handle.bb_index);
+        .getBBEntries()
+        .at(bb_handle.bb_index);
   }
 
   uint64_t GetAddress(BbHandle bb_handle) const {
-    return GetFunctionEntry(bb_handle).Addr + GetBBEntry(bb_handle).Offset;
+    return GetFunctionEntry(bb_handle).getFunctionAddress() +
+           GetBBEntry(bb_handle).Offset;
   }
 
   // Returns the name associated with the given `bb_handle`.
@@ -194,7 +196,9 @@ class PropellerWholeProgramInfo : public AbstractPropellerWholeProgramInfo {
     auto &aliases = function_index_to_names_map_.at(bb_handle.function_index);
     std::string func_name =
         aliases.empty()
-            ? absl::StrCat("0x", absl::Hex(GetFunctionEntry(bb_handle).Addr))
+            ? absl::StrCat(
+                  "0x",
+                  absl::Hex(GetFunctionEntry(bb_handle).getFunctionAddress()))
             : aliases.front().str();
     return absl::StrCat(func_name, ":", bb_handle.bb_index);
   }

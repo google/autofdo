@@ -9,6 +9,7 @@
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/ProfileData/FunctionId.h"
 
 #define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 
@@ -81,8 +82,8 @@ TEST(LlvmProfileWriterTest, ReadProfile) {
 
   const auto& call_targets = indirect_call_record.getCallTargets();
   ASSERT_EQ(call_targets.size(), 2);
-  ASSERT_EQ(call_targets.lookup("_Z3fooi"), 3336);
-  ASSERT_EQ(call_targets.lookup("_Z3bari"), 8045);
+  ASSERT_EQ(call_targets.at(llvm::FunctionId{"_Z3fooi"}), 3336);
+  ASSERT_EQ(call_targets.at(llvm::FunctionId{"_Z3bari"}), 8045);
 }
 
 TEST(LlvmProfileWriterTest, ConvertProfile) {

@@ -6,6 +6,7 @@
 
 #include "symbol_map.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/ProfileData/FunctionId.h"
 #include "llvm/ProfileData/SampleProfReader.h"
 #include "llvm/Support/VirtualFileSystem.h"
 
@@ -73,7 +74,7 @@ bool LLVMProfileReader::ReadFromFile(const std::string &filename) {
 
 void LLVMProfileReader::ReadFromFunctionSamples(
     const SourceStack &stack, const llvm::sampleprof::FunctionSamples &fs) {
-  const char *func_name = GetName(fs.getName());
+  const char *func_name = GetName(fs.getFuncName());
 
   if (stack.empty() && !shouldMergeProfileForSym(func_name)) return;
 
@@ -94,9 +95,9 @@ void LLVMProfileReader::ReadFromFunctionSamples(
     symbol_map_->AddSourceCount(top_func_name, new_stack,
                                 loc_sample.second.getSamples(), 1);
     for (const auto &target_count : loc_sample.second.getCallTargets()) {
-      symbol_map_->AddIndirectCallTarget(top_func_name, new_stack,
-                                         GetName(target_count.getKey()),
-                                         target_count.getValue());
+      symbol_map_->AddIndirectCallTarget(
+          top_func_name, new_stack, GetName(target_count.first.stringRef()),
+          target_count.second);
     }
   }
   for (const auto &loc_fsmap : fs.getCallsiteSamples()) {
