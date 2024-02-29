@@ -140,6 +140,24 @@ function (config_without_llvm)
 endfunction ()
 
 function (config_with_llvm)
+  execute_process(COMMAND sh -c "${LLVM_PATH}/bin/clang --version"
+     RESULT_VARIABLE clang_version_status
+     OUTPUT_VARIABLE CLANG_VERSION_OUTPUT)
+
+  set(CLANG_KNOWN_GIT_COMMIT_HASH "d3173f4ab61c17337908eb7df3f1c515ddcd428c")
+  if (clang_version_status)
+     message(WARNING "Could not get clang commit hash : Use clang git hash " ${CLANG_KNOWN_GIT_COMMIT_HASH})
+  else()
+     string(REGEX MATCH "clang version.*llvm-project\.git ([0-9|a-f]+)" CLANG_GIT_COMMIT_HASH ${CLANG_VERSION_OUTPUT})
+     set(CLANG_GIT_COMMIT_HASH ${CMAKE_MATCH_1})
+     if ("${CLANG_GIT_COMMIT_HASH}" STREQUAL ${CLANG_KNOWN_GIT_COMMIT_HASH})
+	message(STATUS "Found known git commit hash of clang (" ${CLANG_GIT_COMMIT_HASH} ") - Success")
+     else()
+       message(NOTICE "Unverified git commit hash of clang(" ${CLANG_GIT_COMMIT_HASH} ")")
+       message(WARNING "Use clang git commit hash " ${CLANG_KNOWN_GIT_COMMIT_HASH})
+     endif()
+  endif()
+
   set (llvm_search_paths
     ${LLVM_PATH}
     ${LLVM_PATH}/lib/cmake
