@@ -8,8 +8,7 @@ function (config_without_llvm)
   add_subdirectory(third_party/abseil)
   add_subdirectory(third_party/glog)
 
-  include_directories(${LLVM_INCLUDE_DIRS}
-    ${CMAKE_HOME_DIRECTORY}
+  include_directories(${CMAKE_HOME_DIRECTORY}
     third_party/glog/src
     third_party/abseil
     third_party/perf_data_converter/src
@@ -140,37 +139,23 @@ function (config_without_llvm)
 endfunction ()
 
 function (config_with_llvm)
-  execute_process(COMMAND sh -c "${LLVM_PATH}/bin/clang --version"
-     RESULT_VARIABLE clang_version_status
-     OUTPUT_VARIABLE CLANG_VERSION_OUTPUT)
-
-  set(CLANG_KNOWN_GIT_COMMIT_HASH "d3173f4ab61c17337908eb7df3f1c515ddcd428c")
-  if (clang_version_status)
-     message(WARNING "Could not get clang commit hash : Use clang git hash " ${CLANG_KNOWN_GIT_COMMIT_HASH})
-  else()
-     string(REGEX MATCH "clang version.*llvm-project\.git ([0-9|a-f]+)" CLANG_GIT_COMMIT_HASH ${CLANG_VERSION_OUTPUT})
-     set(CLANG_GIT_COMMIT_HASH ${CMAKE_MATCH_1})
-     if ("${CLANG_GIT_COMMIT_HASH}" STREQUAL ${CLANG_KNOWN_GIT_COMMIT_HASH})
-	message(STATUS "Found known git commit hash of clang (" ${CLANG_GIT_COMMIT_HASH} ") - Success")
-     else()
-       message(NOTICE "Unverified git commit hash of clang(" ${CLANG_GIT_COMMIT_HASH} ")")
-       message(WARNING "Use clang git commit hash " ${CLANG_KNOWN_GIT_COMMIT_HASH})
-     endif()
-  endif()
-
-  set (llvm_search_paths
-    ${LLVM_PATH}
-    ${LLVM_PATH}/lib/cmake
-    ${LLVM_PATH}/lib/cmake/llvm
-    ${LLVM_PATH}/lib/cmake/clang)
-  find_package(LLVM REQUIRED CONFIG
-    PATHS ${llvm_search_paths}
-    NO_DEFAULT_PATH)
   #set (protobuf_BUILD_TESTS OFF)
+
+  ### LLVM Configuration
+  set (LLVM_INCLUDE_UTILS OFF)
+  set (LLVM_INCLUDE_TESTS OFF)
+  set (LLVM_INCLUDE_TOOLS OFF)
+  set (LLVM_INCLUDE_DOCS OFF)
+  
+  set (LLVM_ENABLE_RTTI ON)
+  set (LLVM_ENABLE_PROJECTS clang)
+  set (LLVM_TARGETS_TO_BUILD X86)
+  ###
 
   add_subdirectory(third_party/abseil)
   add_subdirectory(third_party/glog)
   add_subdirectory(third_party/googletest)
+  add_subdirectory(third_party/llvm-project/llvm)
 
   add_custom_target(exclude_extlib_tests ALL 
     COMMAND rm -f ${gtest_BINARY_DIR}/CTestTestfile.cmake
@@ -180,66 +165,20 @@ function (config_with_llvm)
     COMMAND rm -f ${absl_BINARY_DIR}/CTestTestfile.cmake)
 
   add_definitions(-DHAVE_LLVM=1)
-  include_directories(${LLVM_INCLUDE_DIRS}
-    ${CMAKE_HOME_DIRECTORY}
+  include_directories(${CMAKE_HOME_DIRECTORY}
     third_party/glog/src
     third_party/abseil
+    third_party/llvm-project/llvm/include
     third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper
     ${PROJECT_BINARY_DIR}
     ${PROJECT_BINARY_DIR}/third_party/glog
+    ${PROJECT_BINARY_DIR}/third_party/llvm-project/llvm/include
     ${gtest_SOURCE_DIR}/include
     ${gmock_SOURCE_DIR}/include
     third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper
     util/regexp)
-
-  add_definitions(-DLLVM_VERSION_MAJOR=${LLVM_VERSION_MAJOR})
-  add_definitions(-DLLVM_VERSION_MINOR=${LLVM_VERSION_MINOR})
-
-  set (CMAKE_REQUIRED_INCLUDES ${LLVM_INCLUDE_DIRS})
-  set (CMAKE_REQUIRED_LIBRARIES LLVMObject)
-  check_cxx_source_compiles(
-    "
-    #include \"llvm/Object/ELFObjectFile.h\"
-  
-    using llvmELF64LE = llvm::object::ELF64LE;
-    using llvmELFFile = llvm::object::ELFFile<llvmELF64LE>;
-    using llvmELFObjFile = llvm::object::ELFObjectFile<llvmELF64LE>;
-
-    bool foo(llvmELFObjFile *elf_object) {
-      const llvmELFFile &elf_file = elf_object->getELFFile();
-      return elf_file.isLE();
-    }
-    int main() {
-      foo(nullptr);
-    }
-    "
-    LLVM_GETELFFILE_RET_REFERENCE
-  )
-  if (LLVM_GETELFFILE_RET_REFERENCE)
-    add_definitions(-DLLVM_GETELFFILE_RET_REFERENCE=${LLVM_GETELFFILE_RET_REFERENCE})
-  endif()
-
-  set (CMAKE_REQUIRED_LIBRARIES LLVMProfileData)
-  check_cxx_source_compiles(
-    "
-    #include \"llvm/ProfileData/SampleProfWriter.h\"
-  
-    void foo(llvm::sampleprof::SampleProfileWriter *sample_profile_writer) {
-      llvm::sampleprof::SampleProfileMap ProfileMap;
-      sample_profile_writer->write(ProfileMap);
-    }
-    int main() {
-      foo(nullptr);
-      return 0;
-    }
-    "
-    LLVM_SAMPLEFDO_SPLIT_CONTEXT
-  )
-  if (NOT LLVM_SAMPLEFDO_SPLIT_CONTEXT)
-    add_definitions(-DLLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT)
-  endif()
 
   find_package(Protobuf REQUIRED)
   protobuf_generate_cpp(PERF_DATA_PROTO_CC PERF_DATA_PROTO_HDR third_party/perf_data_converter/src/quipper/perf_data.proto)
@@ -309,6 +248,7 @@ function (config_with_llvm)
     absl::node_hash_set
     symbol_map)
   add_library(profile_reader OBJECT profile_reader.cc)
+  add_dependencies(profile_reader LLVMCore)
 
   add_library(profile_creator OBJECT
     addr2line.cc
@@ -327,7 +267,8 @@ function (config_with_llvm)
   target_link_libraries(profile_diff
     absl::flags_parse
     llvm_profile_reader
-    symbol_map)
+    symbol_map
+    LLVMSupport)
 
   add_executable(profile_merger profile_merger.cc)
   target_link_libraries(profile_merger
@@ -339,7 +280,8 @@ function (config_with_llvm)
     quipper_perf
     sample_reader
     symbol_map
-    LLVMDebugInfoDWARF)
+    LLVMDebugInfoDWARF
+    LLVMSupport)
 
   add_executable(sample_merger sample_merger.cc)
   target_link_libraries(sample_merger
@@ -350,7 +292,8 @@ function (config_with_llvm)
     quipper_perf
     sample_reader
     symbol_map
-    LLVMDebugInfoDWARF)
+    LLVMDebugInfoDWARF
+    LLVMSupport)
 
   add_executable(create_llvm_prof)
   target_link_libraries(create_llvm_prof 
@@ -383,7 +326,8 @@ function (config_with_llvm)
     gtest
     gtest_main
     llvm_profile_reader
-    symbol_map)
+    symbol_map
+    LLVMSupport)
   add_test(NAME symbol_map_test COMMAND symbol_map_test)
 
   find_library (LIBELF_LIBRARIES NAMES elf REQUIRED)
@@ -394,7 +338,8 @@ function (config_with_llvm)
     gtest
     gtest_main
     llvm_profile_reader
-    symbol_map)
+    symbol_map
+    LLVMSupport)
   add_test(NAME llvm_profile_reader_test COMMAND llvm_profile_reader_test)
 
   add_executable(llvm_profile_writer_test llvm_profile_writer_test.cc)
@@ -412,7 +357,8 @@ function (config_with_llvm)
     sample_reader
     symbol_map
     LLVMDebugInfoDWARF
-    LLVMProfileData)
+    LLVMProfileData
+    LLVMSupport)
   add_test(NAME llvm_profile_writer_test COMMAND llvm_profile_writer_test)
 
   add_library(status_provider OBJECT
@@ -444,14 +390,16 @@ function (config_with_llvm)
     quipper_perf
     sample_reader
     symbol_map
-    LLVMDebugInfoDWARF)
+    LLVMDebugInfoDWARF
+    LLVMSupport)
   add_test(NAME instruction_map_test COMMAND instruction_map_test)
 
   add_executable(profile_symbol_list_test profile_symbol_list.cc)
   target_link_libraries(profile_symbol_list_test
     gtest
     gtest_main
-    symbol_map)
+    symbol_map
+    LLVMSupport)
   add_test(NAME profile_symbol_list_test COMMAND profile_symbol_list_test)
 
   add_executable(sample_reader_test sample_reader_test.cc)
@@ -468,7 +416,8 @@ function (config_with_llvm)
     sample_reader
     symbol_map
     LLVMObject
-    LLVMDebugInfoDWARF)
+    LLVMDebugInfoDWARF
+    LLVMSupport)
   add_test(NAME sample_reader_test COMMAND sample_reader_test)
 
   add_executable(llvm_propeller_profile_writer_test llvm_propeller_profile_writer_test.cc)
@@ -600,6 +549,7 @@ function (config_with_llvm)
     third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper)
   target_link_libraries(quipper_perf ${Protobuf_LIBRARIES} ${LIBELF_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
+  # add_dependencies(quipper_perf LLVMCore LLVMSupport)
 
   add_custom_command(PRE_BUILD
     OUTPUT prepare_cmds
@@ -608,7 +558,7 @@ function (config_with_llvm)
     DEPENDS prepare_cmds)
 endfunction()
 
-if (DEFINED LLVM_PATH)
+if (DEFINED WITH_LLVM)
   config_with_llvm()
 else ()
   config_without_llvm()
