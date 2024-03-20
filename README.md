@@ -12,7 +12,7 @@ To build autofdo tool for gcc, no llvm installation is needed.
 ## 2.1 Build autofdo tool for llvm
 ```
     $ git clone --recursive https://github.com/google/autofdo.git
-	$ cmake -G Ninja -DWITH_LLVM=On -DCMAKE_BUILD_TYPE=Release -S autofdo/ -B Build/
+    $ cmake -G Ninja -DWITH_LLVM=On -DCMAKE_BUILD_TYPE=Release -S autofdo/ -B Build/
     $ ninja -C Build
 ```
 
