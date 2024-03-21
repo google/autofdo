@@ -139,7 +139,21 @@ function (config_without_llvm)
 endfunction ()
 
 function (config_with_llvm)
-  #set (protobuf_BUILD_TESTS OFF)
+  execute_process(COMMAND sh -c "git -C ${CMAKE_HOME_DIRECTORY}/third_party/llvm-project log -1 --format=%h"
+     RESULT_VARIABLE clang_version_status
+     OUTPUT_VARIABLE CLANG_VERSION_OUTPUT)
+
+  set(CLANG_KNOWN_GIT_COMMIT_HASH "e4f9175d2395")
+  if (clang_version_status)
+     message(WARNING "Could not get clang commit hash : Use clang git hash " ${CLANG_KNOWN_GIT_COMMIT_HASH})
+  else()
+     string(REGEX MATCH "([0-9|a-f]+)" CLANG_GIT_COMMIT_HASH ${CLANG_VERSION_OUTPUT})
+     if ("${CLANG_GIT_COMMIT_HASH}" STREQUAL ${CLANG_KNOWN_GIT_COMMIT_HASH})
+       message(STATUS "Found known git commit hash of clang (" ${CLANG_GIT_COMMIT_HASH} ") - Success")
+     else()
+       message(FATAL_ERROR "Unverified git commit hash of llvm source - ${CLANG_GIT_COMMIT_HASH}. Do not modify or update third_party/llvm-project")
+     endif()
+  endif()
 
   ### LLVM Configuration
   set (LLVM_INCLUDE_UTILS OFF)
@@ -549,7 +563,6 @@ function (config_with_llvm)
     third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper)
   target_link_libraries(quipper_perf ${Protobuf_LIBRARIES} ${LIBELF_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
-  # add_dependencies(quipper_perf LLVMCore LLVMSupport)
 
   add_custom_command(PRE_BUILD
     OUTPUT prepare_cmds
