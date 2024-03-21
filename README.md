@@ -10,29 +10,10 @@ To build autofdo tool for gcc, no llvm installation is needed.
 
 # 2. Commands
 ## 2.1 Build autofdo tool for llvm
-### 2.1.1 If build llvm from source
-```
-    $ git clone https://github.com/llvm/llvm-project.git
-    $ mkdir build
-    $ cd build
-    $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=ON \
-        -DBUILD_SHARED_LIBS=OFF -DLLVM_PARALLEL_LINK_JOBS=1 -DLLVM_INCLUDE_TESTS=OFF \
-        -DLLVM_ENABLE_RTTI=ON -DCMAKE_INSTALL_PREFIX=/path/to/llvm/install \
-        -DLLVM_ENABLE_PROJECTS="clang" ../llvm-project
-    $ ninja
-    $ ninja install
-```
-
-### 2.1.2 Build autofdo tools
 ```
     $ git clone --recursive https://github.com/google/autofdo.git
-    $ cd autofdo
-    $ mkdir build
-    $ cd build
-    $ # Note: "-DCMAKE_INSTALL_PREFIX=." must be used, because there is a bug in the basil cmakelist.
-    $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=. -DLLVM_PATH=/path/to/llvm/install ../   
-    $ ninja
-    $ ninja test
+    $ cmake -G Ninja -DWITH_LLVM=On -DCMAKE_BUILD_TYPE=Release -S autofdo/ -B Build/
+    $ ninja -C Build
 ```
 
 ## 2.2 Build autofdo tool for gcc
