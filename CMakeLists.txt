@@ -214,7 +214,7 @@ function (config_with_llvm)
   add_dependencies(llvm_propeller_mock_whole_program_info llvm_propeller_options)
   add_dependencies(llvm_propeller_mock_whole_program_info llvm_propeller_cfg_proto)
   add_library(create_llvm_prof_object OBJECT create_llvm_prof.cc)
-  add_dependencies(create_llvm_prof_object llvm_propeller_options)
+  add_dependencies(create_llvm_prof_object llvm_propeller_options LLVMDebugInfoDWARF)
 
   add_library(sample_reader OBJECT sample_reader.cc)
   target_include_directories(sample_reader PUBLIC util)
