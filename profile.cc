@@ -5,7 +5,9 @@
 #include "profile.h"
 
 #include <cstdint>
+#include <ios>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -13,11 +15,15 @@
 #include "base/commandlineflags.h"
 #include "base/logging.h"
 #include "instruction_map.h"
+#include "mini_disassembler.h"
 #include "sample_reader.h"
+#include "source_info.h"
 #include "symbol_map.h"
+#include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/flags/flag.h"
-#include "third_party/abseil/absl/strings/match.h"
-#include "third_party/abseil/absl/strings/strip.h"
+#include "third_party/abseil/absl/status/statusor.h"
+#include "third_party/abseil/absl/strings/string_view.h"
+#include "llvm/Object/ObjectFile.h"
 
 ABSL_FLAG(bool, use_lbr, true,
             "Whether to use lbr profile.");
@@ -41,29 +47,66 @@ Profile::ProfileMaps *Profile::GetProfileMaps(uint64_t addr) {
   }
 }
 
-void Profile::AggregatePerFunctionProfile() {
-  uint64_t start = symbol_map_->base_addr();
+void Profile::AggregatePerFunctionProfile(bool check_lbr_entry) {
   const AddressCountMap *count_map = &sample_reader_->address_count_map();
   for (const auto &[addr, count] : *count_map) {
-    ProfileMaps *maps = GetProfileMaps(addr + start);
+    uint64_t vaddr = symbol_map_->get_static_vaddr(addr);
+    ProfileMaps *maps = GetProfileMaps(vaddr);
     if (maps != nullptr) {
-      maps->address_count_map[addr + start] += count;
+      maps->address_count_map[vaddr] += count;
     }
   }
+
+  std::unique_ptr<MiniDisassembler> Disassembler;
+  if (check_lbr_entry) {
+    const llvm::object::ObjectFile *Obj = addr2line_->getObject();
+    if (Obj) {
+      auto DisassemblerHandler = MiniDisassembler::Create(Obj);
+      if (DisassemblerHandler.ok()) {
+        Disassembler = std::move(DisassemblerHandler.value());
+      }
+    }
+    if (!Disassembler) {
+      LOG(WARNING) << "Cannot create MiniDisassembler and check lbr entry "
+                   << " will be disabled.";
+    }
+  }
+
   const RangeCountMap *range_map = &sample_reader_->range_count_map();
   for (const auto &[range, count] : *range_map) {
-    ProfileMaps *maps = GetProfileMaps(range.first + start);
+    uint64_t beg_vaddr = symbol_map_->get_static_vaddr(range.first);
+    uint64_t end_vaddr = symbol_map_->get_static_vaddr(range.second);
+    ProfileMaps *maps = GetProfileMaps(beg_vaddr);
+
+    // check if the range end_addr is a jump instruction.
+    if (Disassembler) {
+      auto BranchCheck = Disassembler->MayAffectControlFlow(end_vaddr);
+      if (BranchCheck.ok() && !BranchCheck.value())
+        LOG(WARNING)
+            << "Range end_addr (" << std::hex << end_vaddr
+            << ") is NOT a potentially-control-flow-affecting instruction.";
+    }
+
     if (maps != nullptr) {
-      maps->range_count_map[std::make_pair(range.first + start,
-                                           range.second + start)] += count;
+      maps->range_count_map[std::make_pair(beg_vaddr, end_vaddr)] += count;
     }
   }
   const BranchCountMap *branch_map = &sample_reader_->branch_count_map();
   for (const auto &[branch, count] : *branch_map) {
-    ProfileMaps *maps = GetProfileMaps(branch.first + start);
+    uint64_t from_vaddr = symbol_map_->get_static_vaddr(branch.first);
+    uint64_t to_vaddr = symbol_map_->get_static_vaddr(branch.second);
+    ProfileMaps *maps = GetProfileMaps(from_vaddr);
+
+    if (Disassembler) {
+      auto BranchCheck = Disassembler->MayAffectControlFlow(from_vaddr);
+      if (BranchCheck.ok() && !BranchCheck.value())
+        LOG(WARNING)
+            << "Branch from_addr (" << std::hex << from_vaddr
+            << ") is NOT a potentially-control-flow-affecting instruction.";
+    }
+
     if (maps != nullptr) {
-      maps->branch_count_map[std::make_pair(branch.first + start,
-                                            branch.second + start)] += count;
+      maps->branch_count_map[std::make_pair(from_vaddr, to_vaddr)] += count;
     }
   }
 
@@ -89,11 +132,13 @@ uint64_t Profile::ProfileMaps::GetAggregatedCount() const {
   return ret;
 }
 
-void Profile::ProcessPerFunctionProfile(const std::string &func_name,
+void Profile::ProcessPerFunctionProfile(absl::string_view func_name,
                                         const ProfileMaps &maps) {
   InstructionMap inst_map(addr2line_, symbol_map_);
+  // LOG(INFO) << "ProcessPerFunctionProfile: " << func_name;
   inst_map.BuildPerFunctionInstructionMap(func_name, maps.start_addr,
                                           maps.end_addr);
+  // LOG(INFO) << "Built instruction map for func: " << func_name;
 
   AddressCountMap map;
   const AddressCountMap *map_ptr;
@@ -119,6 +164,8 @@ void Profile::ProcessPerFunctionProfile(const std::string &func_name,
       continue;
     }
     if (!info->source_stack.empty()) {
+      // LOG(INFO) << "adding source count for func: " << func_name
+      //           << " address: " << address;
       symbol_map_->AddSourceCount(func_name, info->source_stack, count, 0,
                                   info->source_stack[0].DuplicationFactor(),
                                   SymbolMap::PERFDATA);
@@ -147,10 +194,10 @@ void Profile::ProcessPerFunctionProfile(const std::string &func_name,
   }
 }
 
-void Profile::ComputeProfile() {
+void Profile::ComputeProfile(bool check_lbr_entry) {
   symbol_map_->CalculateThresholdFromTotalCount(
       sample_reader_->GetTotalCount());
-  AggregatePerFunctionProfile();
+  AggregatePerFunctionProfile(check_lbr_entry);
 
   if (absl::GetFlag(FLAGS_llc_misses)) {
     for (const auto &[func_name, maps] : symbol_profile_maps_) {
@@ -165,6 +212,7 @@ void Profile::ComputeProfile() {
       CHECK(maps->branch_count_map.empty());
       for (const auto &[pc, count] : counts) {
         SourceStack stack;
+        // LOG(INFO) << "getting inline stack for pc: " << pc;
         symbol_map_->get_addr2line()->GetInlineStack(pc, &stack);
         symbol_map_->AddIndirectCallTarget(func_name, stack, "__llc_misses__",
                                            count);
@@ -172,12 +220,12 @@ void Profile::ComputeProfile() {
     }
     symbol_map_->ElideSuffixesAndMerge();
   } else {
-    // Precompute the aggregated counts of hot and cold parts. Both function
-    // parts are emitted only if their total sample count is above the required
+    // Precompute the aggregated counts for all split parts. All function parts
+    // are emitted only if their total sample count is above the required
     // threshold.
-    absl::flat_hash_map<absl::string_view, uint64_t> symbol_counts;
+    absl::flat_hash_map<std::string, uint64_t> symbol_counts;
     for (const auto &[name, profile] : symbol_profile_maps_) {
-      symbol_counts[absl::StripSuffix(name, ".cold")] +=
+      symbol_counts[symbol_map_->GetOriginalName(name)] +=
           profile->GetAggregatedCount();
     }
 
@@ -186,15 +234,17 @@ void Profile::ComputeProfile() {
     // AddSymbolEntryCount for other symbols, which may or may not had been
     // processed by ProcessPerFunctionProfile.
     for (const auto &[name, ignored] : symbol_profile_maps_) {
-      const uint64_t count = symbol_counts.at(absl::StripSuffix(name, ".cold"));
+      const uint64_t count =
+          symbol_counts.at(symbol_map_->GetOriginalName(name));
       if (symbol_map_->ShouldEmit(count)) {
         symbol_map_->AddSymbol(name);
       }
     }
 
     for (const auto &[name, profile] : symbol_profile_maps_) {
-      const uint64_t count = symbol_counts.at(absl::StripSuffix(name, ".cold"));
-      if (symbol_map_->ShouldEmit(count) && (profile->GetAggregatedCount() != 0)) {
+      const uint64_t count =
+          symbol_counts.at(symbol_map_->GetOriginalName(name));
+      if (symbol_map_->ShouldEmit(count)) {
         ProcessPerFunctionProfile(name, *profile);
       }
     }

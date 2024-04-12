@@ -8,11 +8,13 @@
 
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 
 #include "base/integral_types.h"
-#include "base/macros.h"
 #include "source_info.h"
+#include "third_party/abseil/absl/strings/string_view.h"
+
 #if defined(HAVE_LLVM)
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
 #include "llvm/Object/Binary.h"
@@ -22,16 +24,16 @@
 namespace devtools_crosstool_autofdo {
 class Addr2line {
  public:
-  explicit Addr2line(const std::string &binary_name)
+  explicit Addr2line(absl::string_view binary_name)
       : binary_name_(binary_name) {}
+
+  // This type is neither copyable nor movable.
+  Addr2line(const Addr2line &) = delete;
+  Addr2line &operator=(const Addr2line &) = delete;
 
   virtual ~Addr2line() {}
 
-  static Addr2line *Create(const std::string &binary_name);
-
-  static Addr2line *CreateWithSampledFunctions(
-      const std::string &binary_name,
-      const std::map<uint64_t, uint64_t> *sampled_functions);
+  static Addr2line *Create(absl::string_view binary_name);
 
   // Reads the binary to prepare necessary binary in data.
   // Returns True on success.
@@ -40,19 +42,22 @@ class Addr2line {
   // Stores the inline stack of ADDR in STACK.
   virtual void GetInlineStack(uint64_t addr, SourceStack *stack) const = 0;
 
+  // Return the object file.
+  virtual const llvm::object::ObjectFile *getObject() const { return nullptr; }
+
  protected:
   std::string binary_name_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(Addr2line);
 };
 
 #if defined(HAVE_LLVM)
 class LLVMAddr2line : public Addr2line {
  public:
-  explicit LLVMAddr2line(const std::string &binary_name);
+  explicit LLVMAddr2line(absl::string_view binary_name);
   bool Prepare() override;
   void GetInlineStack(uint64_t address, SourceStack *stack) const override;
+  const llvm::object::ObjectFile *getObject() const override {
+    return binary_.getBinary();
+  }
 
  private:
   // map from cu_offset to the CompileUnit.
@@ -60,6 +65,7 @@ class LLVMAddr2line : public Addr2line {
   llvm::object::OwningBinary<llvm::object::ObjectFile> binary_;
   std::unique_ptr<llvm::DWARFContext> dwarf_info_;
 };
+
 #else
 class AddressQuery;
 class InlineStackHandler;

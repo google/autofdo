@@ -440,6 +440,25 @@ class ElfReaderImpl {
     return NULL;
   }
 
+  // Return SegmentInfo vector read from program header.
+  std::vector<ElfReader::SegmentInfo> GetSegmentInfo() const {
+    std::vector<ElfReader::SegmentInfo> si_vec;
+    for (int i = 0, num_phdr = GetNumProgramHeaders(); i < num_phdr; ++i) {
+      si_vec.emplace_back();
+      auto &info = si_vec.back();
+      const auto &phdr = program_headers_[i];
+      info.type = phdr.p_type;
+      info.flags = phdr.p_flags;
+      info.offset = phdr.p_offset;
+      info.vaddr = phdr.p_vaddr;
+      info.paddr = phdr.p_paddr;
+      info.filesz = phdr.p_filesz;
+      info.memsz = phdr.p_memsz;
+      info.align = phdr.p_align;
+    }
+    return si_vec;
+  }
+
   // p_vaddr of the first PT_LOAD segment (if any), or 0 if no PT_LOAD
   // segments are present. This is the address an ELF image was linked
   // (by static linker) to be loaded at. Usually (but not always) 0 for
@@ -766,6 +785,17 @@ uint64 ElfReader::VaddrOfFirstLoadSegment() {
   } else {
     LOG(ERROR) << "not an elf binary: " << path_;
     return 0;
+  }
+}
+
+std::vector<ElfReader::SegmentInfo> ElfReader::GetSegmentInfo() {
+  if (IsElf32File()) {
+    return GetImpl32()->GetSegmentInfo();
+  } else if (IsElf64File()) {
+    return GetImpl64()->GetSegmentInfo();
+  } else {
+    LOG(ERROR) << "not an elf binary: " << path_;
+    return {};
   }
 }
 

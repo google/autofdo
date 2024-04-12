@@ -1,0 +1,76 @@
+## CFG consisting of two function foo and bar with two very large blocks.
+## One function (foo) has two very large blocks ( >= 100000 bytes).
+##
+##     foo  [very large block]
+##      |
+##      | 100
+##      |
+##      v      10                 10
+##     foo.1 ------> foo.3  ---------> bar
+##      |
+##      | 100
+##      |
+##      v
+##     foo.2 [very large block]
+
+cfg {
+  function_index: 0
+  name: "foo"
+  node {
+    bb_id: 0
+    size: 100000
+    out_edges {
+      sink : {
+        function_index: 0
+        bb_index: 1
+      }
+      weight: 100
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    bb_id: 1
+    size: 10
+    out_edges {
+      sink : {
+        function_index: 0
+        bb_index: 2
+      }
+      weight: 100
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    out_edges {
+      sink : {
+        function_index: 0
+        bb_index: 3
+      }
+      weight: 10
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    bb_id: 2
+    size: 100001
+  }
+  node {
+    bb_id: 3
+    size: 11
+    out_edges {
+      sink : {
+        function_index: 1
+        bb_index: 0
+      }
+      weight: 10
+      kind: CALL
+    }
+  }
+}
+
+cfg {
+  function_index: 1
+  name: "bar"
+  node {
+    bb_id: 0
+    size: 20
+  }
+}

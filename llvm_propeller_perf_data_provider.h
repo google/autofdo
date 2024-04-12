@@ -6,9 +6,12 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "third_party/abseil/absl/status/statusor.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "base/status_macros.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -26,6 +29,11 @@ class PerfDataProvider {
     std::string description;
     // Buffer containing the perf.data file.
     std::unique_ptr<llvm::MemoryBuffer> buffer;
+
+    template <typename Sink>
+    friend void AbslStringify(Sink& sink, const BufferHandle& handle) {
+      absl::Format(&sink, "[%s]", handle.description);
+    }
   };
 
   virtual ~PerfDataProvider() = default;
@@ -34,6 +42,20 @@ class PerfDataProvider {
   // so that file-based providers can mmap the file instead. If there are no
   // more perf data files to be processed, returns `std::nullopt`.
   virtual absl::StatusOr<std::optional<BufferHandle>> GetNext() = 0;
+
+  // Returns all perf data currently available, or the next perf data file if
+  // there is none available. If there are no more perf data to be processed,
+  // returns an empty vector. The base implementation assumes there are no
+  // perf data available and calls `GetNext()` to get the next profile.
+  virtual absl::StatusOr<std::vector<PerfDataProvider::BufferHandle>>
+  GetAllAvailableOrNext() {
+    std::vector<PerfDataProvider::BufferHandle> result = {};
+    ASSIGN_OR_RETURN(std::optional<BufferHandle> next, GetNext());
+    // If no more profiles, return the empty vector.
+    if (!next.has_value()) return result;
+    result.push_back(std::move(*next));
+    return result;
+  }
 };
 
 }  // namespace devtools_crosstool_autofdo

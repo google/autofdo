@@ -1,0 +1,21 @@
+v1
+f compute_flag
+c0
+f main
+c0 2 3 5 1
+f _ZN4absl14flags_internal8FlagImpl11SetCallbackEPFvvE
+c0 1 3
+f _ZN4absl13base_internal12CallOnceImplIMNS_14flags_internal8FlagImplEFvvEJPS3_EEEvPNSt3__u6atomicIjEENS0_14SchedulingModeEOT_DpOT0_
+c0 5 8 9 10 11 12
+f _ZN4absl14flags_internal12FlagRegistry12RegisterFlagERNS_15CommandLineFlagEPKc
+c0 24 30 31 1 2
+f _ZN4absl14flags_internal12_GLOBAL__N_117NormalizeFilenameENSt3__u17basic_string_viewIcNS2_11char_traitsIcEEEE
+c0 12
+f _ZN4absl13hash_internal12LowLevelHashEPKvmmPKm
+c0 6 7
+f _ZN4absl13base_internalL16DoAllocWithArenaEmPNS0_13LowLevelAlloc5ArenaE
+c0 26 27
+f _ZN4absl8DurationpLES0_
+c0 1 2 4 6
+f _ZN4absl16numbers_internal17safe_strto32_baseENSt3__u17basic_string_viewIcNS1_11char_traitsIcEEEEPii
+c0 40 10 41

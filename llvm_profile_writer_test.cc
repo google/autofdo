@@ -2,28 +2,25 @@
 
 #include <string>
 
-#include "addr2line.h"
 #include "profile_creator.h"
+#include "profile_writer.h"
+#include "source_info.h"
 #include "symbol_map.h"
 #include "gmock/gmock.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
-#include "llvm/Config/llvm-config.h"
 #include "llvm/ProfileData/FunctionId.h"
-
-#define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
-
-#define FLAGS_test_srcdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
+#include "llvm/ProfileData/SampleProf.h"
 
 namespace devtools_crosstool_autofdo {
 
 TEST(LlvmProfileWriterTest, ReadProfile) {
   const std::string binary =
-      absl::StrCat(FLAGS_test_srcdir,
+      absl::StrCat(::testing::SrcDir(),
                    "/testdata/"
                    "llvm_function_samples.binary");
   const std::string profile =
-      absl::StrCat(FLAGS_test_srcdir,
+      absl::StrCat(::testing::SrcDir(),
                    "/testdata/"
                    "llvm_function_samples_perf.data");
 
@@ -32,7 +29,8 @@ TEST(LlvmProfileWriterTest, ReadProfile) {
   ASSERT_TRUE(creator.ReadSample(profile, "perf"));
 
   SymbolMap symbol_map(binary);
-  ASSERT_TRUE(creator.ComputeProfile(&symbol_map));
+  symbol_map.ReadLoadableExecSegmentInfo(false);
+  ASSERT_TRUE(creator.ComputeProfile(&symbol_map, true));
 
   StringIndexMap name_table;
   StringTableUpdater::Update(symbol_map, &name_table);
@@ -112,30 +110,20 @@ TEST(LlvmProfileWriterTest, ConvertProfile) {
   const auto &foo_profile_it = profiles.find("foo");
 #endif
   ASSERT_NE(foo_profile_it, profiles.end());
-#if LLVM_VERSION_MAJOR>=12
+  #if LLVM_VERSION_MAJOR>=12
   const auto &bar1_profile = foo_profile_it->second.findFunctionSamplesAt(
       llvm::sampleprof::LineLocation(2, 0), "bar1", nullptr);
-#else
+  #else
   const auto &bar1_profile = foo_profile_it->second.findFunctionSamplesAt(
       llvm::sampleprof::LineLocation(2, 0), "bar1");
-#endif
+  #endif
   CHECK(bar1_profile != nullptr);
-#if LLVM_VERSION_MAJOR>=12
   const auto &bar2_profile = foo_profile_it->second.findFunctionSamplesAt(
       llvm::sampleprof::LineLocation(3, 0), "bar2", nullptr);
-#else
-  const auto &bar2_profile = foo_profile_it->second.findFunctionSamplesAt(
-      llvm::sampleprof::LineLocation(3, 0), "bar2");
-#endif
   CHECK_EQ(*bar2_profile->findSamplesAt(30, 0), 200);
   CHECK(bar2_profile != nullptr);
-#if LLVM_VERSION_MAJOR>=12
   const auto &baz_profile = bar1_profile->findFunctionSamplesAt(
       llvm::sampleprof::LineLocation(20, 0), "baz", nullptr);
-#else
-  const auto &baz_profile = bar1_profile->findFunctionSamplesAt(
-      llvm::sampleprof::LineLocation(20, 0), "baz");
-#endif
   CHECK(baz_profile != nullptr);
   CHECK_EQ(*baz_profile->findSamplesAt(200, 0), 100);
 }

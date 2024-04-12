@@ -1,30 +1,40 @@
 #include "perfdata_reader.h"
 
+#include <cstdint>
 #include <functional>
-#include <list>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "binary_address_branch.h"
+#include "branch_frequencies.h"
+#include "lbr_aggregation.h"
+#include "llvm_propeller_binary_content.h"
 #include "llvm_propeller_perf_data_provider.h"
-#include "third_party/abseil/absl/log/check.h"
-#include "third_party/abseil/absl/log/log.h"
+#include "spe_tid_pid_provider.h"
+#include "third_party/abseil/absl/container/flat_hash_set.h"
+#include "third_party/abseil/absl/functional/function_ref.h"
 #include "third_party/abseil/absl/status/status.h"
+#include "third_party/abseil/absl/status/statusor.h"
+#include "third_party/abseil/absl/strings/match.h"
+#include "third_party/abseil/absl/strings/str_cat.h"
 #include "third_party/abseil/absl/strings/str_format.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/BinaryFormat/ELF.h"
-#include "llvm/Object/ObjectFile.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/FormatAdapters.h"
-#include "llvm/Support/FormatVariadic.h"
+#include "third_party/abseil/absl/strings/str_join.h"
+#include "third_party/abseil/absl/strings/string_view.h"
+#include "third_party/abseil/absl/types/span.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/raw_ostream.h"
+#include "quipper/arm_spe_decoder.h"
 #include "quipper/perf_parser.h"
 #include "quipper/perf_reader.h"
+#include "base/logging.h"
+#include "base/status_macros.h"
 
 namespace {
 // Convert binary data stored in data[...] into text representation.
-std::string BinaryDataToAscii(const std::string &data) {
+std::string BinaryDataToAscii(absl::string_view data) {
   std::string ascii(data.size() * 2, 0);
   const char heximal[] = "0123456789abcdef";
   for (int i = 0; i < data.size(); ++i) {
@@ -38,120 +48,19 @@ std::string BinaryDataToAscii(const std::string &data) {
 
 namespace devtools_crosstool_autofdo {
 
-using ::llvm::object::BBAddrMap;
-
-// TODO(shenhan): remove the following code once it is upstreamed.
-template <class ELFT> std::string ELFFileUtil<ELFT>::GetBuildId() {
-  if (!elf_file_)
-    return "";
-  auto hex_to_char = [](uint8_t v) -> char {
-    if (v < 10)
-      return '0' + v;
-    return 'a' + (v - 10);
-  };
-  std::vector<std::string> build_ids;
-  for (const typename ELFT::Shdr &shdr :
-       llvm::cantFail(elf_file_->sections())) {
-    llvm::Expected<llvm::StringRef> section_name =
-        elf_file_->getSectionName(shdr);
-    if (!section_name || shdr.sh_type != llvm::ELF::SHT_NOTE ||
-        *section_name != kBuildIDSectionName)
-      continue;
-    llvm::Error err = llvm::Error::success();
-    for (const typename ELFT::Note &note : elf_file_->notes(shdr, err)) {
-      llvm::StringRef r = note.getName();
-      if (r == kBuildIdNoteName) {
-        llvm::ArrayRef<uint8_t> build_id = note.getDesc(shdr.sh_addralign);
-        std::string build_id_str(build_id.size() * 2, '0');
-        int k = 0;
-        for (uint8_t t : build_id) {
-          build_id_str[k++] = hex_to_char((t >> 4) & 0xf);
-          build_id_str[k++] = hex_to_char(t & 0xf);
-        }
-        build_ids.push_back(std::move(build_id_str));
-      }
-    }
-    if (errorToBool(std::move(err)))
-      LOG(WARNING) << "error happened iterating note entries in '"
-                   << section_name->str() << "'";
-  }
-  if (build_ids.empty())
-    return "";
-  if (build_ids.size() > 1) {
-    LOG(WARNING) << "more than 1 build id entries found in the binary, only "
-                    "the first one will be returned";
-  }
-  return build_ids.front();
-}
-
-template <class ELFT>
-bool ELFFileUtil<ELFT>::ReadLoadableSegments(
-    devtools_crosstool_autofdo::BinaryInfo *binary_info) {
-  if (!elf_file_) return false;
-  auto program_headers = elf_file_->program_headers();
-  if (!program_headers) return false;
-
-  for (const typename ELFT::Phdr &phdr : *program_headers) {
-    if (phdr.p_type != llvm::ELF::PT_LOAD ||
-        ((phdr.p_flags & llvm::ELF::PF_X) == 0))
-      continue;
-    if (phdr.p_paddr != phdr.p_vaddr) {
-      LOG(ERROR) << "ELF type not supported: segment load vaddr != paddr.";
-      return false;
-    }
-    if (phdr.p_memsz != phdr.p_filesz) {
-      LOG(ERROR) << "ELF type not supported: text segment filesz != memsz.";
-      return false;
-    }
-
-    binary_info->segments.push_back(
-        {phdr.p_offset, phdr.p_vaddr, phdr.p_memsz});
-  }
-  if (binary_info->segments.empty()) {
-    LOG(ERROR) << "No loadable and executable segments found in '"
-               << binary_info->file_name << "'.";
-    return false;
-  }
-  return true;
-}
-
-std::unique_ptr<ELFFileUtilBase> CreateELFFileUtil(
-    llvm::object::ObjectFile *object_file) {
-  if (!object_file) return nullptr;
-  llvm::StringRef content = object_file->getData();
-  const char *elf_start = content.data();
-
-  if (content.size() <= strlen(llvm::ELF::ElfMagic) ||
-      strncmp(elf_start, llvm::ELF::ElfMagic, strlen(llvm::ELF::ElfMagic))) {
-    LOG(ERROR) << "Not a valid ELF file.";
-    return nullptr;
-  }
-  const char elf_class = elf_start[llvm::ELF::EI_CLASS];
-  const char elf_data = elf_start[llvm::ELF::EI_DATA];
-  if (elf_class == llvm::ELF::ELFCLASS32 &&
-      elf_data == llvm::ELF::ELFDATA2LSB) {
-    return std::make_unique<ELFFileUtil<llvm::object::ELF32LE>>(object_file);
-  } else if (elf_class == llvm::ELF::ELFCLASS32 &&
-             elf_data == llvm::ELF::ELFDATA2MSB) {
-    return std::make_unique<ELFFileUtil<llvm::object::ELF32BE>>(object_file);
-  } else if (elf_class == llvm::ELF::ELFCLASS64 &&
-             elf_data == llvm::ELF::ELFDATA2LSB) {
-    return std::make_unique<ELFFileUtil<llvm::object::ELF64LE>>(object_file);
-  } else if (elf_class == llvm::ELF::ELFCLASS64 &&
-             elf_data == llvm::ELF::ELFDATA2MSB) {
-    return std::make_unique<ELFFileUtil<llvm::object::ELF64BE>>(object_file);
-  }
-  LOG(ERROR) << "Unrecognized ELF file data.";
-  return nullptr;
-}
-
 // Given "n", compare it to each of mmap_event.filename. If "n" is absolute,
 // then we compare "n" w/ mmap_event.filename. Otherwise we compare n's name
 // part w/ mmap_event.filename's name part.
 struct MMapSelector {
-  explicit MMapSelector(const std::set<std::string> &name_set) {
+  explicit MMapSelector(const absl::flat_hash_set<std::string> &name_set) {
     std::string n = *(name_set.begin());
-    if (llvm::sys::path::is_absolute(n)) {
+    // Similar to handling kernel image name -> mmap name.
+    // https://source.corp.google.com/piper///depot/google3/devtools/crosstool/autofdo/sample_reader.cc;l=89;rcl=500000000
+    if (name_set.size() == 1 && n == "[kernel.kallsyms]") {
+      target_mmap_name_set = {"[kernel.kallsyms]", "[kernel.kallsyms]_text",
+                              "[kernel.kallsyms]_stext"};
+      path_changer = noop_path_changer;
+    } else if (llvm::sys::path::is_absolute(n)) {
       target_mmap_name_set = name_set;
       path_changer = noop_path_changer;
     } else {
@@ -171,7 +80,7 @@ struct MMapSelector {
   }
 
   std::function<llvm::StringRef(const std::string &mmap_fn)> path_changer;
-  std::set<std::string> target_mmap_name_set;
+  absl::flat_hash_set<std::string> target_mmap_name_set;
 
   static llvm::StringRef noop_path_changer(const std::string &n) { return n; }
   static llvm::StringRef name_only_path_changer(const std::string &n) {
@@ -179,153 +88,128 @@ struct MMapSelector {
   }
 };
 
-std::ostream &operator<<(std::ostream &os, const MMapEntry &me) {
-  return os << std::showbase << std::hex << "[" << me.load_addr << ", "
-            << (me.load_addr + me.load_size) << "] (pgoff=" << me.page_offset
-            << ", size=" << me.load_size << ", fn='" << me.file_name << "')";
+absl::StatusOr<absl::flat_hash_set<std::string>> GetBuildIdNames(
+    const quipper::PerfReader &perf_reader, absl::string_view build_id) {
+  absl::flat_hash_set<std::string> build_id_names;
+  std::vector<std::pair<std::string, std::string>> existing_build_ids;
+  for (const auto &build_id_entry : perf_reader.build_ids()) {
+    if (!build_id_entry.has_filename() || !build_id_entry.has_build_id_hash())
+      continue;
+    std::string ascii_build_id =
+        BinaryDataToAscii(build_id_entry.build_id_hash());
+    existing_build_ids.emplace_back(build_id_entry.filename(), ascii_build_id);
+    if (ascii_build_id == build_id) {
+      const std::string &filename = build_id_entry.filename();
+      if (filename.empty()) continue;
+      // Similar to:
+      // https://source.corp.google.com/piper///depot/google3/base/elfcore.c;l=1344;bpv=0;bpt=1;rcl=502744078
+      if (absl::StartsWith(filename, "/anon_hugepage") ||
+          absl::StartsWith(filename, "[anon:")) {
+        LOG(INFO) << "Ignoring anonymous file with matching build_id: '"
+                  << filename << "'.";
+        continue;
+      }
+      LOG(INFO) << "Found file name with matching build_id: '" << filename
+                << "'.";
+      build_id_names.insert(filename);
+    }
+  }
+  if (!build_id_names.empty()) return build_id_names;
+
+  // No build matches.
+  return absl::FailedPreconditionError(absl::StrCat(
+      "No file with matching buildId in perf data, which contains the "
+      "following <file, build_id>:\n",
+      absl::StrJoin(
+          existing_build_ids, "\n",
+          [](std::string *out, const std::pair<std::string, std::string> &p) {
+            absl::StrAppend(out, "\t", p.first, ": ", p.second);
+          })));
 }
 
-// Initialize BinaryInfo object:
-//  - setup file content memory buffer
-//  - setup object file pointer
-//  - setup "PIE" bit
-//  - read loadable and executable segments
-bool PerfDataReader::SelectBinaryInfo(const std::string &binary_file_name,
-                                      BinaryInfo *binary_info) const {
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> file =
-      llvm::MemoryBuffer::getFile(binary_file_name);
-  if (!file) {
-    LOG(ERROR) << "Failed to read file '" << binary_file_name
-               << "': " << file.getError().message();
-    return false;
+// Find the set of file names in perf.data file which has the same build id as
+// found in "binary_file_name".
+std::optional<absl::flat_hash_set<std::string>>
+FindFileNameInPerfDataWithFileBuildId(const quipper::PerfReader &perf_reader,
+                                      const std::string &binary_file_name,
+                                      const BinaryContent &binary_content) {
+  if (binary_content.build_id.empty()) {
+    LOG(INFO) << "No Build Id found in '" << binary_file_name << "'.";
+    return std::nullopt;
   }
-  llvm::Expected<std::unique_ptr<llvm::object::ObjectFile>> obj =
-      llvm::object::ObjectFile::createELFObjectFile(
-          llvm::MemoryBufferRef(*(*file)));
-  if (!obj) {
-    std::string error_message;
-    llvm::raw_string_ostream raw_string_ostream(error_message);
-    raw_string_ostream << obj.takeError();
-    LOG(ERROR) << "Not a valid ELF file '" << binary_file_name
-               << "': " << raw_string_ostream.str();
-    return false;
-  }
-  llvm::object::ELFObjectFileBase *elf_obj =
-      llvm::dyn_cast<llvm::object::ELFObjectFileBase, llvm::object::ObjectFile>(
-          (*obj).get());
-  if (!elf_obj) {
-    LOG(ERROR) << "Not a valid ELF file '" << binary_file_name << ".";
-    return false;
-  }
-  binary_info->file_name = binary_file_name;
-  binary_info->file_content = std::move(*file);
-  binary_info->object_file = std::move(*obj);
-  binary_info->is_pie = (elf_obj->getEType() == llvm::ELF::ET_DYN);
-  LOG(INFO) << "'" << binary_file_name << "' is PIE: " << binary_info->is_pie;
+  LOG(INFO) << "Build Id found in '" << binary_file_name
+            << "': " << binary_content.build_id;
+  absl::StatusOr<absl::flat_hash_set<std::string>> build_id_names =
+      GetBuildIdNames(perf_reader, binary_content.build_id);
 
-  std::unique_ptr<ELFFileUtilBase> elf_file_util =
-      CreateELFFileUtil(binary_info->object_file.get());
-  if (!elf_file_util)
-    return false;
-  binary_info->build_id = elf_file_util->GetBuildId();
-  if (!binary_info->build_id.empty())
-    LOG(INFO) << "Build Id found in '" << binary_file_name
-              << "': " << binary_info->build_id;
+  if (!build_id_names.ok()) {
+    LOG(INFO) << build_id_names.status();
+    return std::nullopt;
+  }
 
-  return elf_file_util->ReadLoadableSegments(binary_info);
+  for (const std::string &fn : *build_id_names)
+    LOG(INFO) << "Build Id '" << binary_content.build_id << "' has filename '"
+              << fn << "'.";
+  return *build_id_names;
 }
-bool PerfDataReader::SelectPerfInfo(PerfDataProvider::BufferHandle perf_data,
-                                    const std::string &match_mmap_name,
-                                    BinaryPerfInfo *binary_perf_info) const {
-  // "binary_info" must already be initialized.
-  if (!(binary_perf_info->binary_info.file_content)) return false;
 
+// Select mmaps from perf.data.
+// a) match_mmap_names is empty && binary has build_id:
+//    the perf.data mmaps are selected using binary's build_id, if there is no
+//    match, select fails.
+// b) match_mmap_names is empty && binary does not have build_id:
+//    select fails.
+// c) match_mmap_names is not empty:
+//    the perf.data mmap is selected using match_mmap_name
+absl::StatusOr<BinaryMMaps> SelectMMaps(
+    PerfDataProvider::BufferHandle &perf_data,
+    absl::Span<const absl::string_view> match_mmap_names,
+    const BinaryContent &binary_content) {
   quipper::PerfReader perf_reader;
   // Ignore SAMPLE events for now to reduce memory usage. They will be needed
   // only in AggregateLBR, which will do a separate pass over the profiles.
   perf_reader.SetEventTypesToSkipWhenSerializing({quipper::PERF_RECORD_SAMPLE});
   if (!perf_reader.ReadFromPointer(perf_data.buffer->getBufferStart(),
                                    perf_data.buffer->getBufferSize())) {
-    LOG(ERROR) << "Failed to read perf data file: " << perf_data.description;
-    return false;
+    return absl::FailedPreconditionError(
+        absl::StrCat("Failed to read perf data file: ", perf_data.description));
   }
 
   quipper::PerfParser perf_parser(&perf_reader);
   if (!perf_parser.ParseRawEvents()) {
-    LOG(ERROR) << "Failed to parse perf raw events for perf file: '"
-               << perf_data.description << "'.";
-    return false;
+    return absl::FailedPreconditionError(
+        absl::StrCat("Failed to parse perf raw events for perf file: '",
+                     perf_data.description, "'."));
   }
 
-  binary_perf_info->perf_data = std::move(perf_data);
-
-  return SelectMMaps(binary_perf_info, perf_reader, perf_parser,
-                     match_mmap_name);
-}
-
-// Find the set of file names in perf.data file which has the same build id as
-// found in "binary_file_name".
-std::optional<std::set<std::string>> FindFileNameInPerfDataWithFileBuildId(
-    const std::string &binary_file_name, const quipper::PerfReader &perf_reader,
-    BinaryPerfInfo *info) {
-  if (info->binary_info.build_id.empty()) {
-    LOG(INFO) << "No Build Id found in '" << binary_file_name << "'.";
-    return std::nullopt;
-  }
-  LOG(INFO) << "Build Id found in '" << binary_file_name
-            << "': " << info->binary_info.build_id;
-  std::set<std::string> buildid_names;
-  if (PerfDataReader().GetBuildIdNames(perf_reader, info->binary_info.build_id,
-                                       &buildid_names)) {
-    for (const std::string &fn : buildid_names)
-      LOG(INFO) << "Build Id '" << info->binary_info.build_id
-                << "' has filename '" << fn << "'.";
-    return buildid_names;
-  }
-  return std::nullopt;
-}
-
-// Select mmaps from perf.data.
-// a) match_mmap_name == "" && binary has buildid:
-//    the perf.data mmaps are selected using binary's buildid, if there is no
-//    match, select fails.
-// b) match_mmap_name == "" && binary does not has buildid:
-//    select fails.
-// c) match_mmap_name != ""
-//    the perf.data mmap is selected using match_mmap_name
-bool PerfDataReader::SelectMMaps(BinaryPerfInfo *info,
-                                 const quipper::PerfReader &perf_reader,
-                                 const quipper::PerfParser &perf_parser,
-                                 const std::string &match_mmap_name) const {
   std::unique_ptr<MMapSelector> mmap_selector;
-  const std::string &match_fn = match_mmap_name;
-  // If match_mmap_name is "", we try to use build-id name in matching.
-  if (match_mmap_name.empty()) {
+  // If `match_mmap_names` is empty, we try to use build-id name in matching.
+  if (match_mmap_names.empty()) {
     if (auto fn_set = FindFileNameInPerfDataWithFileBuildId(
-            info->binary_info.file_name, perf_reader, info)) {
+            perf_reader, binary_content.file_name, binary_content)) {
       mmap_selector = std::make_unique<MMapSelector>(*fn_set);
     } else {
       // No filenames have been found either because the input binary
       // has no build-id or no matching build-id found in perf.data.
-      if (info->binary_info.build_id.empty()) {
-        LOG(ERROR)
-            << info->binary_info.file_name << " has no build-id. "
-            << "Use '--profiled_binary_name' to force name matching.";
-        return false;
+      if (binary_content.build_id.empty()) {
+        return absl::FailedPreconditionError(
+            absl::StrCat(binary_content.file_name,
+                         " has no build-id. Use '--profiled_binary_name' to "
+                         "force name matching."));
       }
-      LOG(ERROR)
-            << info->binary_info.file_name << " has build-id '"
-            << info->binary_info.build_id
-            << "', however, this build-id is not found in the perf "
-               "build-id list. Use '--profiled_binary_name' to force name "
-               "matching.";
-      return false;
+      return absl::FailedPreconditionError(absl::StrCat(
+          binary_content.file_name, " has build-id '", binary_content.build_id,
+          "', however, this build-id is not found in the perf "
+          "build-id list. Use '--profiled_binary_name' to force name "
+          "matching."));
     }
   } else {
-    mmap_selector = std::make_unique<MMapSelector>(
-        std::set<std::string>({match_mmap_name}));
+    mmap_selector =
+        std::make_unique<MMapSelector>(absl::flat_hash_set<std::string>(
+            match_mmap_names.begin(), match_mmap_names.end()));
   }
 
+  BinaryMMaps binary_mmaps;
   for (const auto &pe : perf_parser.parsed_events()) {
     quipper::PerfDataProto_PerfEvent *event_ptr = pe.event_ptr;
     if (event_ptr->event_type_case() !=
@@ -338,13 +222,15 @@ bool PerfDataReader::SelectMMaps(BinaryPerfInfo *info,
 
     if (!(*mmap_selector)(mmap_evt.filename())) continue;
 
+    // For kernel mmap event, pid is `kKernelPid`.
+    uint32_t pid = mmap_evt.pid();
     uint64_t load_addr = mmap_evt.start();
     uint64_t load_size = mmap_evt.len();
     uint64_t page_offset = mmap_evt.has_pgoff() ? mmap_evt.pgoff() : 0;
 
     bool entry_exists = false;
-    auto existing_mmaps = info->binary_mmaps.find(mmap_evt.pid());
-    if (existing_mmaps != info->binary_mmaps.end()) {
+    auto existing_mmaps = binary_mmaps.find(pid);
+    if (existing_mmaps != binary_mmaps.end()) {
       for (const MMapEntry &e : existing_mmaps->second) {
         if (e.load_addr == load_addr && e.load_size == load_size &&
             e.page_offset == page_offset) {
@@ -353,38 +239,42 @@ bool PerfDataReader::SelectMMaps(BinaryPerfInfo *info,
         }
         if (!((load_addr + load_size <= e.load_addr) ||
               (e.load_addr + e.load_size <= load_addr))) {
-          std::stringstream ss;
-          ss << "Found conflict mmap event: "
-             << MMapEntry{load_addr, load_size, page_offset,
-                          info->binary_info.file_name}
-             << ". Existing mmap entries: " << std::endl;
-          for (auto &me : existing_mmaps->second) ss << "\t" << me << std::endl;
-          LOG(ERROR) << ss.str();
-          return false;
+          return absl::FailedPreconditionError(absl::StrCat(
+              "Found conflict mmap event: ",
+              MMapEntry{pid, load_addr, load_size, page_offset,
+                        binary_content.file_name}
+                  .DebugString(),
+              ". Existing mmap entries:\n",
+              absl::StrJoin(existing_mmaps->second, "\n",
+                            [&](std::string *out, const MMapEntry &me) {
+                              absl::StrAppend(out, "\t", me.DebugString());
+                            })));
         }
       }
       if (!entry_exists)
-        existing_mmaps->second.emplace(load_addr, load_size, page_offset,
+        existing_mmaps->second.emplace(pid, load_addr, load_size, page_offset,
                                        mmap_evt.filename());
     } else {
-      info->binary_mmaps[mmap_evt.pid()].emplace(
-          load_addr, load_size, page_offset, mmap_evt.filename());
+      binary_mmaps[pid].emplace(pid, load_addr, load_size, page_offset,
+                                mmap_evt.filename());
     }
   }  // End of iterating perf mmap events.
 
-  if (info->binary_mmaps.empty()) {
-    LOG(ERROR) << "Failed to find any mmap entries matching: '" << match_fn
-               << "'.";
-    return false;
+  if (binary_mmaps.empty()) {
+    return absl::FailedPreconditionError(
+        absl::StrCat("Failed to find any mmap entries matching: '",
+                     absl::StrJoin(match_mmap_names, "' or '"), "'."));
   }
-  for (auto &mpid : info->binary_mmaps) {
-    std::stringstream ss;
-    ss << "Found mmap: pid=" << std::noshowbase << std::dec << mpid.first
-       << std::endl;
-    for (auto &mm : mpid.second) ss << "\t" << mm << std::endl;
-    LOG(INFO) << ss.str();
+
+  for (const auto &[pid, mmap_entries] : binary_mmaps) {
+    LOG(INFO) << absl::StrCat(
+        "Found mmap: pid=", pid, "\n",
+        absl::StrJoin(mmap_entries, "\n",
+                      [](std::string *out, const MMapEntry &mme) {
+                        return absl::StrAppend(out, "\t", mme.DebugString());
+                      }));
   }
-  return true;
+  return binary_mmaps;
 }
 
 // This function translates runtime address to symbol address:
@@ -396,104 +286,183 @@ bool PerfDataReader::SelectMMaps(BinaryPerfInfo *info,
 //
 // Thirdly, find the segment that contains file_offste, and compute symbol
 // address as "file_offset - segment.offset + segment.vaddr".
-uint64_t PerfDataReader::RuntimeAddressToBinaryAddress(
-    uint64_t pid, uint64_t addr, const BinaryPerfInfo &bpi) const {
-  auto i = bpi.binary_mmaps.find(pid);
-  if (i == bpi.binary_mmaps.end()) return kInvalidAddress;
+uint64_t PerfDataReader::RuntimeAddressToBinaryAddress(uint32_t pid,
+                                                       uint64_t addr) const {
+  auto i = binary_mmaps_.find(pid);
+  if (i == binary_mmaps_.end()) return kInvalidBinaryAddress;
   const MMapEntry *mmap = nullptr;
   for (const MMapEntry &p : i->second)
     if (p.load_addr <= addr && addr < p.load_addr + p.load_size) mmap = &p;
-  if (!mmap) return kInvalidAddress;
-  if (!bpi.binary_info.is_pie) return addr;
+  if (!mmap) return kInvalidBinaryAddress;
 
-  uint64_t file_offset = addr - mmap->load_addr + mmap->page_offset;
-  for (const auto &segment : bpi.binary_info.segments) {
-    if (segment.offset <= file_offset &&
-        file_offset < segment.offset + segment.memsz) {
-      return file_offset - segment.offset + segment.vaddr;
+  uint64_t file_offset;
+  bool is_kernel = (pid == kKernelPid);
+  if (!is_kernel && !binary_content_->is_pie) return addr;
+
+  if (is_kernel) {
+    // For kernel, do not use page_offset.
+    file_offset = addr - mmap->load_addr;
+  } else {
+    file_offset = addr - mmap->load_addr + mmap->page_offset;
+  }
+  bool kernel_first_segment = true;
+  uint64_t kernel_first_segment_offset;
+  for (const auto &segment : binary_content_->segments) {
+    uint64_t off;
+    if (is_kernel) {
+      // For kernel, use "0" as the offset for the first X-able segment.
+      // And for the second or later X-able segments, we subtract the fist
+      // X-able segment's offset from their segments' offset to get to the
+      // "offset".
+      if (kernel_first_segment) {
+        off = 0;
+        kernel_first_segment = false;
+        kernel_first_segment_offset = segment.offset;
+      } else {
+        off = segment.offset - kernel_first_segment_offset;
+        // We *believe* all kernel samples should come from the first executable
+        // kernel segment. (The second executable segment contains
+        // ".init.text" and ".exit.text", etc.)
+        LOG(WARNING) << absl::StrFormat(
+            "kernel runtime address 0x%lx does not come from the first "
+            "executable segment",
+            addr);
+      }
+    } else {
+      off = segment.offset;
+    }
+    if (off <= file_offset && file_offset < off + segment.memsz) {
+      return file_offset - off + segment.vaddr;
     }
   }
   LOG(WARNING) << absl::StrFormat(
       "pid: %u, virtual address: %#x belongs to '%s', file_offset=%lu, not "
       "inside any loadable segment.",
       pid, addr, mmap->file_name, file_offset);
-  return kInvalidAddress;
+  return kInvalidBinaryAddress;
 }
 
-void PerfDataReader::AggregateLBR(const BinaryPerfInfo &binary_perf_info,
-                                  LBRAggregation *result) const {
-  auto process_event = [&](const quipper::PerfDataProto::SampleEvent &event) {
-    if (!event.has_pid() || binary_perf_info.binary_mmaps.find(event.pid()) ==
-                                binary_perf_info.binary_mmaps.end())
-      return;
-
-    uint64_t pid = event.pid();
-    const auto &brstack = event.branch_stack();
-    if (brstack.empty()) return;
-    uint64_t last_from = kInvalidAddress;
-    uint64_t last_to = kInvalidAddress;
-    for (int p = brstack.size() - 1; p >= 0; --p) {
-      const auto &be = brstack.Get(p);
-      uint64_t from =
-          RuntimeAddressToBinaryAddress(pid, be.from_ip(), binary_perf_info);
-      uint64_t to =
-          RuntimeAddressToBinaryAddress(pid, be.to_ip(), binary_perf_info);
-      // NOTE(shenhan): LBR sometimes duplicates the first entry by mistake (*).
-      // For now we treat these to be true entries.
-      // (*)  (p == 0 && from == lastFrom && to == lastTo) ==> true
-
-      result->branch_counters[std::make_pair(from, to)]++;
-      if (last_to != kInvalidAddress && last_to <= from)
-        result->fallthrough_counters[std::make_pair(last_to, from)]++;
-      last_to = to;
-      last_from = from;
-    }
-  };
-
+void PerfDataReader::ReadWithSampleCallBack(
+    absl::FunctionRef<void(const quipper::PerfDataProto::SampleEvent &)>
+        callback) const {
   quipper::PerfReader perf_reader;
   // We don't need to serialise anything here, so let's exclude all major event
   // types.
   perf_reader.SetEventTypesToSkipWhenSerializing(
       {quipper::PERF_RECORD_SAMPLE, quipper::PERF_RECORD_MMAP,
        quipper::PERF_RECORD_FORK, quipper::PERF_RECORD_COMM});
-  perf_reader.SetSampleCallback(process_event);
-  CHECK(binary_perf_info.perf_data.has_value());
-  if (!perf_reader.ReadFromPointer(
-          binary_perf_info.perf_data->buffer->getBufferStart(),
-          binary_perf_info.perf_data->buffer->getBufferSize())) {
-    LOG(FATAL) << "Failed to read perf data file: "
-               << binary_perf_info.perf_data->description;
+  perf_reader.SetSampleCallback(callback);
+  if (!perf_reader.ReadFromPointer(perf_data_.buffer->getBufferStart(),
+                                   perf_data_.buffer->getBufferSize())) {
+    LOG(FATAL) << "Failed to read perf data file: " << perf_data_.description;
   }
 }
 
-bool PerfDataReader::GetBuildIdNames(const quipper::PerfReader &perf_reader,
-                                     const std::string &buildid,
-                                     std::set<std::string> *buildid_names) {
-  buildid_names->clear();
-  std::list<std::pair<std::string, std::string>> existing_build_ids;
-  for (const auto &buildid_entry : perf_reader.build_ids()) {
-    if (!buildid_entry.has_filename() || !buildid_entry.has_build_id_hash())
-      continue;
-    const std::string &perf_build_id = buildid_entry.build_id_hash();
-    std::string ascii_build_id = BinaryDataToAscii(perf_build_id);
-    existing_build_ids.emplace_back(buildid_entry.filename(), ascii_build_id);
-    if (ascii_build_id == buildid) {
-      LOG(INFO) << "Found file name with matching buildid: '"
-                << buildid_entry.filename() << "'.";
-      buildid_names->insert(buildid_entry.filename());
+absl::Status PerfDataReader::ReadWithSpeRecordCallBack(
+    absl::FunctionRef<void(const quipper::ArmSpeDecoder::Record &, int)>
+        callback) const {
+  quipper::PerfReader perf_reader;
+  // We don't need to serialise anything here, so let's exclude all major event
+  // types.
+  perf_reader.SetEventTypesToSkipWhenSerializing(
+      {quipper::PERF_RECORD_SAMPLE, quipper::PERF_RECORD_MMAP,
+       quipper::PERF_RECORD_FORK, quipper::PERF_RECORD_COMM});
+  if (!perf_reader.ReadFromPointer(perf_data_.buffer->getBufferStart(),
+                                   perf_data_.buffer->getBufferSize())) {
+    LOG(FATAL) << "Failed to read perf data file: " << perf_data_.description;
+  }
+
+  SpeTidPidProvider spe_pid_provider(perf_reader.events());
+  for (const quipper::PerfDataProto_PerfEvent &event : perf_reader.events()) {
+    if (!event.has_auxtrace_event()) continue;
+    quipper::ArmSpeDecoder::Record record;
+    quipper::ArmSpeDecoder decoder(event.auxtrace_event().trace_data(),
+                                   /*is_cross_endian=*/false);
+    while (decoder.NextRecord(&record)) {
+      absl::StatusOr<int> pid = spe_pid_provider.GetPid(record);
+      if (!pid.ok()) continue;
+      callback(record, *pid);
     }
   }
-  if (!buildid_names->empty()) return true;
+  return absl::OkStatus();
+}
 
-  // No build matches.
-  std::stringstream ss;
-  ss << "No file with matching buildId in perf data, which contains the "
-        "following <file, buildid>:"
-     << std::endl;
-  for (auto &p : existing_build_ids)
-    ss << "\t" << p.first << ": " << p.second << std::endl;
-  LOG(INFO) << ss.str();
-  buildid_names->clear();
-  return false;
+void PerfDataReader::AggregateLBR(LbrAggregation *result) const {
+  const bool is_kernel_mode = IsKernelMode();
+  if (is_kernel_mode) LOG(WARNING) << "Input binary is kernel";
+  ReadWithSampleCallBack([&](const quipper::PerfDataProto::SampleEvent &event) {
+    uint32_t pid;
+    if (is_kernel_mode) {
+      // For kernel, we do not filter event by pid, we check all LBR events.
+      // Because kernel branch events can exist in any process's LBR stack.
+      pid = kKernelPid;
+    } else {
+      if (!event.has_pid() ||
+          binary_mmaps_.find(event.pid()) == binary_mmaps_.end())
+        return;
+      pid = event.pid();
+    }
+    const auto &brstack = event.branch_stack();
+    if (brstack.empty()) return;
+    uint64_t last_from = kInvalidBinaryAddress;
+    uint64_t last_to = kInvalidBinaryAddress;
+    for (int p = brstack.size() - 1; p >= 0; --p) {
+      const auto &be = brstack.Get(p);
+      uint64_t from = RuntimeAddressToBinaryAddress(pid, be.from_ip());
+      uint64_t to = RuntimeAddressToBinaryAddress(pid, be.to_ip());
+      // NOTE(shenhan): LBR sometimes duplicates the first entry by mistake (*).
+      // For now we treat these to be true entries.
+      // (*)  (p == 0 && from == lastFrom && to == lastTo) ==> true
+
+      ++result->branch_counters[{.from = from, .to = to}];
+      if (last_to != kInvalidBinaryAddress && last_to <= from)
+        ++result->fallthrough_counters[{.from = last_to, .to = from}];
+      last_to = to;
+      last_from = from;
+    }
+  });
+}
+
+absl::Status PerfDataReader::AggregateSpe(BranchFrequencies &result) const {
+  const bool is_kernel_mode = IsKernelMode();
+  if (is_kernel_mode) LOG(WARNING) << "Input binary is kernel";
+  return ReadWithSpeRecordCallBack(
+      [&](const quipper::ArmSpeDecoder::Record &record, int pid) {
+        // Don't filter pid since kernel branches can be in any process's SPE
+        // records.
+        if (is_kernel_mode) pid = kKernelPid;
+
+        if (binary_mmaps_.count(pid) == 0) return;
+        if (!record.event.retired || !record.op.is_br_eret) return;
+
+        uint64_t from_addr = RuntimeAddressToBinaryAddress(pid, record.ip.addr);
+        // SPE records for unconditional branches are sometimes annotated as
+        // `cond_not_taken`, even though the Arm Architecture Reference Manual
+        // specifies otherwise. To be safe, only conditional branches should be
+        // recorded as not-taken branches.
+        if (record.op.br_eret.br_cond && record.event.cond_not_taken) {
+          ++result.not_taken_branch_counters[{.address = from_addr}];
+          return;
+        }
+        uint64_t to_addr =
+            RuntimeAddressToBinaryAddress(pid, record.tgt_br_ip.addr);
+        ++result.taken_branch_counters[{.from = from_addr, .to = to_addr}];
+      });
+}
+
+bool PerfDataReader::IsKernelMode() const {
+  return binary_mmaps_.count(kKernelPid) > 0;
+}
+
+absl::StatusOr<PerfDataReader> BuildPerfDataReader(
+    PerfDataProvider::BufferHandle perf_data,
+    const BinaryContent *binary_content, absl::string_view match_mmap_name) {
+  auto match_mmap_names = absl::MakeConstSpan(
+      &match_mmap_name, /*size=*/match_mmap_name.empty() ? 0 : 1);
+
+  ASSIGN_OR_RETURN(BinaryMMaps binary_mmaps,
+                   SelectMMaps(perf_data, match_mmap_names, *binary_content));
+  return PerfDataReader(std::move(perf_data), std::move(binary_mmaps),
+                        binary_content);
 }
 }  // namespace devtools_crosstool_autofdo

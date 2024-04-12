@@ -8,20 +8,15 @@
 
 #include "sample_reader.h"
 
+#include <cstdint>
 #include <string>
 #include <utility>
 
-#include "base/commandlineflags.h"
 #include "gtest/gtest.h"
 #include "third_party/abseil/absl/flags/declare.h"
 #include "third_party/abseil/absl/flags/flag.h"
-#include "third_party/abseil/absl/strings/str_cat.h"
 
 ABSL_DECLARE_FLAG(uint64_t, strip_dup_backedge_stride_limit);
-
-#define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
-
-#define FLAGS_test_srcdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
 
 namespace {
 
@@ -39,7 +34,7 @@ const char SampleReaderTest::kTestDataDir[] =
 
 TEST_F(SampleReaderTest, ReadPerf) {
   devtools_crosstool_autofdo::PerfDataSampleReader reader(
-      FLAGS_test_srcdir + kTestDataDir + "test.perf",
+      ::testing::SrcDir() + kTestDataDir + "test.perf",
       ".*/gzip_base.intel90-linux", "");
   ASSERT_TRUE(reader.ReadAndSetTotalCount());
 
@@ -50,8 +45,7 @@ TEST_F(SampleReaderTest, ReadPerf) {
 
 TEST_F(SampleReaderTest, ReadLBR) {
   devtools_crosstool_autofdo::PerfDataSampleReader reader(
-      FLAGS_test_srcdir + kTestDataDir + "test.lbr",
-      "test.binary", "");
+      ::testing::SrcDir() + kTestDataDir + "test.lbr", "test.binary", "");
   ASSERT_TRUE(reader.ReadAndSetTotalCount());
 
   EXPECT_EQ(reader.GetSampleCountOrZero(0xfe0), 55);
@@ -70,18 +64,17 @@ TEST_F(SampleReaderTest, ReadLBR) {
 
 TEST_F(SampleReaderTest, ReadText) {
   devtools_crosstool_autofdo::PerfDataSampleReader lbr_reader(
-      FLAGS_test_srcdir + kTestDataDir + "test.lbr",
-      "test.binary", "");
+      ::testing::SrcDir() + kTestDataDir + "test.lbr", "test.binary", "");
   ASSERT_TRUE(lbr_reader.ReadAndSetTotalCount());
 
   devtools_crosstool_autofdo::TextSampleReaderWriter writer(
-      FLAGS_test_tmpdir + "test.txt");
+      ::testing::TempDir() + "test.txt");
   writer.Merge(lbr_reader);
   EXPECT_EQ(writer.GetSampleCountOrZero(0xfe0), 55);
   EXPECT_TRUE(writer.Write(nullptr));
 
   devtools_crosstool_autofdo::TextSampleReaderWriter reader(
-      FLAGS_test_tmpdir + "test.txt");
+      ::testing::TempDir() + "test.txt");
   ASSERT_TRUE(reader.ReadAndSetTotalCount());
   EXPECT_EQ(reader.GetSampleCountOrZero(0x1005), 18);
   EXPECT_EQ(reader.GetTotalCount(), 5383657);
@@ -89,8 +82,7 @@ TEST_F(SampleReaderTest, ReadText) {
 
 TEST_F(SampleReaderTest, ReadLBRWithDupEntries) {
   devtools_crosstool_autofdo::PerfDataSampleReader reader(
-      FLAGS_test_srcdir + kTestDataDir + "dup.lbr", "dup.binary",
-      "");
+      ::testing::SrcDir() + kTestDataDir + "dup.lbr", "dup.binary", "");
   ASSERT_TRUE(reader.ReadAndSetTotalCount());
 
   EXPECT_EQ(reader.GetTotalSampleCount(), 327191);
@@ -115,8 +107,7 @@ TEST_F(SampleReaderTest, ReadKernelKallsymsProfile) {
   // $ perf report -D -i testdata/perf-kernel.data | grep kallsyms
   // 0 0 0x1000 [0x60]: PERF_RECORD_MMAP -1/0: [0xffffffe43f680800(0xb7f800) @
   // 0xffffffe43f680800]: x [kernel.kallsyms]_stext
-  std::string profile =
-      FLAGS_test_srcdir + kTestDataDir + "perf-kernel.data";
+  std::string profile = ::testing::SrcDir() + kTestDataDir + "perf-kernel.data";
   devtools_crosstool_autofdo::PerfDataSampleReader reader(
       profile, ".*/vmlinux", "d4eba24dde8ec63cbdf519e6b4008c4ecdcf1f49");
   ASSERT_TRUE(reader.ReadAndSetTotalCount());
@@ -131,7 +122,7 @@ TEST_F(SampleReaderTest, ReadVmlinuxProfile) {
   //   devtools/crosstool/autofdo/testdata/perf-vmlinux.data
   // 948da3c05fff6a515eab7b9dd416e30564b2ccf2 /tmp/vmlinux
   std::string profile =
-      FLAGS_test_srcdir + kTestDataDir + "perf-vmlinux.data";
+      ::testing::SrcDir() + kTestDataDir + "perf-vmlinux.data";
   devtools_crosstool_autofdo::PerfDataSampleReader reader(
       profile, ".*/vmlinux", "948da3c05fff6a515eab7b9dd416e30564b2ccf2");
   ASSERT_TRUE(reader.ReadAndSetTotalCount());

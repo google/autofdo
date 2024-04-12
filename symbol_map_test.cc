@@ -6,22 +6,24 @@
 #include "symbol_map.h"
 
 #include <cstdint>
+#include <cstdlib>
+#include <ctime>
+#include <iostream>
+#include <optional>
+#include <string>
+#include <utility>
 
 #include "base/logging.h"
 #include "llvm_profile_reader.h"
 #include "source_info.h"
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "third_party/abseil/absl/container/node_hash_set.h"
 #include "third_party/abseil/absl/flags/flag.h"
-#include "third_party/abseil/absl/types/optional.h"
-
-#define FLAGS_test_tmpdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
-
-#define FLAGS_test_srcdir std::string(testing::UnitTest::GetInstance()->original_working_dir())
+#include "third_party/abseil/absl/strings/str_cat.h"
 
 namespace {
 
+using ::devtools_crosstool_autofdo::Callsite;
 using ::devtools_crosstool_autofdo::SymbolMap;
 using ::devtools_crosstool_autofdo::SourceStack;
 
@@ -34,8 +36,7 @@ const char kTestDataDir[] =
     "/testdata/";
 
 TEST(SymbolMapTest, SymbolMap) {
-  SymbolMap symbol_map(
-      FLAGS_test_srcdir + kTestDataDir + "test.binary");
+  SymbolMap symbol_map(::testing::SrcDir() + kTestDataDir + "test.binary");
 
   // Check if the symbol table is correctly built.
   EXPECT_EQ(symbol_map.size(), 0);
@@ -62,7 +63,7 @@ TEST(SymbolMapTest, SymbolMap) {
   EXPECT_EQ(symbol->callsites.size(), 1);
   EXPECT_EQ(symbol->EntryCount(), 150);
   const devtools_crosstool_autofdo::Symbol *bar =
-      symbol->callsites.find(std::make_pair(tuple2.Offset(false), "bar"))
+      symbol->callsites.find(Callsite{tuple2.Offset(false), "bar"})
           ->second;
   ASSERT_TRUE(bar != nullptr);
   EXPECT_EQ(bar->total_count, 100);
@@ -77,8 +78,7 @@ TEST(SymbolMapTest, SymbolMap) {
 }
 
 TEST(SymbolMapTest, TestEntryCount) {
-  SymbolMap symbol_map(
-      FLAGS_test_srcdir + kTestDataDir + "test.binary");
+  SymbolMap symbol_map(::testing::SrcDir() + kTestDataDir + "test.binary");
 
   symbol_map.AddSymbol("foo");
 
@@ -110,17 +110,17 @@ TEST(SymbolMapTest, TestEntryCount) {
   EXPECT_EQ(symbol->EntryCount(), 100);
 
   const devtools_crosstool_autofdo::Symbol *bar =
-      symbol->callsites.find(std::make_pair(stack2[2].Offset(false), "bar"))
+      symbol->callsites.find(Callsite{stack2[2].Offset(false), "bar"})
           ->second;
   EXPECT_EQ(bar->EntryCount(), 100);
 
   const devtools_crosstool_autofdo::Symbol *baz =
-      bar->callsites.find(std::make_pair(stack2[1].Offset(false), "baz"))
+      bar->callsites.find(Callsite{stack2[1].Offset(false), "baz"})
           ->second;
   EXPECT_EQ(baz->EntryCount(), 100);
 
   const devtools_crosstool_autofdo::Symbol *qux =
-      baz->callsites.find(std::make_pair(stack1[1].Offset(false), "qux"))
+      baz->callsites.find(Callsite{stack1[1].Offset(false), "qux"})
           ->second;
   EXPECT_EQ(qux->EntryCount(), 100);
 }
@@ -129,7 +129,7 @@ TEST(SymbolMapTest, ComputeAllCounts) {
   SymbolMap symbol_map;
   absl::node_hash_set<std::string> names;
   devtools_crosstool_autofdo::LLVMProfileReader reader(&symbol_map, names);
-  reader.ReadFromFile(FLAGS_test_srcdir + kTestDataDir +
+  reader.ReadFromFile(::testing::SrcDir() + kTestDataDir +
                       "callgraph_with_cycles.txt");
 
   // Check ComputeAllCounts will set up correct allcounts for all
@@ -181,35 +181,34 @@ TEST(SymbolMapTest, TestInterestingSymbolNames) {
     symbol_map.set_suffix_elision_policy(policy);
     absl::node_hash_set<std::string> names;
     devtools_crosstool_autofdo::LLVMProfileReader reader(&symbol_map, names);
-        reader.ReadFromFile(FLAGS_test_srcdir + kTestDataDir +
-                            "symbols_with_fun_characters.txt");
+    reader.ReadFromFile(::testing::SrcDir() + kTestDataDir +
+                        "symbols_with_fun_characters.txt");
 
-        const devtools_crosstool_autofdo::NameSymbolMap &map = symbol_map.map();
-        auto main_iter = map.find("main");
-        ASSERT_NE(main_iter, map.end());
+    const devtools_crosstool_autofdo::NameSymbolMap &map = symbol_map.map();
+    auto main_iter = map.find("main");
+    ASSERT_NE(main_iter, map.end());
 
-        const devtools_crosstool_autofdo::PositionCountMap &pos_counts =
-            main_iter->second->pos_counts;
+    const devtools_crosstool_autofdo::PositionCountMap &pos_counts =
+        main_iter->second->pos_counts;
 
-        ASSERT_EQ(pos_counts.size(), 1);
-        const devtools_crosstool_autofdo::CallTargetCountMap &target_counts =
-            pos_counts.begin()->second.target_map;
+    ASSERT_EQ(pos_counts.size(), 1);
+    const devtools_crosstool_autofdo::CallTargetCountMap &target_counts =
+        pos_counts.begin()->second.target_map;
 
-        auto get_count =
-            [&](std::string target_name) -> absl::optional<uint64> {
-          auto iter = target_counts.find(target_name);
-          if (iter == target_counts.end()) return absl::nullopt;
-          return iter->second;
-        };
+    auto get_count = [&](std::string target_name) -> std::optional<uint64_t> {
+      auto iter = target_counts.find(target_name);
+      if (iter == target_counts.end()) return std::nullopt;
+      return iter->second;
+    };
 
-        std::cerr << "policy=" << policy << "\n";
-        if (policy == "all") {
-          EXPECT_EQ(get_count("..foo.bar"), 800);
-          EXPECT_EQ(get_count("foo"), 100);
-          EXPECT_EQ(get_count("glom"), 50);
-          EXPECT_EQ(get_count("a"), 50);
-          EXPECT_EQ(get_count("goo"), 70);
-          EXPECT_EQ(get_count("xoo"), 120);
+    std::cerr << "policy=" << policy << "\n";
+    if (policy == "all") {
+      EXPECT_EQ(get_count("..foo.bar"), 800);
+      EXPECT_EQ(get_count("foo"), 100);
+      EXPECT_EQ(get_count("glom"), 50);
+      EXPECT_EQ(get_count("a"), 50);
+      EXPECT_EQ(get_count("goo"), 70);
+      EXPECT_EQ(get_count("xoo"), 120);
         } else if (policy == "selected") {
           EXPECT_EQ(get_count("..foo.bar"), 800);
           EXPECT_EQ(get_count("foo"), 100);
@@ -357,8 +356,7 @@ TEST(SymbolMapTest, BuildHybridProfile) {
 
 TEST(SymbolMapTest, FSDiscriminator) {
   absl::SetFlag(&FLAGS_use_fs_discriminator, false);
-  SymbolMap symbol_map1(FLAGS_test_srcdir + kTestDataDir +
-                        "test.binary");
+  SymbolMap symbol_map1(::testing::SrcDir() + kTestDataDir + "test.binary");
   // Check if the use_fs_discriminaor is correctly set to false.
   EXPECT_FALSE(devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator);
   // Check if the use_base_only_in_fs_discriminator is correctly set.
@@ -366,8 +364,7 @@ TEST(SymbolMapTest, FSDiscriminator) {
                    use_base_only_in_fs_discriminator);
 
   absl::SetFlag(&FLAGS_use_fs_discriminator, false);
-  SymbolMap symbol_map2(FLAGS_test_srcdir + kTestDataDir +
-                        "test.fs.binary");
+  SymbolMap symbol_map2(::testing::SrcDir() + kTestDataDir + "test.fs.binary");
   // Check if the use_fs_discriminaor is correctly set.
   EXPECT_TRUE(devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator);
   // Check if the use_base_only_in_fs_discriminaor is correctly set.
@@ -378,8 +375,7 @@ TEST(SymbolMapTest, FSDiscriminator) {
 TEST(SymbolMapTest, FSDiscriminatorUseBaseOnly) {
   absl::SetFlag(&FLAGS_use_fs_discriminator, false);
   absl::SetFlag(&FLAGS_use_base_only_in_fs_discriminator, true);
-  SymbolMap symbol_map1(FLAGS_test_srcdir + kTestDataDir +
-                        "test.binary");
+  SymbolMap symbol_map1(::testing::SrcDir() + kTestDataDir + "test.binary");
   // Check if the use_fs_discriminaor is correctly set to false.
   EXPECT_FALSE(devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator);
   // Check if the use_base_only_in_fs_discriminaor is correctly set.
@@ -388,8 +384,7 @@ TEST(SymbolMapTest, FSDiscriminatorUseBaseOnly) {
 
   absl::SetFlag(&FLAGS_use_fs_discriminator, false);
   absl::SetFlag(&FLAGS_use_base_only_in_fs_discriminator, true);
-  SymbolMap symbol_map2(FLAGS_test_srcdir + kTestDataDir +
-                        "test.fs.binary");
+  SymbolMap symbol_map2(::testing::SrcDir() + kTestDataDir + "test.fs.binary");
   // Check if the use_fs_discriminaor is correctly set.
   EXPECT_TRUE(devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator);
   // Check if the use_base_only_in_fs_discriminaor is correctly set.
@@ -400,7 +395,7 @@ TEST(SymbolMapTest, RemoveSymsMatchingRegex) {
   SymbolMap symbol_map;
   absl::node_hash_set<std::string> names;
   devtools_crosstool_autofdo::LLVMProfileReader reader(&symbol_map, names);
-  reader.ReadFromFile(FLAGS_test_srcdir + kTestDataDir +
+  reader.ReadFromFile(::testing::SrcDir() + kTestDataDir +
                       "strip_symbols_regex.textprof");
 
   const devtools_crosstool_autofdo::NameSymbolMap &map = symbol_map.map();
@@ -431,7 +426,7 @@ TEST(SymbolMapTest, throttleInlineInstancesAtSameLocation) {
   SymbolMap symbol_map;
   absl::node_hash_set<std::string> names;
   devtools_crosstool_autofdo::LLVMProfileReader reader(&symbol_map, names);
-  reader.ReadFromFile(FLAGS_test_srcdir + kTestDataDir +
+  reader.ReadFromFile(::testing::SrcDir() + kTestDataDir +
                       "throttle_inline_instances.textprof");
 
   const devtools_crosstool_autofdo::NameSymbolMap &map = symbol_map.map();
@@ -441,55 +436,92 @@ TEST(SymbolMapTest, throttleInlineInstancesAtSameLocation) {
   EXPECT_EQ(foo_cs_map.size(), 5);
 
   devtools_crosstool_autofdo::SourceInfo tuple1("foo", "", "", 0, 2, 1);
-  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo1")) !=
+  EXPECT_TRUE(foo_cs_map.find(Callsite{tuple1.Offset(false), "goo1"}) !=
               foo_cs_map.end());
-  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo2")) !=
+  EXPECT_TRUE(foo_cs_map.find(Callsite{tuple1.Offset(false), "goo2"}) !=
               foo_cs_map.end());
-  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo3")) !=
+  EXPECT_TRUE(foo_cs_map.find(Callsite{tuple1.Offset(false), "goo3"}) !=
               foo_cs_map.end());
-  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo4")) !=
+  EXPECT_TRUE(foo_cs_map.find(Callsite{tuple1.Offset(false), "goo4"}) !=
               foo_cs_map.end());
   devtools_crosstool_autofdo::SourceInfo tuple2("foo", "", "", 0, 2, 4);
-  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple2.Offset(false), "hoo")) !=
+  EXPECT_TRUE(foo_cs_map.find(Callsite{tuple2.Offset(false), "hoo"}) !=
               foo_cs_map.end());
   devtools_crosstool_autofdo::Symbol *hoo_symbol =
-      foo_cs_map.find(std::make_pair(tuple2.Offset(false), "hoo"))->second;
+      foo_cs_map.find(Callsite{tuple2.Offset(false), "hoo"})->second;
   devtools_crosstool_autofdo::CallsiteMap &hoo_cs_map = hoo_symbol->callsites;
   EXPECT_EQ(hoo_cs_map.size(), 4);
 
   devtools_crosstool_autofdo::SourceInfo tuple3("hoo", "", "", 0, 3, 2);
-  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar1")) !=
+  EXPECT_TRUE(hoo_cs_map.find(Callsite{tuple3.Offset(false), "bar1"}) !=
               hoo_cs_map.end());
-  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar2")) !=
+  EXPECT_TRUE(hoo_cs_map.find(Callsite{tuple3.Offset(false), "bar2"}) !=
               hoo_cs_map.end());
-  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar3")) !=
+  EXPECT_TRUE(hoo_cs_map.find(Callsite{tuple3.Offset(false), "bar3"}) !=
               hoo_cs_map.end());
-  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar4")) !=
+  EXPECT_TRUE(hoo_cs_map.find(Callsite{tuple3.Offset(false), "bar4"}) !=
               hoo_cs_map.end());
 
-  absl::SetFlag(&FLAGS_inline_instances_at_same_loc_cutoff, 2);
-  symbol_map.throttleInlineInstancesAtSameLocation();
+  symbol_map.throttleInlineInstancesAtSameLocation(2);
 
   EXPECT_EQ(foo_cs_map.size(), 3);
-  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo1")) ==
+  EXPECT_TRUE(foo_cs_map.find(Callsite{tuple1.Offset(false), "goo1"}) ==
               foo_cs_map.end());
-  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo2")) ==
+  EXPECT_TRUE(foo_cs_map.find(Callsite{tuple1.Offset(false), "goo2"}) ==
               foo_cs_map.end());
-  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo3")) !=
+  EXPECT_TRUE(foo_cs_map.find(Callsite{tuple1.Offset(false), "goo3"}) !=
               foo_cs_map.end());
-  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple1.Offset(false), "goo4")) !=
+  EXPECT_TRUE(foo_cs_map.find(Callsite{tuple1.Offset(false), "goo4"}) !=
               foo_cs_map.end());
-  EXPECT_TRUE(foo_cs_map.find(std::make_pair(tuple2.Offset(false), "hoo")) !=
+  EXPECT_TRUE(foo_cs_map.find(Callsite{tuple2.Offset(false), "hoo"}) !=
               foo_cs_map.end());
   EXPECT_EQ(hoo_cs_map.size(), 2);
-  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar1")) ==
+  EXPECT_TRUE(hoo_cs_map.find(Callsite{tuple3.Offset(false), "bar1"}) ==
               hoo_cs_map.end());
-  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar2")) !=
+  EXPECT_TRUE(hoo_cs_map.find(Callsite{tuple3.Offset(false), "bar2"}) !=
               hoo_cs_map.end());
-  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar3")) !=
+  EXPECT_TRUE(hoo_cs_map.find(Callsite{tuple3.Offset(false), "bar3"}) !=
               hoo_cs_map.end());
-  EXPECT_TRUE(hoo_cs_map.find(std::make_pair(tuple3.Offset(false), "bar4")) ==
+  EXPECT_TRUE(hoo_cs_map.find(Callsite{tuple3.Offset(false), "bar4"}) ==
               hoo_cs_map.end());
+}
+
+TEST(AddressConversion, VaddrToOffset) {
+  // clang-format off
+  // NOLINTBEGIN(whitespace/line_length)
+  // Program Headers:
+  //   Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  //   INTERP         0x001000 0x0000000000000000 0x0000000000000000 0x00001c 0x00001c R   0x1
+  //       [Requesting program interpreter: /lib64/ld-linux-x86-64.so.2]
+  //   LOAD           0x001000 0x0000000000000000 0x0000000000000000 0x001004 0x001004 R   0x1000
+  //   LOAD           0x002004 0x0000000000001004 0x0000000000001004 0x02f00c 0x02f00c R E 0x1000
+  //   GNU_STACK      0x000000 0x0000000000000000 0x0000000000000000 0x000000 0x000000 RW  0x0
+  // NOLINTEND(whitespace/line_length)
+  // clang-format on
+
+  SymbolMap symbol_map(absl::StrCat(testing::SrcDir(), kTestDataDir,
+                                    "vaddr_offset_conversion_test.elf"));
+  symbol_map.ReadLoadableExecSegmentInfo(/*is_kernel=*/false);
+  EXPECT_EQ(symbol_map.get_static_vaddr(0x002010), 0x001010);
+}
+
+TEST(AddressConversion, OffsetToVaddr) {
+  // clang-format off
+  // NOLINTBEGIN(whitespace/line_length)
+  // Program Headers:
+  //   Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  //   INTERP         0x001000 0x0000000000000000 0x0000000000000000 0x00001c 0x00001c R   0x1
+  //       [Requesting program interpreter: /lib64/ld-linux-x86-64.so.2]
+  //   LOAD           0x001000 0x0000000000000000 0x0000000000000000 0x001004 0x001004 R   0x1000
+  //   LOAD           0x002004 0x0000000000001004 0x0000000000001004 0x02f00c 0x02f00c R E 0x1000
+  //   GNU_STACK      0x000000 0x0000000000000000 0x0000000000000000 0x000000 0x000000 RW  0x0
+  // NOLINTEND(whitespace/line_length)
+  // clang-format on
+
+  SymbolMap symbol_map(absl::StrCat(testing::SrcDir(), kTestDataDir,
+                                    "vaddr_offset_conversion_test.elf"));
+  symbol_map.ReadLoadableExecSegmentInfo(/*is_kernel=*/false);
+  EXPECT_EQ(symbol_map.GetFileOffsetFromStaticVaddr(0x001010), 0x002010);
 }
 
 }  // namespace

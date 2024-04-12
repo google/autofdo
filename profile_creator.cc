@@ -5,11 +5,16 @@
 
 #include "profile_creator.h"
 
-#include <inttypes.h>
-
+#include <cinttypes>
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ios>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/commandlineflags.h"
 #include "base/integral_types.h"
@@ -18,18 +23,28 @@
 #include "gcov.h"
 #if defined(HAVE_LLVM)
 #include "llvm_profile_writer.h"
-#include "profile_symbol_list.h"
-#endif
 #include "profile.h"
-#include "profile_writer.h"
+#include "profile_symbol_list.h"
+
+#include "llvm/ProfileData/SampleProf.h"
+#endif
+
+#include "base/logging.h"
 #include "sample_reader.h"
+#include "source_info.h"
+#include "spe_sample_reader.h"
 #include "symbol_map.h"
+#include "third_party/abseil/absl/container/btree_map.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/memory/memory.h"
+#include "third_party/abseil/absl/strings/string_view.h"
 #include "util/symbolize/elf_reader.h"
 
 ABSL_FLAG(std::string, focus_binary_re, "",
-              "RE for the focused binary file name");
+          "RE for the focused binary file name");
+ABSL_FLAG(bool, disassemble_arm_branches, true,
+          "Tell the SPE sample reader to disassemble the binary to identify "
+          "branch instructions.");
 
 #if defined(HAVE_LLVM)
 AUTOFDO_PROFILE_SYMBOL_LIST_FLAGS;
@@ -83,7 +98,7 @@ PrefetchHints ReadPrefetchHints(const std::string &file_name) {
 
 namespace devtools_crosstool_autofdo {
 uint64_t ProfileCreator::GetTotalCountFromTextProfile(
-    const std::string &input_profile_name) {
+    absl::string_view input_profile_name) {
   ProfileCreator creator("");
   if (!creator.ReadSample(input_profile_name, "text")) {
     return 0;
@@ -105,7 +120,8 @@ bool ProfileCreator::CreateProfile(const std::string &input_profile_name,
                                    const std::string &profiler,
                                    ProfileWriter *writer,
                                    const std::string &output_profile_name,
-                                   bool store_sym_list_in_profile) {
+                                   bool store_sym_list_in_profile,
+                                   bool check_lbr_entry) {
   SymbolMap symbol_map(binary_);
 
   writer->setSymbolMap(&symbol_map);
@@ -114,7 +130,8 @@ bool ProfileCreator::CreateProfile(const std::string &input_profile_name,
     if (!ConvertPrefetchHints(input_profile_name, &symbol_map)) return false;
   } else {
     if (!ReadSample(input_profile_name, profiler)) return false;
-    if (!ComputeProfile(&symbol_map)) return false;
+    symbol_map.ReadLoadableExecSegmentInfo(IsKernelSample());
+    if (!ComputeProfile(&symbol_map, check_lbr_entry)) return false;
   }
 
 #if defined(HAVE_LLVM)
@@ -140,9 +157,9 @@ bool ProfileCreator::CreateProfile(const std::string &input_profile_name,
   return writer->WriteToFile(output_profile_name);
 }
 
-bool ProfileCreator::ReadSample(const std::string &input_profile_name,
+bool ProfileCreator::ReadSample(absl::string_view input_profile_name,
                                 const std::string &profiler) {
-  if (profiler == "perf") {
+  if (profiler == "perf" || profiler == "perf_spe") {
     std::string focus_binary_re;
     std::string build_id;
     // Sets the regular expression to filter samples for a given binary.
@@ -165,13 +182,20 @@ bool ProfileCreator::ReadSample(const std::string &input_profile_name,
       // quipper/perf_data_utils.h and b/21597512 for more info.
       const size_t kMinPerfBuildIDStringLength = 40;
       build_id = reader.GetBuildId();
-      if (build_id.length() > 0 &&
-          build_id.length() < kMinPerfBuildIDStringLength)
+      if (!build_id.empty() && build_id.length() < kMinPerfBuildIDStringLength)
         build_id.resize(kMinPerfBuildIDStringLength, '0');
     }
 
-    sample_reader_ = new PerfDataSampleReader(
-        input_profile_name, focus_binary_re, build_id);
+    if (profiler == "perf_spe") {
+      sample_reader_ = new PerfSpeDataSampleReader(
+          absl::GetFlag(FLAGS_disassemble_arm_branches)
+              ? PerfSpeDataSampleReader::BranchIdStrategy::kDisassembly
+              : PerfSpeDataSampleReader::BranchIdStrategy::kSampling,
+          input_profile_name, focus_binary_re, binary_);
+    } else {
+      sample_reader_ = new PerfDataSampleReader(input_profile_name,
+                                                focus_binary_re, build_id);
+    }
   } else if (profiler == "text") {
     sample_reader_ = new TextSampleReaderWriter(input_profile_name);
   } else {
@@ -179,22 +203,18 @@ bool ProfileCreator::ReadSample(const std::string &input_profile_name,
     return false;
   }
   if (!sample_reader_->ReadAndSetTotalCount()) {
-    LOG(ERROR) << "Error reading profile.";
+    LOG(ERROR) << "Error reading profile from " << input_profile_name;
     return false;
   }
   return true;
 }
-bool ProfileCreator::ComputeProfile(SymbolMap *symbol_map) {
-  std::set<uint64_t> sampled_addrs = sample_reader_->GetSampledAddresses();
-  std::map<uint64_t, uint64_t> sampled_functions =
-      symbol_map->GetSampledSymbolStartAddressSizeMap(sampled_addrs);
-  if (!CheckAndAssignAddr2Line(
-          symbol_map,
-          Addr2line::CreateWithSampledFunctions(binary_, &sampled_functions)))
+bool ProfileCreator::ComputeProfile(SymbolMap *symbol_map,
+                                    bool check_lbr_entry) {
+  if (!CheckAndAssignAddr2Line(symbol_map, Addr2line::Create(binary_)))
     return false;
   Profile profile(sample_reader_, binary_, symbol_map->get_addr2line(),
                   symbol_map);
-  profile.ComputeProfile();
+  profile.ComputeProfile(check_lbr_entry);
   return true;
 }
 
@@ -207,7 +227,7 @@ bool ProfileCreator::ConvertPrefetchHints(const std::string &profile_file,
   if (!CheckAndAssignAddr2Line(symbol_map, Addr2line::Create(binary_)))
     return false;
   PrefetchHints hints = ReadPrefetchHints(profile_file);
-  std::map<uint64_t, uint8_t> repeated_prefetches_indices;
+  absl::btree_map<uint64_t, uint8_t> repeated_prefetches_indices;
   for (auto &hint : hints) {
     uint64_t pc = hint.address;
     int64_t delta = hint.delta;
@@ -221,8 +241,7 @@ bool ProfileCreator::ConvertPrefetchHints(const std::string &profile_file,
     SourceStack stack;
     symbol_map->get_addr2line()->GetInlineStack(pc, &stack);
 
-    if (!symbol_map->EnsureEntryInFuncForSymbol(*name, pc))
-        continue;
+    if (!symbol_map->EnsureEntryInFuncForSymbol(*name, pc)) continue;
 
     // Currently, the profile format expects unsigned values, corresponding to
     // number of collected samples. We're hacking support for prefetch hints on
@@ -249,9 +268,9 @@ uint64_t ProfileCreator::TotalSamples() {
   }
 }
 
-bool MergeSample(const std::string &input_file,
-                 const std::string &input_profiler, const std::string &binary,
-                 const std::string &output_file) {
+bool MergeSample(const std::vector<std::string> &input_files,
+                 const std::string &input_profiler, absl::string_view binary,
+                 absl::string_view output_file) {
   TextSampleReaderWriter writer(output_file);
   if (writer.IsFileExist()) {
     if (!writer.ReadAndSetTotalCount()) {
@@ -259,16 +278,20 @@ bool MergeSample(const std::string &input_file,
     }
   }
 
+  LOG(INFO) << "Merging " << input_files.size() << " " << input_profiler
+            << " files";
   ProfileCreator creator(binary);
-  if (creator.ReadSample(input_file, input_profiler)) {
+  for (const auto &input_file : input_files) {
+    // It's easy to put e.g. trailing comma when making the list of inputs.
+    // Skip any empty entries.
+    if (input_file.empty()) continue;
+
+    LOG_EVERY_N(INFO, 100) << "Merging " << input_file;
+    if (!creator.ReadSample(input_file, input_profiler)) return false;
     writer.Merge(creator.sample_reader());
-    if (writer.Write(nullptr)) {
-      return true;
-    } else {
-      return false;
-    }
-  } else {
-    return false;
   }
+  LOG(INFO) << "Merged " << input_files.size() << " " << input_profiler
+            << " files";
+  return writer.Write(nullptr);
 }
 }  // namespace devtools_crosstool_autofdo

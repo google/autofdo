@@ -1,68 +1,61 @@
 #ifndef AUTOFDO_LLVM_PROPELLER_PROFILE_WRITER_H_
 #define AUTOFDO_LLVM_PROPELLER_PROFILE_WRITER_H_
 
-#if defined(HAVE_LLVM)
+#include <string>
 
-#include <memory>
-#include <utility>
-#include <vector>
-
-#include "llvm_propeller_abstract_whole_program_info.h"
-#include "llvm_propeller_code_layout.h"
 #include "llvm_propeller_options.pb.h"
-#include "llvm_propeller_perf_data_provider.h"
-#include "llvm_propeller_statistics.h"
-#include "status_provider.h"
-#include "third_party/abseil/absl/status/status.h"
+#include "llvm_propeller_profile.h"
+#include "base/logging.h"
 
 namespace devtools_crosstool_autofdo {
-
-// Propeller interface for SWIG as well as create_llvm_prof.
-absl::Status GeneratePropellerProfiles(
-    const devtools_crosstool_autofdo::PropellerOptions &opts);
-// Like above, but `opts.perf_names` is ignored and `perf_data_provider` is used
-// instead.
-absl::Status GeneratePropellerProfiles(
-    const devtools_crosstool_autofdo::PropellerOptions &opts,
-    std::unique_ptr<PerfDataProvider> perf_data_provider);
-
-class PropellerProfWriter {
+// Writes the propeller profiles to output files.
+class PropellerProfileWriter {
  public:
-  static std::unique_ptr<PropellerProfWriter> Create(
-      const PropellerOptions &options,
-      MultiStatusProvider *status = nullptr);
-  // Like above, but `opts.perf_names` is ignored and `perf_data_provider` is
-  // used instead.
-  static std::unique_ptr<PropellerProfWriter> Create(
-      const PropellerOptions &options,
-      std::unique_ptr<PerfDataProvider> perf_data_provider,
-      MultiStatusProvider *status = nullptr);
+  explicit PropellerProfileWriter(const PropellerOptions& options)
+      : options_(options),
+        profile_encoding_(GetProfileEncoding(options.cluster_out_version())) {}
 
-  // Main entrance of propeller profile writer.
-  // Return true if succeeded.
-  bool Write(
-      const std::vector<FunctionClusterInfo> &all_functions_cluster_info);
-
-  const PropellerStats &stats() const { return stats_; }
-  void PrintStats() const;
-
-  const AbstractPropellerWholeProgramInfo *whole_program_info() const {
-    return whole_program_info_.get();
-  }
-
-  ~PropellerProfWriter() {}
+  // Writes code layout result in `all_functions_cluster_info` into the output
+  // file.
+  void Write(const PropellerProfile& profile) const;
 
  private:
-  PropellerProfWriter(const PropellerOptions &options,
-                      std::unique_ptr<AbstractPropellerWholeProgramInfo> wpi)
-      : options_(options), whole_program_info_(std::move(wpi)) {}
+  struct ProfileEncoding {
+    ClusterEncodingVersion version;
+    std::string version_specifier;
+    std::string function_name_specifier;
+    std::string function_name_separator;
+    std::string module_name_specifier;
+    std::string cluster_specifier;
+    std::string clone_path_specifier;
+  };
 
-  const PropellerOptions options_;
-  PropellerStats stats_;
-  std::unique_ptr<AbstractPropellerWholeProgramInfo> whole_program_info_;
+  static ProfileEncoding GetProfileEncoding(
+      const ClusterEncodingVersion& version) {
+    switch (version) {
+      case ClusterEncodingVersion::VERSION_0:
+        return {.version = version,
+                .version_specifier = "v0",
+                .function_name_specifier = "!",
+                .function_name_separator = "/",
+                .module_name_specifier = " M=",
+                .cluster_specifier = "!!",
+                .clone_path_specifier = "#NOT_SUPPORTED"};
+      case ClusterEncodingVersion::VERSION_1:
+        return {.version = version,
+                .version_specifier = "v1",
+                .function_name_specifier = "f ",
+                .function_name_separator = " ",
+                .module_name_specifier = "m ",
+                .cluster_specifier = "c",
+                .clone_path_specifier = "p"};
+      default:
+        LOG(FATAL) << "Unknown value for ClusterEncodingVersion: "
+                   << static_cast<int>(version);
+    }
+  }
+  PropellerOptions options_;
+  ProfileEncoding profile_encoding_;
 };
-
 }  // namespace devtools_crosstool_autofdo
-#endif
-
 #endif  // AUTOFDO_LLVM_PROPELLER_PROFILE_WRITER_H_

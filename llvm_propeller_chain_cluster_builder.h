@@ -1,10 +1,13 @@
-#ifndef AUTOFDO_LLVM_PROPELLER_CHAIN_CLUSTER_BUILDER_H_
-#define AUTOFDO_LLVM_PROPELLER_CHAIN_CLUSTER_BUILDER_H_
+#ifndef AUTOFDOLLVM_PROPELLER_CHAIN_CLUSTER_BUILDER_H_
+#define AUTOFDOLLVM_PROPELLER_CHAIN_CLUSTER_BUILDER_H_
 
 #include <algorithm>
+#include <iterator>
+#include <memory>
 #include <utility>
 #include <vector>
 
+#include "llvm_propeller_cfg.h"
 #include "llvm_propeller_node_chain.h"
 #include "llvm_propeller_options.pb.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
@@ -16,7 +19,7 @@ namespace devtools_crosstool_autofdo {
 class ChainCluster {
  public:
   explicit ChainCluster(std::unique_ptr<const NodeChain> chain)
-      : id_(chain->id()), size_(chain->size_), freq_(chain->freq_) {
+      : id_(chain->id()), size_(chain->size()), freq_(chain->freq()) {
     chains_.push_back(std::move(chain));
   }
 
@@ -32,17 +35,17 @@ class ChainCluster {
   }
 
   // Returns the total binary size of the cluster.
-  uint64_t size() const { return size_; }
+  int size() const { return size_; }
 
   // Returns the total frquency of the cluster.
-  uint64_t freq() const { return freq_; }
+  int freq() const { return freq_; }
 
   // Returns the unique identifier for this cluster.
-  uint64_t id() const { return id_; }
+  CFGNode::InterCfgId id() const { return id_; }
 
   // Returns the execution density for this cluster.
   double exec_density() const {
-    return static_cast<double>(freq_) / std::max(size_, 1ul);
+    return static_cast<double>(freq_) / std::max(size_, 1);
   }
 
   // Merges the chains in `other` cluster into `this` cluster. `other`
@@ -62,16 +65,16 @@ class ChainCluster {
 
  private:
   // The chains in this cluster in the merged order.
-  std::vector<std::unique_ptr<const NodeChain>> chains_ = {};
+  std::vector<std::unique_ptr<const NodeChain>> chains_;
 
   // Unique id of the cluster.
-  uint64_t id_ = 0;
+  CFGNode::InterCfgId id_;
 
   // Total size of the cluster.
-  uint64_t size_ = 0;
+  int size_;
 
   // Total frequency of the cluster.
-  uint64_t freq_ = 0;
+  int freq_;
 };
 
 class ChainClusterBuilder {
@@ -80,21 +83,8 @@ class ChainClusterBuilder {
   // chain and transfers the ownership of the NodeChain pointer to their
   // associated clusters.
   explicit ChainClusterBuilder(
-      const devtools_crosstool_autofdo::PropellerCodeLayoutParameters
-          &code_layout_params,
-      std::vector<std::unique_ptr<const NodeChain>> chains)
-      : code_layout_params_(code_layout_params) {
-    for (auto &chain : chains) {
-      const NodeChain *chain_ptr = chain.get();
-      // Transfer the ownership of chains to clusters.
-      auto cluster = std::make_unique<ChainCluster>(std::move(chain));
-      chain_to_cluster_map_.emplace(chain_ptr, cluster.get());
-      auto cluster_id = cluster->id();
-      bool inserted = clusters_.emplace(cluster_id, std::move(cluster)).second;
-      CHECK(inserted) << "Duplicate cluster id: " << cluster_id << ".";
-    }
-    chains.clear();
-  }
+      const PropellerCodeLayoutParameters &code_layout_params,
+      std::vector<std::unique_ptr<const NodeChain>> chains);
 
   // Builds and returns the clusters of chains.
   // This function builds clusters of node chains according to the
@@ -113,10 +103,13 @@ class ChainClusterBuilder {
   void MergeClusters(ChainCluster &left_cluster, ChainCluster right_cluster);
 
  private:
-  devtools_crosstool_autofdo::PropellerCodeLayoutParameters code_layout_params_;
+  PropellerCodeLayoutParameters code_layout_params_;
+  const absl::flat_hash_map<const CFGNode *, const NodeChain *>
+      node_to_chain_map_;
 
   // All clusters currently in process.
-  absl::flat_hash_map<uint64_t, std::unique_ptr<const ChainCluster>> clusters_;
+  absl::flat_hash_map<CFGNode::InterCfgId, std::unique_ptr<const ChainCluster>>
+      clusters_;
 
   // This maps every chain to its containing cluster.
   absl::flat_hash_map<const NodeChain *, ChainCluster *> chain_to_cluster_map_;
@@ -124,4 +117,4 @@ class ChainClusterBuilder {
 
 }  // namespace devtools_crosstool_autofdo
 
-#endif  //  AUTOFDO_LLVM_PROPELLER_CHAIN_CLUSTER_BUILDER_H_
+#endif  //  AUTOFDOLLVM_PROPELLER_CHAIN_CLUSTER_BUILDER_H_

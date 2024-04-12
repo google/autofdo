@@ -1,0 +1,102 @@
+## CFG consisting of a function with two conditionals in a small-trip-count
+## loop.
+##             foo
+##             |
+##          15 |
+##             v
+##      +----> foo.1
+##      |      |\
+##      |      | \10
+##      |      |  \
+##      |      |   v
+##   10 |   15 |   foo.3  --+
+##      |      |   /        |
+##      |      |  / 9       |
+##      |      | /          |
+##      |      vv           | 1
+##      +---- foo.2         |
+##             |            |
+##         14  |            |
+##             v            |
+##            foo.4 <-------+
+
+cfg {
+  name: "foo"
+  function_index: 22
+  node {
+    bb_id: 0
+    size: 10
+    out_edges {
+      sink : {
+        function_index: 22
+        bb_index: 1
+      }
+      weight: 15
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    bb_id: 1
+    size: 8
+    out_edges {
+      sink : {
+        function_index: 22
+        bb_index: 2
+      }
+      weight: 15
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    out_edges {
+      sink : {
+        function_index: 22
+        bb_index: 3
+      }
+      weight: 10
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    bb_id: 2
+    size: 4
+    out_edges {
+      sink : {
+        function_index: 22
+        bb_index: 1
+      }
+      weight: 10
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    out_edges {
+      sink : {
+        function_index: 22
+        bb_index: 4
+      }
+      weight: 14
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    bb_id: 3
+    size: 6
+    out_edges {
+      sink : {
+        function_index: 22
+        bb_index: 4
+      }
+      weight: 1
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+    out_edges {
+      sink : {
+        function_index: 22
+        bb_index: 2
+      }
+      weight: 9
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    bb_id: 4
+    size: 2
+  }
+}

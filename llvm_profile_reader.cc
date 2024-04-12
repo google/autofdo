@@ -9,6 +9,7 @@
 #include "llvm/ProfileData/FunctionId.h"
 #include "llvm/ProfileData/SampleProfReader.h"
 #include "llvm/Support/VirtualFileSystem.h"
+#include "base/logging.h"
 
 namespace devtools_crosstool_autofdo {
 

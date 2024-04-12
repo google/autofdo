@@ -1,10 +1,7 @@
 // Merge the .afdo files.
 
-#include <map>
 #include <memory>
 #include <string>
-#include <utility>
-#include <vector>
 
 #include "base/commandlineflags.h"
 #include "base/logging.h"
@@ -15,6 +12,7 @@
 #endif
 #include "profile_reader.h"
 #include "profile_writer.h"
+#include "source_info.h"
 #include "symbol_map.h"
 #include "third_party/abseil/absl/base/macros.h"
 #include "third_party/abseil/absl/container/node_hash_set.h"
@@ -67,9 +65,20 @@ ABSL_FLAG(bool, split_layout, false,
 ABSL_FLAG(std::string, strip_symbols_regex, "",
           "Strip outline symbols "
           "matching the regular expression in the merged profile. ");
+ABSL_FLAG(int, max_call_targets, 0,
+          "Keep up specified number of the most frequently called targets at "
+          "each profiled location containing call targets.");
+ABSL_FLAG(int, max_inline_callsite_nesting_level, 0,
+          "Limit inline callsite nesting level to specified value, and further "
+          "inlined callsites are flattened.");
+ABSL_FLAG(int, inline_instances_at_same_loc_cutoff, -1,
+          "Cut off value to control the number of inline instances at the "
+          "same location. Having too many inline instances at the same location"
+          " can introduce excessive thinlto importing cost without an "
+          "apparent benefit. Value < 0 has no effect.");
 
 namespace {
-// Some sepcial symbols or symbol patterns we are going to handle.
+// Some special symbols or symbol patterns we are going to handle.
 // strip_all means for the set of symbols, we are going to strip their
 // copies from all the profiles during the merge.
 static const char* strip_all[] = {
@@ -161,12 +170,12 @@ int main(int argc, char **argv) {
     using devtools_crosstool_autofdo::AutoFDOProfileReader;
     typedef std::unique_ptr<AutoFDOProfileReader> AutoFDOProfileReaderPtr;
     std::unique_ptr<AutoFDOProfileReaderPtr[]> readers(
-        new AutoFDOProfileReaderPtr[positionalArguments.size() - 1]);
+        new AutoFDOProfileReaderPtr[argc - 1]);
     // TODO(dehao): merge profile reader/writer into a single class
-    for (int i = 1; i < positionalArguments.size(); i++) {
+    for (int i = 1; i < argc; i++) {
       readers[i - 1] =
           std::make_unique<AutoFDOProfileReader>(&symbol_map, true);
-      readers[i - 1]->ReadFromFile(positionalArguments[i]);
+      readers[i - 1]->ReadFromFile(argv[i]);
     }
 
     symbol_map.CalculateThreshold();
@@ -182,7 +191,7 @@ int main(int argc, char **argv) {
     typedef std::unique_ptr<LLVMProfileReader> LLVMProfileReaderPtr;
 
     std::unique_ptr<LLVMProfileReaderPtr[]> readers(
-        new LLVMProfileReaderPtr[positionalArguments.size() - 1]);
+        new LLVMProfileReaderPtr[argc - 1]);
     llvm::sampleprof::ProfileSymbolList prof_sym_list;
 
 #if LLVM_VERSION_MAJOR >= 12
@@ -190,11 +199,11 @@ int main(int argc, char **argv) {
     int numFSDProfiles = 0;
 #endif
 
-    for (int i = 1; i < positionalArguments.size(); i++) {
+    for (int i = 1; i < argc; i++) {
       auto reader = std::make_unique<LLVMProfileReader>(
           &symbol_map, names,
           absl::GetFlag(FLAGS_merge_special_syms) ? nullptr : &special_syms);
-      CHECK(reader->ReadFromFile(positionalArguments[i])) << "when reading " << positionalArguments[i];
+      CHECK(reader->ReadFromFile(argv[i])) << "when reading " << argv[i];
 
 #if LLVM_VERSION_MAJOR >= 12
       if (reader->ProfileIsFS()) {
@@ -264,6 +273,14 @@ int main(int argc, char **argv) {
       sample_profile_writer->setPartialProfile();
     }
 #endif
+    // Perform optional flattening after merging to limit a CS profile to a
+    // given nested level, so that the time spent on inlining using the profile
+    // is bounded.
+    symbol_map.FlattenNestedInlineCallsites(
+        absl::GetFlag(FLAGS_max_inline_callsite_nesting_level));
+
+    // Symbol stripping must be done after all flattening operations since they
+    // can create new top level functions.
     auto strip_symbols_regex = absl::GetFlag(FLAGS_strip_symbols_regex);
     if (!strip_symbols_regex.empty()) {
       symbol_map.RemoveSymsMatchingRegex(strip_symbols_regex);
@@ -273,7 +290,17 @@ int main(int argc, char **argv) {
     // at the same location after profile merging. This is to control ThinLTO
     // importing cost. This is placed here so that it can be used in the
     // standalone tool as well.
-    symbol_map.throttleInlineInstancesAtSameLocation();
+    if (int max_inline_instances =
+            absl::GetFlag(FLAGS_inline_instances_at_same_loc_cutoff);
+        max_inline_instances > 0) {
+      symbol_map.throttleInlineInstancesAtSameLocation(max_inline_instances);
+    }
+
+    // Trim call targets to specified number.
+    if (int max_call_targets = absl::GetFlag(FLAGS_max_call_targets);
+        max_call_targets > 0) {
+      symbol_map.TrimCallTargets(max_call_targets);
+    }
 
     writer->setSymbolMap(&symbol_map);
     if (!writer->WriteToFile(absl::GetFlag(FLAGS_output_file))) {

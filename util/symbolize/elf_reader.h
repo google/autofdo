@@ -127,6 +127,25 @@ class ElfReader {
     uint64 addralign;           // Section alignment.
     uint64 entsize;             // Entry size if section holds a table.
   };
+
+  // The SegmentInfo structure is almost identical to the typedef struct
+  // Elf64_Phdr defined in <elf.h>, but is redefined here so that the many
+  // short macro names in <elf.h> don't have to be added to our already
+  // cluttered namespace.
+  struct SegmentInfo {
+    uint32_t type;    // Segment type (PT_xxx constant from elf.h).
+    uint32_t flags;   // Segment flags (PF_xxx constants from elf.h).
+    uint64_t offset;  // Segment file offset.
+    uint64_t vaddr;   // Segment virtual address.
+    uint64_t paddr;   // Segment physical address.
+    uint64_t filesz;  // Segment size in file.
+    uint64_t memsz;   // Segment size in memory.
+    uint64_t align;   // Segment alignment.
+  };
+
+  // Return the vector of SegmentInfo for all the segments in program header.
+  std::vector<ElfReader::SegmentInfo> GetSegmentInfo();
+
   const char *GetSectionInfoByName(const string &section_name,
                                    SectionInfo *info);
 

@@ -6,18 +6,23 @@
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/match.h"
 #if defined(HAVE_LLVM)
+#include <cstdint>
 #include <fstream>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/commandlineflags.h"
 #include "base/logging.h"
 #include "llvm_profile_writer.h"
 #include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_options_builder.h"
-#include "llvm_propeller_profile_writer.h"
+#include "llvm_propeller_profile_generator.h"
 #include "profile_creator.h"
+#include "symbol_map.h"
 #include "third_party/abseil/absl/status/status.h"
+#include "third_party/abseil/absl/strings/match.h"
+#include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/str_split.h"
 #include "third_party/abseil/absl/flags/parse.h"
 #include "third_party/abseil/absl/flags/usage.h"
@@ -28,7 +33,8 @@ ABSL_FLAG(std::string, profile, "perf.data",
           "has prefix \"@\", then the profile is treated as a list file whose "
           "lines are interpreted as input profile paths.");
 ABSL_FLAG(std::string, profiler, "perf",
-          "Input profile type. Possible values: perf, text, or prefetch");
+          "Input profile type. Possible values: perf (LBR), text, prefetch, or "
+          "perf_spe.");
 ABSL_FLAG(std::string, prefetch_hints, "", "Input cache prefetch hints");
 ABSL_FLAG(std::string, out, "", "Output profile file name");
 ABSL_FLAG(std::string, gcov, "",
@@ -107,6 +113,21 @@ ABSL_FLAG(bool, propeller_layout_only, false,
           "hot ones. Default to \"false\". Mutually exclusive with "
           "--propeller_split_only. Only valid when --format=propeller.");
 
+ABSL_FLAG(int32_t, propeller_cluster_encoding_version,
+          static_cast<int32_t>(
+              devtools_crosstool_autofdo::ClusterEncodingVersion::LATEST),
+          "Cluster encoding version to use, as defined by "
+          "devtools/crosstool/autofdo/llvm_propeller_options.proto.");
+
+static devtools_crosstool_autofdo::ProfileType GetProfileTypeFromFlag() {
+  if (absl::GetFlag(FLAGS_profiler) == "perf")
+    return devtools_crosstool_autofdo::ProfileType::PERF_LBR;
+  if (absl::GetFlag(FLAGS_profiler) == "perf_spe")
+    return devtools_crosstool_autofdo::ProfileType::PERF_SPE;
+
+  return devtools_crosstool_autofdo::ProfileType::PROFILE_TYPE_UNSPECIFIED;
+}
+
 devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
   devtools_crosstool_autofdo::PropellerOptionsBuilder option_builder;
   std::string pstr = absl::GetFlag(FLAGS_profile);
@@ -115,13 +136,18 @@ devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
     std::string pf;
     while (std::getline(fin, pf)) {
       if (!pf.empty() && pf[0] != '#') {
-        option_builder.AddPerfNames(pf);
+        option_builder.AddInputProfiles(
+            devtools_crosstool_autofdo::InputProfileBuilder()
+                .SetName(pf)
+                .SetType(GetProfileTypeFromFlag()));
       }
     }
   } else {
     std::vector<std::string> perf_files = absl::StrSplit(pstr, ';');
     for (const std::string &pf : perf_files)
-      if (!pf.empty()) option_builder.AddPerfNames(pf);
+      if (!pf.empty())
+        option_builder.AddInputProfiles(
+            devtools_crosstool_autofdo::InputProfileBuilder().SetName(pf));
   }
   if (!absl::GetFlag(FLAGS_propeller_cfg_dump_dir).empty()) {
     option_builder.SetCfgDumpDirName(

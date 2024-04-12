@@ -1,0 +1,7 @@
+v1
+f this_is_very_code
+c0
+f compute_flag
+c0 2 3 1
+f main
+c0 3 4 6 7 1 2 5

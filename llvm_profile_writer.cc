@@ -7,22 +7,25 @@
 #if defined(HAVE_LLVM)
 #include <stdio.h>
 
-#include <algorithm>
 #include <map>
-#include <set>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
-#include "base/commandlineflags.h"
 #include "base/logging.h"
 #include "llvm_profile_writer.h"
 #include "profile_writer.h"
+#include "source_info.h"
+#include "symbol_map.h"
 #include "third_party/abseil/absl/flags/declare.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/match.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/ProfileData/FunctionId.h"
+#include "llvm/ProfileData/SampleProf.h"
+#include "llvm/ProfileData/SampleProfWriter.h"
 
 ABSL_DECLARE_FLAG(bool, debug_dump);
 
@@ -65,8 +68,8 @@ bool LLVMProfileBuilder::Write(
 const llvm::sampleprof::SampleProfileMap &LLVMProfileBuilder::ConvertProfiles(
     const SymbolMap &symbol_map) {
 #else
-const llvm::StringMap<llvm::sampleprof::FunctionSamples>
-    &LLVMProfileBuilder::ConvertProfiles(const SymbolMap &symbol_map) {
+const llvm::StringMap<llvm::sampleprof::FunctionSamples> &
+LLVMProfileBuilder::ConvertProfiles(const SymbolMap &symbol_map) {
 #endif
   Start(symbol_map);
   return GetProfiles();
@@ -93,7 +96,7 @@ void LLVMProfileBuilder::VisitTopSymbol(const std::string &name,
 
 void LLVMProfileBuilder::VisitCallsite(const Callsite &callsite) {
   DCHECK_GE(inline_stack_.size(), 1);
-  uint64_t offset = callsite.first;
+  uint64_t offset = callsite.location;
   uint32_t line = SourceInfo::GetLineNumberFromOffset(offset);
   uint32_t discriminator = SourceInfo::GetDiscriminatorFromOffset(offset);
   while (inline_stack_.size() > level_) {
@@ -101,7 +104,7 @@ void LLVMProfileBuilder::VisitCallsite(const Callsite &callsite) {
   }
   auto &caller_profile = *(inline_stack_.back());
   llvm::sampleprof::FunctionId Callee(
-      GetNameRef(Symbol::Name(callsite.second)));
+      GetNameRef(Symbol::Name(callsite.callee_name)));
   auto &callee_profile =
       caller_profile.functionSamplesAt(llvm::sampleprof::LineLocation(
           line, discriminator))[llvm::sampleprof::FunctionId(Callee)];
@@ -157,8 +160,9 @@ llvm::StringRef LLVMProfileBuilder::GetNameRef(const std::string &str) {
   CHECK(ret != name_table_.end());
   // Suffixes should have been elided by SymbolMap::ElideSuffixesAndMerge()
   if (absl::StrContains(ret->first, ".llvm.")) {
-    LOG(WARNING) << "Unexpected character '.' in function name: " << ret->first
-               << ". Likely thin LTO .llvm.<hash> suffix has not been cleared.";
+    LOG(WARNING)
+        << "Unexpected character '.' in function name: " << ret->first
+        << ". Likely thin LTO .llvm.<hash> suffix has not been cleared.";
   }
   return llvm::StringRef(ret->first);
 }
