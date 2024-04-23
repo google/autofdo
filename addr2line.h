@@ -42,8 +42,10 @@ class Addr2line {
   // Stores the inline stack of ADDR in STACK.
   virtual void GetInlineStack(uint64_t addr, SourceStack *stack) const = 0;
 
+  #if defined(HAVE_LLVM)
   // Return the object file.
   virtual const llvm::object::ObjectFile *getObject() const { return nullptr; }
+  #endif // HAVE_LLVM
 
  protected:
   std::string binary_name_;
@@ -75,8 +77,7 @@ class AddressToLineMap;
 
 class Google3Addr2line : public Addr2line {
  public:
-  explicit Google3Addr2line(const string &binary_name,
-                            const std::map<uint64_t, uint64_t> *sampled_functions);
+  explicit Google3Addr2line(const string &binary_name);
   virtual ~Google3Addr2line();
   virtual bool Prepare();
   virtual void GetInlineStack(uint64_t address, SourceStack *stack) const;
@@ -85,7 +86,6 @@ class Google3Addr2line : public Addr2line {
   AddressToLineMap *line_map_;
   InlineStackHandler *inline_stack_handler_;
   ElfReader *elf_;
-  const std::map<uint64_t, uint64_t> *sampled_functions_;
   DISALLOW_COPY_AND_ASSIGN(Google3Addr2line);
 };
 #endif

@@ -16,39 +16,37 @@
 #include <string>
 #include <vector>
 
+#include "addr2line.h"
+#include "gcov.h"
+#include "profile.h"
+#include "sample_reader.h"
+#include "source_info.h"
+#include "symbol_map.h"
 #include "base/commandlineflags.h"
 #include "base/integral_types.h"
 #include "base/logging.h"
-#include "addr2line.h"
-#include "gcov.h"
-#if defined(HAVE_LLVM)
-#include "llvm_profile_writer.h"
-#include "profile.h"
-#include "profile_symbol_list.h"
-
-#include "llvm/ProfileData/SampleProf.h"
-#endif
-
 #include "base/logging.h"
-#include "sample_reader.h"
-#include "source_info.h"
-#include "spe_sample_reader.h"
-#include "symbol_map.h"
 #include "third_party/abseil/absl/container/btree_map.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/memory/memory.h"
 #include "third_party/abseil/absl/strings/string_view.h"
 #include "util/symbolize/elf_reader.h"
 
-ABSL_FLAG(std::string, focus_binary_re, "",
-          "RE for the focused binary file name");
+#if defined(HAVE_LLVM)
+#include "llvm_profile_writer.h"
+#include "profile_symbol_list.h"
+#include "spe_sample_reader.h"
+
+#include "llvm/ProfileData/SampleProf.h"
+
 ABSL_FLAG(bool, disassemble_arm_branches, true,
           "Tell the SPE sample reader to disassemble the binary to identify "
           "branch instructions.");
-
-#if defined(HAVE_LLVM)
 AUTOFDO_PROFILE_SYMBOL_LIST_FLAGS;
 #endif
+
+ABSL_FLAG(std::string, focus_binary_re, "",
+          "RE for the focused binary file name");
 
 namespace {
 struct PrefetchHint {
@@ -187,11 +185,16 @@ bool ProfileCreator::ReadSample(absl::string_view input_profile_name,
     }
 
     if (profiler == "perf_spe") {
+      #if defined (HAVE_LLVM)
       sample_reader_ = new PerfSpeDataSampleReader(
           absl::GetFlag(FLAGS_disassemble_arm_branches)
               ? PerfSpeDataSampleReader::BranchIdStrategy::kDisassembly
               : PerfSpeDataSampleReader::BranchIdStrategy::kSampling,
           input_profile_name, focus_binary_re, binary_);
+      #else
+      LOG(ERROR) << "Unsupported profiler type: " << profiler;
+      return false;
+      #endif // HAVE_LLVM
     } else {
       sample_reader_ = new PerfDataSampleReader(input_profile_name,
                                                 focus_binary_re, build_id);

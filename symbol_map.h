@@ -20,13 +20,13 @@
 #include "addr2line.h"
 #include "source_info.h"
 #include "third_party/abseil/absl/algorithm/container.h"
+#include "third_party/abseil/absl/container/btree_map.h"
 #include "third_party/abseil/absl/container/flat_hash_set.h"
 #include "third_party/abseil/absl/container/node_hash_map.h"
 #include "third_party/abseil/absl/flags/declare.h"
 #include "third_party/abseil/absl/strings/string_view.h"
 
 #if defined(HAVE_LLVM)
-#include "third_party/abseil/absl/container/btree_map.h"
 #include "llvm/ADT/StringSet.h"
 #endif
 // Macros from gcc (profile.c)

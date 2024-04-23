@@ -36,8 +36,11 @@
 #include "third_party/abseil/absl/strings/str_format.h"
 #include "third_party/abseil/absl/strings/str_split.h"
 #include "third_party/abseil/absl/strings/string_view.h"
-#include "llvm/ADT/StringRef.h"
 #include "util/symbolize/elf_reader.h"
+
+#if defined(HAVE_LLVM)
+#include "llvm/ADT/StringRef.h"
+#endif // HAVE_LLVM
 
 ABSL_FLAG(int32_t, dump_cutoff_percent, 2,
           "functions that has total count lower than this percentage of "

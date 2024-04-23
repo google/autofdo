@@ -53,13 +53,8 @@ void GetSection(const devtools_crosstool_autofdo::SectionMap &sections,
 
 namespace devtools_crosstool_autofdo {
 
-Addr2line *Addr2line::Create(const string &binary_name) {
-  return CreateWithSampledFunctions(binary_name, NULL);
-}
-
-Addr2line *Addr2line::CreateWithSampledFunctions(
-    const string &binary_name, const map<uint64_t, uint64_t> *sampled_functions) {
-  Addr2line *addr2line = new Google3Addr2line(binary_name, sampled_functions);
+Addr2line *Addr2line::Create(absl::string_view binary_name) {
+    Addr2line *addr2line = new Google3Addr2line(std::string(binary_name));
   if (!addr2line->Prepare()) {
     delete addr2line;
     return NULL;
@@ -68,11 +63,9 @@ Addr2line *Addr2line::CreateWithSampledFunctions(
   }
 }
 
-Google3Addr2line::Google3Addr2line(const string &binary_name,
-                                   const map<uint64_t, uint64_t> *sampled_functions)
+Google3Addr2line::Google3Addr2line(const std::string& binary_name)
     : Addr2line(binary_name), line_map_(new AddressToLineMap()),
-      inline_stack_handler_(NULL), elf_(new ElfReader(binary_name)),
-      sampled_functions_(sampled_functions) {}
+      inline_stack_handler_(NULL), elf_(new ElfReader(binary_name)) {}
 
 Google3Addr2line::~Google3Addr2line() {
   delete line_map_;
@@ -136,7 +129,7 @@ bool Google3Addr2line::Prepare() {
                                 debug_addr_data, 
                                 debug_addr_size);
   inline_stack_handler_ = new InlineStackHandler(
-      &debug_ranges, sections, &reader, sampled_functions_,
+      &debug_ranges, sections, &reader, nullptr,
       elf_->VaddrOfFirstLoadSegment());
 
   // Extract the line information
@@ -148,7 +141,7 @@ bool Google3Addr2line::Prepare() {
     while (debug_info_pos < debug_info_size) {
       DirectoryVector dirs;
       FileVector files;
-      CULineInfoHandler handler(&files, &dirs, line_map_, sampled_functions_);
+      CULineInfoHandler handler(&files, &dirs, line_map_, nullptr);
       inline_stack_handler_->set_directory_names(&dirs);
       inline_stack_handler_->set_file_names(&files);
       inline_stack_handler_->set_line_handler(&handler);

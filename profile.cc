@@ -15,7 +15,6 @@
 #include "base/commandlineflags.h"
 #include "base/logging.h"
 #include "instruction_map.h"
-#include "mini_disassembler.h"
 #include "sample_reader.h"
 #include "source_info.h"
 #include "symbol_map.h"
@@ -23,7 +22,11 @@
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/status/statusor.h"
 #include "third_party/abseil/absl/strings/string_view.h"
+
+#if defined(HAVE_LLVM)
+#include "mini_disassembler.h"
 #include "llvm/Object/ObjectFile.h"
+#endif
 
 ABSL_FLAG(bool, use_lbr, true,
             "Whether to use lbr profile.");
@@ -57,6 +60,7 @@ void Profile::AggregatePerFunctionProfile(bool check_lbr_entry) {
     }
   }
 
+  #if defined(HAVE_LLVM)
   std::unique_ptr<MiniDisassembler> Disassembler;
   if (check_lbr_entry) {
     const llvm::object::ObjectFile *Obj = addr2line_->getObject();
@@ -71,6 +75,7 @@ void Profile::AggregatePerFunctionProfile(bool check_lbr_entry) {
                    << " will be disabled.";
     }
   }
+  #endif // HAVE_LLVM
 
   const RangeCountMap *range_map = &sample_reader_->range_count_map();
   for (const auto &[range, count] : *range_map) {
@@ -78,6 +83,7 @@ void Profile::AggregatePerFunctionProfile(bool check_lbr_entry) {
     uint64_t end_vaddr = symbol_map_->get_static_vaddr(range.second);
     ProfileMaps *maps = GetProfileMaps(beg_vaddr);
 
+    #if defined(HAVE_LLVM)
     // check if the range end_addr is a jump instruction.
     if (Disassembler) {
       auto BranchCheck = Disassembler->MayAffectControlFlow(end_vaddr);
@@ -86,6 +92,7 @@ void Profile::AggregatePerFunctionProfile(bool check_lbr_entry) {
             << "Range end_addr (" << std::hex << end_vaddr
             << ") is NOT a potentially-control-flow-affecting instruction.";
     }
+    #endif // HAVE_LLVM
 
     if (maps != nullptr) {
       maps->range_count_map[std::make_pair(beg_vaddr, end_vaddr)] += count;
@@ -97,6 +104,7 @@ void Profile::AggregatePerFunctionProfile(bool check_lbr_entry) {
     uint64_t to_vaddr = symbol_map_->get_static_vaddr(branch.second);
     ProfileMaps *maps = GetProfileMaps(from_vaddr);
 
+    #if defined(HAVE_LLVM)
     if (Disassembler) {
       auto BranchCheck = Disassembler->MayAffectControlFlow(from_vaddr);
       if (BranchCheck.ok() && !BranchCheck.value())
@@ -104,6 +112,7 @@ void Profile::AggregatePerFunctionProfile(bool check_lbr_entry) {
             << "Branch from_addr (" << std::hex << from_vaddr
             << ") is NOT a potentially-control-flow-affecting instruction.";
     }
+    #endif // HAVE_LLVM
 
     if (maps != nullptr) {
       maps->branch_count_map[std::make_pair(from_vaddr, to_vaddr)] += count;
