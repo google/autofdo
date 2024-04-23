@@ -18,25 +18,28 @@
 #define STATUS_MACROS_H_
 
 #if not defined(CONCAT)
-#define CONCAT_IMPL(x, y) x ## y
+#define CONCAT_IMPL(x, y) x##y
 #define CONCAT(x, y) CONCAT_IMPL(x, y)
 #endif
 
-// Evaluates `exp`, which must evaluate to an `absl::StatusOr<T>`. If `exp` evaluates to a non-ok status, exits the current function by returning that status. Otherwise, stores `exp.value()` into `lhs`, which must be an lvalue.
+// Evaluates `exp`, which must evaluate to an `absl::StatusOr<T>`. If `exp`
+// evaluates to a non-ok status, exits the current function by returning that
+// status. Otherwise, stores `exp.value()` into `lhs`, which must be an lvalue.
 #if not defined(ASSIGN_OR_RETURN)
-#define ASSIGN_OR_RETURN(lhs, exp)                           \
-    auto CONCAT(_status_or_value, __LINE__) = (exp);         \
-    if (!(CONCAT(_status_or_value, __LINE__)).ok())          \
-        return CONCAT(_status_or_value, __LINE__).status();  \
-    lhs = std::move(CONCAT(_status_or_value, __LINE__).value());
+#define ASSIGN_OR_RETURN(lhs, exp)                      \
+  auto CONCAT(_status_or_value, __LINE__) = (exp);      \
+  if (!(CONCAT(_status_or_value, __LINE__)).ok())       \
+    return CONCAT(_status_or_value, __LINE__).status(); \
+  lhs = std::move(CONCAT(_status_or_value, __LINE__).value());
 #endif
 
-// Evaluates `exp`, which must evaluate to an `absl::Status` or `absl::StatusOr`. If `exp` evaluates to a non-ok status, exits the current function by returning that status.
+// Evaluates `exp`, which must evaluate to an `absl::Status` or
+// `absl::StatusOr`. If `exp` evaluates to a non-ok status, exits the current
+// function by returning that status.
 #if not defined(RETURN_IF_ERROR)
-#define RETURN_IF_ERROR(exp)                 \
-    auto CONCAT(_status, __LINE__) = (exp);  \
-    if (!(CONCAT(_status, __LINE__)).ok())   \
-        return CONCAT(_status, __LINE__);
+#define RETURN_IF_ERROR(exp)              \
+  auto CONCAT(_status, __LINE__) = (exp); \
+  if (!(CONCAT(_status, __LINE__)).ok()) return CONCAT(_status, __LINE__);
 #endif
 
-#endif // STATUS_MACROS_H_
+#endif  // STATUS_MACROS_H_

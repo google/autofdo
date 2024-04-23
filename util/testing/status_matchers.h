@@ -22,9 +22,9 @@
 #include "third_party/abseil/absl/status/statusor.h"
 
 #if not defined(CONCAT)
-#define CONCAT_IMPL(x, y) x ## y
+#define CONCAT_IMPL(x, y) x##y
 #define CONCAT(x, y) CONCAT_IMPL(x, y)
-#endif // CONCAT
+#endif  // CONCAT
 
 #ifndef GTEST_HAS_STATUS_MATCHERS
 namespace testing {
@@ -43,8 +43,7 @@ inline const absl::Status& GetStatus(const ::absl::StatusOr<T>& status) {
 // Monomorphic implementation of matcher IsOkAndHolds(m).  StatusOrType is a
 // reference to StatusOr<T>.
 template <typename StatusOrType>
-class IsOkAndHoldsMatcherImpl
-    : public testing::MatcherInterface<StatusOrType> {
+class IsOkAndHoldsMatcherImpl : public testing::MatcherInterface<StatusOrType> {
  public:
   typedef
       typename std::remove_reference<StatusOrType>::type::value_type value_type;
@@ -142,21 +141,21 @@ class StatusIsMatcherCommonImpl {
     testing::StringMatchResultListener inner_listener;
     inner_listener.Clear();
     if (!code_matcher_.MatchAndExplain(
-      static_cast<absl::StatusCode>(status.code()), &inner_listener)) {
-        *result_listener << (inner_listener.str().empty()
-                                 ? "whose status code is wrong"
-                                 : "which has a status code " +
-                                       inner_listener.str());
-        return false;
+            static_cast<absl::StatusCode>(status.code()), &inner_listener)) {
+      *result_listener << (inner_listener.str().empty()
+                               ? "whose status code is wrong"
+                               : "which has a status code " +
+                                     inner_listener.str());
+      return false;
     }
 
     if (!message_matcher_.Matches(std::string(status.message()))) {
       *result_listener << "whose error message is wrong";
       return false;
     }
-    
+
     return true;
-}
+  }
 
  private:
   const testing::Matcher<const absl::StatusCode> code_matcher_;
@@ -233,14 +232,15 @@ class IsOkMatcher {
     return testing::Matcher<T>(new MonoIsOkMatcherImpl<T>());
   }
 };
-} // namespace status_internal
+}  // namespace status_internal
 
 // Returns a gMock matcher that matches a StatusOr<> whose status is
 // OK and whose value matches the inner matcher.
 template <typename InnerMatcher>
-status_internal::IsOkAndHoldsMatcher<typename std::decay<InnerMatcher>::type> IsOkAndHolds(
-    InnerMatcher&& inner_matcher) {
-  return status_internal::IsOkAndHoldsMatcher<typename std::decay<InnerMatcher>::type>(
+status_internal::IsOkAndHoldsMatcher<typename std::decay<InnerMatcher>::type>
+IsOkAndHolds(InnerMatcher&& inner_matcher) {
+  return status_internal::IsOkAndHoldsMatcher<
+      typename std::decay<InnerMatcher>::type>(
       std::forward<InnerMatcher>(inner_matcher));
 }
 
@@ -259,26 +259,28 @@ status_internal::StatusIsMatcher StatusIs(CodeMatcher code_matcher) {
 }
 
 // Returns a gMock matcher that matches a Status or StatusOr<> which is OK.
-inline status_internal::IsOkMatcher IsOk() { return status_internal::IsOkMatcher(); }
+inline status_internal::IsOkMatcher IsOk() {
+  return status_internal::IsOkMatcher();
+}
 
 // Macros for testing the results of functions that return absl::Status or
 // absl::StatusOr<T> (for any type T).
 #ifndef EXPECT_OK
 #define EXPECT_OK(expression) EXPECT_THAT(expression, testing::status::IsOk())
-#endif // EXPECT_OK
+#endif  // EXPECT_OK
 
 #ifndef ASSERT_OK
 #define ASSERT_OK(expression) ASSERT_THAT(expression, testing::status::IsOk())
-#endif // ASSERT_OK
+#endif  // ASSERT_OK
 
 #ifndef ASSERT_OK_AND_ASSIGN
-#define ASSERT_OK_AND_ASSIGN(lhs, exp)                              \
-    auto CONCAT(_status_or_value, __LINE__) = (exp);                \
-    ASSERT_OK(CONCAT(_status_or_value, __LINE__));                  \
-    lhs = std::move(CONCAT(_status_or_value, __LINE__).value());
+#define ASSERT_OK_AND_ASSIGN(lhs, exp)             \
+  auto CONCAT(_status_or_value, __LINE__) = (exp); \
+  ASSERT_OK(CONCAT(_status_or_value, __LINE__));   \
+  lhs = std::move(CONCAT(_status_or_value, __LINE__).value());
 #endif
 
-} // namespace status
-} // namespace testing
-#endif // GTEST_HAS_STATUS_MATCHERS
-#endif // STATUS_MATCHERS_H_
+}  // namespace status
+}  // namespace testing
+#endif  // GTEST_HAS_STATUS_MATCHERS
+#endif  // STATUS_MATCHERS_H_
