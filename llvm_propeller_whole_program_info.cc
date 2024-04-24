@@ -578,10 +578,7 @@ void PropellerWholeProgramInfo::DropNonSelectedFunctions(
   for (int i = 0; i != bb_addr_map_.size(); ++i) {
     if (selected_functions.contains(i))
       continue;
-    bb_addr_map_[i].BBRanges.clear();
-    bb_addr_map_[i].BBRanges.shrink_to_fit();
-    if (!options_.keep_frontend_intermediate_data())
-      symtab_.erase(bb_addr_map_[i].getFunctionAddress());
+    symtab_.erase(bb_addr_map_[i].getFunctionAddress());
   }
 }
 
