@@ -163,8 +163,10 @@ function (config_with_llvm)
   set (LLVM_INCLUDE_DOCS OFF)
   
   set (LLVM_ENABLE_RTTI ON)
-  set (LLVM_ENABLE_PROJECTS clang)
-  set (LLVM_TARGETS_TO_BUILD X86 AArch64)
+  set (LLVM_ENABLE_PROJECTS clang CACHE STRING 
+    "Semicolon-separated list of projects to build (${LLVM_KNOWN_PROJECTS}), or \"all\".")
+  set (LLVM_TARGETS_TO_BUILD X86 AArch64 CACHE STRING
+    "Semicolon-separated list of LLVM targets to build, or \"all\".")
   ###
 
   add_subdirectory(third_party/abseil)
