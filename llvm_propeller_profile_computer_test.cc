@@ -9,6 +9,8 @@
 
 #include "branch_aggregation.h"
 #include "branch_aggregator.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "llvm_propeller_binary_address_mapper.h"
 #include "llvm_propeller_cfg.h"
 #include "llvm_propeller_options.pb.h"
@@ -18,8 +20,6 @@
 #include "llvm_propeller_program_cfg.h"
 #include "llvm_propeller_statistics.h"
 #include "status_provider.h"
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "third_party/abseil/absl/algorithm/container.h"
 #include "third_party/abseil/absl/container/btree_set.h"
 #include "third_party/abseil/absl/container/flat_hash_set.h"
@@ -74,9 +74,7 @@ MATCHER_P7(CfgNodeFieldsAre, function_index, bb_index, clone_number, bb_id,
 }
 
 static std::string GetAutoFdoTestDataFilePath(absl::string_view filename) {
-  return absl::StrCat(::testing::SrcDir(),
-                      "/testdata/",
-                      filename);
+  return absl::StrCat(::testing::SrcDir(), "/testdata/", filename);
 }
 
 TEST(LlvmPropellerProfileComputerTest, CreateCfg) {
@@ -99,8 +97,7 @@ TEST(LlvmPropellerProfileComputerTest, CreateCfg) {
   EXPECT_TRUE(status.IsDone());
   auto cfgs_by_name = program_cfg->cfgs_by_name();
   ASSERT_THAT(cfgs_by_name,
-              UnorderedElementsAre(Key("main"), Key("compute_flag"),
-                                   Key("this_is_very_code")));
+              UnorderedElementsAre(Key("main"), Key("compute_flag")));
 
   const ControlFlowGraph &main = *cfgs_by_name.at("main");
   const ControlFlowGraph &compute_flag = *cfgs_by_name.at("compute_flag");
@@ -141,21 +138,21 @@ TEST(LlvmPropellerProfileComputerTest, CreateProgramCfg) {
   EXPECT_THAT(
       main_cfg.nodes(),
       ElementsAre(
-          Pointee(CfgNodeFieldsAre(function_index, 0, 0, 0, 0x1820, 0x30, 1)),
+          Pointee(CfgNodeFieldsAre(function_index, 0, 0, 0, 0x1820, 0x30, 4)),
           Pointee(
-              CfgNodeFieldsAre(function_index, 1, 0, 1, 0x1850, 0xD, 646312)),
+              CfgNodeFieldsAre(function_index, 1, 0, 1, 0x1850, 0xD, 487952)),
           Pointee(
-              CfgNodeFieldsAre(function_index, 2, 0, 2, 0x185D, 0x24, 660951)),
+              CfgNodeFieldsAre(function_index, 2, 0, 2, 0x185D, 0x24, 499148)),
           Pointee(
-              CfgNodeFieldsAre(function_index, 3, 0, 3, 0x1881, 0x2E, 191807)),
+              CfgNodeFieldsAre(function_index, 3, 0, 3, 0x1881, 0x2E, 146571)),
           Pointee(
-              CfgNodeFieldsAre(function_index, 4, 0, 4, 0x18AF, 0x1A, 622992)),
+              CfgNodeFieldsAre(function_index, 4, 0, 4, 0x18AF, 0x1A, 471511)),
           Pointee(
-              CfgNodeFieldsAre(function_index, 5, 0, 5, 0x18C9, 0x34, 3892)),
+              CfgNodeFieldsAre(function_index, 5, 0, 5, 0x18C9, 0x34, 2724)),
           Pointee(
-              CfgNodeFieldsAre(function_index, 6, 0, 6, 0x18FD, 0x5, 634928)),
+              CfgNodeFieldsAre(function_index, 6, 0, 6, 0x18FD, 0x5, 479675)),
           Pointee(
-              CfgNodeFieldsAre(function_index, 7, 0, 7, 0x1902, 0xE, 646311)),
+              CfgNodeFieldsAre(function_index, 7, 0, 7, 0x1902, 0xE, 487948)),
           Pointee(CfgNodeFieldsAre(function_index, 8, 0, 8, 0x1910, 0x8, 0))));
 }
 
@@ -173,13 +170,13 @@ TEST(LlvmPropellerProfileComputerTest, CheckStatsSanity) {
                        profile_computer->GetProgramCfg());
   const PropellerStats &stats = profile_computer->stats();
   const PropellerStats::CfgStats &cfg_stats = stats.cfg_stats;
-  EXPECT_EQ(cfg_stats.cfgs_created, 3);
-  EXPECT_EQ(cfg_stats.total_edges_created(), 17);
-  EXPECT_EQ(cfg_stats.total_edge_weight_created(), 5850315);
-  EXPECT_EQ(cfg_stats.nodes_created, 14);
+  EXPECT_EQ(cfg_stats.cfgs_created, 2);
+  EXPECT_EQ(cfg_stats.total_edges_created(), 16);
+  EXPECT_EQ(cfg_stats.total_edge_weight_created(), 4416932);
+  EXPECT_EQ(cfg_stats.nodes_created, 13);
   EXPECT_EQ(stats.profile_stats.binary_mmap_num, 3);
   EXPECT_EQ(stats.bbaddrmap_stats.duplicate_symbols, 0);
-  EXPECT_EQ(cfg_stats.hot_basic_blocks, 13);
+  EXPECT_EQ(cfg_stats.hot_basic_blocks, 12);
   EXPECT_EQ(cfg_stats.hot_empty_basic_blocks, 0);
   EXPECT_EQ(cfg_stats.cfgs_with_hot_landing_pads, 0);
 }

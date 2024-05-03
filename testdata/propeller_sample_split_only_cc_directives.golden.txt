@@ -1,6 +1,4 @@
 v1
-f this_is_very_code
-c0
 f compute_flag
 c0 1 2 3
 f main

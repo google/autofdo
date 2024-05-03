@@ -8,12 +8,12 @@
 #include <utility>
 
 #include "branch_frequencies.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "lbr_aggregation.h"
 #include "llvm_propeller_binary_content.h"
 #include "llvm_propeller_file_perf_data_provider.h"
 #include "llvm_propeller_perf_data_provider.h"
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "third_party/abseil/absl/status/status.h"
 #include "third_party/abseil/absl/status/statusor.h"
 #include "third_party/abseil/absl/strings/match.h"
@@ -38,10 +38,9 @@ using ::testing::status::StatusIs;
 //   04e6da50a63d4b859b0be7e235937cd5a7996ecf .../propeller_sample_1.bin
 //   04e6da50a63d4b859b0be7e235937cd5a7996ecf .../propeller_sample_2.bin
 TEST(PerfdataReaderTest, SelectBinaryInfo_duplicated_binaries) {
-  const std::string binary =
-      absl::StrCat(::testing::SrcDir(),
-                   "/testdata/"
-                   "propeller_sample_old.bin");
+  const std::string binary = absl::StrCat(::testing::SrcDir(),
+                                          "/testdata/"
+                                          "propeller_sample_old.bin");
   const std::string perfdata =
       absl::StrCat(::testing::SrcDir(),
                    "/testdata/"
@@ -92,14 +91,12 @@ TEST(PerfdataReaderTest, SelectMultipleMMaps) {
 }
 
 TEST(PerfdataReaderTest, TestSharedLibrary) {
-  const std::string binary =
-      absl::StrCat(::testing::SrcDir(),
-                   "/testdata/"
-                   "libro_sample.so");
-  const std::string perfdata =
-      absl::StrCat(::testing::SrcDir(),
-                   "/testdata/"
-                   "ro_sample.perf");
+  const std::string binary = absl::StrCat(::testing::SrcDir(),
+                                          "/testdata/"
+                                          "libro_sample.so");
+  const std::string perfdata = absl::StrCat(::testing::SrcDir(),
+                                            "/testdata/"
+                                            "ro_sample.perf");
   ASSERT_OK_AND_ASSIGN(std::unique_ptr<BinaryContent> binary_content,
                        GetBinaryContent(binary));
   EXPECT_TRUE(binary_content->is_pie);
@@ -139,10 +136,9 @@ TEST(PerfDataReaderTest, DifferentBuildIdFailure) {
       absl::StrCat(::testing::SrcDir(),
                    "/testdata/"
                    "propeller_sample_different_buildid.bin");
-  const std::string perfdata =
-      absl::StrCat(::testing::SrcDir(),
-                   "/testdata/"
-                   "propeller_sample.perfdata");
+  const std::string perfdata = absl::StrCat(::testing::SrcDir(),
+                                            "/testdata/"
+                                            "propeller_sample.perfdata");
   ASSERT_OK_AND_ASSIGN(std::unique_ptr<BinaryContent> binary_content,
                        GetBinaryContent(binary));
   GenericFilePerfDataProvider provider({perfdata});
@@ -164,10 +160,9 @@ TEST(PerfDataReaderTest, DifferentBuildIdWithProfiledBinaryNamePass) {
       absl::StrCat(::testing::SrcDir(),
                    "/testdata/"
                    "propeller_sample_different_buildid.bin");
-  const std::string perfdata =
-      absl::StrCat(::testing::SrcDir(),
-                   "/testdata/"
-                   "propeller_sample.perfdata");
+  const std::string perfdata = absl::StrCat(::testing::SrcDir(),
+                                            "/testdata/"
+                                            "propeller_sample.perfdata");
   ASSERT_OK_AND_ASSIGN(std::unique_ptr<BinaryContent> binary_content,
                        GetBinaryContent(binary));
 
@@ -184,14 +179,12 @@ TEST(PerfDataReaderTest, DifferentBuildIdWithProfiledBinaryNamePass) {
 }
 
 TEST(PerfDataReaderTest, AggregateLbr) {
-  const std::string perfdata =
-      absl::StrCat(::testing::SrcDir(),
-                   "/testdata/"
-                   "propeller_sample.perfdata");
-  const std::string binary =
-      absl::StrCat(::testing::SrcDir(),
-                   "/testdata/"
-                   "propeller_sample.bin");
+  const std::string perfdata = absl::StrCat(::testing::SrcDir(),
+                                            "/testdata/"
+                                            "propeller_sample.perfdata");
+  const std::string binary = absl::StrCat(::testing::SrcDir(),
+                                          "/testdata/"
+                                          "propeller_sample.bin");
   ASSERT_OK_AND_ASSIGN(std::unique_ptr<BinaryContent> binary_content,
                        GetBinaryContent(binary));
 
@@ -218,18 +211,16 @@ TEST(PerfDataReaderTest, AggregateLbr) {
   LbrAggregation lbr_aggregation;
   perf_data_reader.AggregateLBR(&lbr_aggregation);
   EXPECT_THAT(lbr_aggregation.branch_counters, SizeIs(27));
-  EXPECT_THAT(lbr_aggregation.fallthrough_counters, SizeIs(30));
+  EXPECT_THAT(lbr_aggregation.fallthrough_counters, SizeIs(34));
 }
 
 TEST(PerfDataReaderTest, AggregateSpe) {
-  const std::string perfdata =
-      absl::StrCat(testing::SrcDir(),
-                   "/testdata/"
-                   "propeller_sample.arm.perfdata");
-  const std::string binary =
-      absl::StrCat(testing::SrcDir(),
-                   "/testdata/"
-                   "propeller_sample.arm.bin");
+  const std::string perfdata = absl::StrCat(testing::SrcDir(),
+                                            "/testdata/"
+                                            "propeller_sample.arm.perfdata");
+  const std::string binary = absl::StrCat(testing::SrcDir(),
+                                          "/testdata/"
+                                          "propeller_sample.arm.bin");
   ASSERT_OK_AND_ASSIGN(std::unique_ptr<BinaryContent> binary_content,
                        GetBinaryContent(binary));
 

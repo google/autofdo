@@ -1,31 +1,29 @@
 #include "llvm_propeller_profile_generator.h"
 
 #include <fstream>
-#include <sstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "llvm_propeller_binary_content.h"
 #include "llvm_propeller_file_perf_data_provider.h"
 #include "llvm_propeller_options.pb.h"
 #include "llvm_propeller_options_builder.h"
 #include "llvm_propeller_statistics.h"
 #include "llvm_propeller_telemetry_reporter.h"
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
-#include "util/testing/status_matchers.h"
-
 #include "third_party/abseil/absl/status/status.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
 #include "third_party/abseil/absl/strings/string_view.h"
+#include "util/testing/status_matchers.h"
 
 namespace devtools_crosstool_autofdo {
 namespace {
 
 std::string GetTestDataDirectoryPath() {
-  return absl::StrCat(::testing::SrcDir(),
-                      "/testdata/");
+  return absl::StrCat(::testing::SrcDir(), "/testdata/");
 }
 
 // Returns the content of the file stored in `file_name` as a string.
@@ -171,7 +169,8 @@ TEST(LlvmPropellerProfileGeneratorTest, ParsePerf0_relative_path) {
           .SetBinaryName(binary)
           .AddInputProfiles(InputProfileBuilder().SetName(perfdata))
           .SetClusterOutName("dummy.out")
-          .SetProfiledBinaryName("any_relative_path/propeller_sample.bin.gen")));
+          .SetProfiledBinaryName(
+              "any_relative_path/propeller_sample.bin.gen")));
 }
 
 TEST(LlvmPropellerProfileGeneratorTest, ParsePerf0_absolute_path) {
@@ -195,10 +194,9 @@ TEST(LlvmPropellerProfileGeneratorTest, ParsePerf0_absolute_path) {
 
 TEST(GeneratePropellerProfiles, UsesPassedProvider) {
   PropellerOptions options;
-  options.set_binary_name(
-      absl::StrCat(::testing::SrcDir(),
-                   "//testdata/"
-                   "propeller_sample.bin"));
+  options.set_binary_name(absl::StrCat(::testing::SrcDir(),
+                                       "//testdata/"
+                                       "propeller_sample.bin"));
   options.set_cluster_out_name(absl::StrCat(
       ::testing::TempDir(),
       "/LlvmPropellerProfileGeneratorTest_UsesPassedProvider_cc_profile.txt"));
@@ -208,14 +206,13 @@ TEST(GeneratePropellerProfiles, UsesPassedProvider) {
 
   // The provider will fail, because the file does not exist, so
   // `GeneratePropellerProfiles` should fail.
-  EXPECT_THAT(
-      GeneratePropellerProfiles(
-          options, std::make_unique<GenericFilePerfDataProvider>(
-                       std::vector<std::string>{absl::StrCat(
-                           ::testing::SrcDir(),
-                           "//testdata/"
-                           "this_file_does_not_exist.perfdata")})),
-      Not(IsOk()));
+  EXPECT_THAT(GeneratePropellerProfiles(
+                  options, std::make_unique<GenericFilePerfDataProvider>(
+                               std::vector<std::string>{absl::StrCat(
+                                   ::testing::SrcDir(),
+                                   "//testdata/"
+                                   "this_file_does_not_exist.perfdata")})),
+              Not(IsOk()));
 
   // Here the provider will succeed and so should `GeneratePropellerProfiles`.
   EXPECT_OK(GeneratePropellerProfiles(
@@ -227,14 +224,12 @@ TEST(GeneratePropellerProfiles, UsesPassedProvider) {
 }
 
 TEST(LlvmPropellerProfileGeneratorTest, ExportsTelemetry) {
-  const std::string binary =
-      absl::StrCat(::testing::SrcDir(),
-                   "//testdata/"
-                   "propeller_sample.bin");
-  const std::string perfdata =
-      absl::StrCat(::testing::SrcDir(),
-                   "//testdata/"
-                   "propeller_sample.perfdata");
+  const std::string binary = absl::StrCat(::testing::SrcDir(),
+                                          "//testdata/"
+                                          "propeller_sample.bin");
+  const std::string perfdata = absl::StrCat(::testing::SrcDir(),
+                                            "//testdata/"
+                                            "propeller_sample.perfdata");
 
   UnregisterAllPropellerTelemetryReportersForTest();
   testing::MockFunction<void(const BinaryContent&, const PropellerStats&)>
@@ -244,7 +239,7 @@ TEST(LlvmPropellerProfileGeneratorTest, ExportsTelemetry) {
       Call(Field("object_file", &BinaryContent::object_file, Ne(nullptr)),
            Field("cfg_stats", &PropellerStats::cfg_stats,
                  Field("cfgs_created", &PropellerStats::CfgStats::cfgs_created,
-                       Eq(3)))))
+                       Eq(2)))))
       .Times(1);
   RegisterPropellerTelemetryReporter(mock_reporter.AsStdFunction());
   EXPECT_OK(GeneratePropellerProfiles(
