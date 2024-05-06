@@ -170,12 +170,12 @@ int main(int argc, char **argv) {
     using devtools_crosstool_autofdo::AutoFDOProfileReader;
     typedef std::unique_ptr<AutoFDOProfileReader> AutoFDOProfileReaderPtr;
     std::unique_ptr<AutoFDOProfileReaderPtr[]> readers(
-        new AutoFDOProfileReaderPtr[argc - 1]);
+      new AutoFDOProfileReaderPtr[positionalArguments.size() - 1]);
     // TODO(dehao): merge profile reader/writer into a single class
-    for (int i = 1; i < argc; i++) {
+    for (int i = 1; i < positionalArguments.size(); i++) {
       readers[i - 1] =
           std::make_unique<AutoFDOProfileReader>(&symbol_map, true);
-      readers[i - 1]->ReadFromFile(argv[i]);
+      readers[i - 1]->ReadFromFile(positionalArguments[i]);
     }
 
     symbol_map.CalculateThreshold();
@@ -191,7 +191,7 @@ int main(int argc, char **argv) {
     typedef std::unique_ptr<LLVMProfileReader> LLVMProfileReaderPtr;
 
     std::unique_ptr<LLVMProfileReaderPtr[]> readers(
-        new LLVMProfileReaderPtr[argc - 1]);
+      new LLVMProfileReaderPtr[positionalArguments.size() - 1]);
     llvm::sampleprof::ProfileSymbolList prof_sym_list;
 
 #if LLVM_VERSION_MAJOR >= 12
@@ -199,11 +199,12 @@ int main(int argc, char **argv) {
     int numFSDProfiles = 0;
 #endif
 
-    for (int i = 1; i < argc; i++) {
+    for (int i = 1; i < positionalArguments.size(); i++) {
       auto reader = std::make_unique<LLVMProfileReader>(
           &symbol_map, names,
           absl::GetFlag(FLAGS_merge_special_syms) ? nullptr : &special_syms);
-      CHECK(reader->ReadFromFile(argv[i])) << "when reading " << argv[i];
+      CHECK(reader->ReadFromFile(positionalArguments[i]))
+        << "when reading " << positionalArguments[i];
 
 #if LLVM_VERSION_MAJOR >= 12
       if (reader->ProfileIsFS()) {
@@ -244,7 +245,8 @@ int main(int argc, char **argv) {
         writer->CreateSampleWriter(absl::GetFlag(FLAGS_output_file));
     if (!sample_profile_writer) return 1;
 #if LLVM_VERSION_MAJOR >= 12
-    if (numFSDProfiles != 0 && numFSDProfiles != argc - 1) {
+    if (numFSDProfiles != 0 &&
+        numFSDProfiles != positionalArguments.size() - 1) {
       LOG(WARNING) << "Merging a profile with FSDiscriminator enabled"
                    << " with a profile with FSDiscriminator disabled,"
                    << " the result profile will have FSDiscriminator enabled.";

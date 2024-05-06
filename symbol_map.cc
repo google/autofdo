@@ -86,7 +86,8 @@ void PrintSourceLocation(uint32_t start_line, uint64_t offset, int indent) {
   }
 }
 
-static const char *selectedSuffixes[] = {".cold", ".llvm.", ".__part."};
+static const char *selectedSuffixes[] =
+  {".cold", ".llvm.", ".lto_priv", ".__part.", ".isra"};
 
 std::string getPrintName(const char *name) {
   char tmp_buf[1024];
