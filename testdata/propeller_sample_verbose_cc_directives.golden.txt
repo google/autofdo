@@ -1,0 +1,23 @@
+v1
+#section .text
+f compute_flag
+#ext-tsp score: [intra: 4976377.203125 -> 6268234.692636] [inter: 0.000000 -> 0.000000]
+#entry-freq 499148
+c0 2 3 1
+#cfg-prof 0:499148 2:300635 1:156977
+#cfg-prof 1:163376 3:163376
+#cfg-prof 2:300635 3:294857
+#cfg-prof 3:468687
+f main
+#ext-tsp score: [intra: 13728876.366981 -> 21072924.130836] [inter: 382435.452941 -> 465026.554688]
+#entry-freq 4
+c0 3 4 6 7 1 2 5
+#cfg-prof 0:4 1:4
+#cfg-prof 1:487952 2:485215
+#cfg-prof 2:499148 4:313041 3:146563
+#cfg-prof 3:146571 4:146571
+#cfg-prof 4:471511 6:468789 5:2722
+#cfg-prof 5:2724 6:2724
+#cfg-prof 6:479675 7:479675
+#cfg-prof 7:487948 1:487948
+#cfg-prof 8:0

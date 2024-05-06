@@ -10,6 +10,7 @@
 #include "symbol_map.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "llvm/ProfileData/SampleProf.h"
+#include "base/logging.h"
 
 namespace devtools_crosstool_autofdo {
 

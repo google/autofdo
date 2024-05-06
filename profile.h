@@ -11,9 +11,9 @@
 #include <string>
 
 #include "base/integral_types.h"
-#include "base/macros.h"
 #include "sample_reader.h"
 #include "third_party/abseil/absl/container/node_hash_map.h"
+#include "third_party/abseil/absl/strings/string_view.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -30,17 +30,23 @@ class Profile {
   //   addr2line: an Addr2line.
   //   symbol_map: the symbol map is written by this class to store all symbol
   //               information.
-  Profile(const SampleReader *sample_reader, const std::string &binary_name,
+  Profile(const SampleReader *sample_reader, absl::string_view binary_name,
           Addr2line *addr2line, SymbolMap *symbol_map)
       : sample_reader_(sample_reader),
         binary_name_(binary_name),
         addr2line_(addr2line),
         symbol_map_(symbol_map) {}
 
+  // This type is neither copyable nor movable.
+  Profile(const Profile &) = delete;
+  Profile &operator=(const Profile &) = delete;
+
   ~Profile();
 
-  // Builds the source level profile.
-  void ComputeProfile();
+  // Builds the source level profile. When check_lbr_entry is true,
+  // use MiniDisassembler to check if the from address of range_map
+  // is a branch, call, or return instruction.
+  void ComputeProfile(bool check_lbr_entry = false);
 
  private:
   // Internal data structure that aggregates profile for each symbol.
@@ -60,12 +66,12 @@ class Profile {
   ProfileMaps *GetProfileMaps(uint64_t addr);
 
   // Aggregates raw profile for each symbol.
-  void AggregatePerFunctionProfile();
+  void AggregatePerFunctionProfile(bool check_lbr_entry);
 
   // Builds function level profile for specified function:
   //   1. Traverses all instructions to build instruction map.
   //   2. Unwinds the inline stack to add symbol count to each inlined symbol.
-  void ProcessPerFunctionProfile(const std::string &func_name,
+  void ProcessPerFunctionProfile(absl::string_view func_name,
                                  const ProfileMaps &map);
 
   const SampleReader *sample_reader_;
@@ -74,8 +80,6 @@ class Profile {
   SymbolMap *symbol_map_;
   AddressCountMap global_addr_count_map_;
   SymbolProfileMaps symbol_profile_maps_;
-
-  DISALLOW_COPY_AND_ASSIGN(Profile);
 };
 }  // namespace devtools_crosstool_autofdo
 

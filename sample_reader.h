@@ -14,21 +14,17 @@
 #include <utility>
 
 #include "base/integral_types.h"
-#include "base/macros.h"
 #include "third_party/abseil/absl/container/flat_hash_map.h"
+#include "third_party/abseil/absl/strings/string_view.h"
 #include "quipper/perf_parser.h"
 
 namespace quipper {
 class PerfReader;
 }
 
-namespace linux_tools_perf {
-union perf_event;
-}  // namespace linux_tools_perf
-
 namespace devtools_crosstool_autofdo {
 
-// All counter type is using uint64 instead of int64 because GCC's gcov
+// All counter type is using uint64_t instead of int64_t because GCC's gcov
 // functions only takes unsigned variables.
 typedef std::map<uint64_t, uint64_t> AddressCountMap;
 typedef std::pair<uint64_t, uint64_t> Range;
@@ -70,6 +66,8 @@ class SampleReader {
     range_count_map_.clear();
     branch_count_map_.clear();
   }
+  // Returns true if the sample is from Linux kernel.
+  bool IsKernelSample() const { return is_kernel_; }
 
  protected:
   // Virtual read function to read from different types of profiles.
@@ -79,12 +77,14 @@ class SampleReader {
   AddressCountMap address_count_map_;
   RangeCountMap range_count_map_;
   BranchCountMap branch_count_map_;
+
+  bool is_kernel_ = false;
 };
 
 // Base class that reads in the profile from a sample data file.
 class FileSampleReader : public SampleReader {
  public:
-  explicit FileSampleReader(const std::string &profile_file)
+  explicit FileSampleReader(absl::string_view profile_file)
       : profile_file_(profile_file) {}
 
   virtual bool Append(const std::string &profile_file) = 0;
@@ -110,9 +110,13 @@ class FileSampleReader : public SampleReader {
 // addr_n:count_n
 class TextSampleReaderWriter : public FileSampleReader {
  public:
-  explicit TextSampleReaderWriter(const std::string &profile_file)
+  explicit TextSampleReaderWriter(absl::string_view profile_file)
       : FileSampleReader(profile_file) {}
   explicit TextSampleReaderWriter() : FileSampleReader("") { }
+
+  // This type is neither copyable nor movable.
+  TextSampleReaderWriter(const TextSampleReaderWriter &) = delete;
+  TextSampleReaderWriter &operator=(const TextSampleReaderWriter &) = delete;
   bool Append(const std::string &profile_file) override;
   void Merge(const SampleReader &reader);
   // Writes the profile to file, and appending aux_info at the end.
@@ -121,24 +125,28 @@ class TextSampleReaderWriter : public FileSampleReader {
   void SetAddressCountMap(const AddressCountMap &map) {
     address_count_map_ = map;
   }
-  void IncAddress(uint64_t addr) { address_count_map_[addr]++; }
-  void IncRange(uint64_t start, uint64_t end) {
-    range_count_map_[Range(start, end)]++;
+  void IncAddress(uint64_t addr, int64_t counter = 1) {
+    address_count_map_[addr] += counter;
   }
-  void IncBranch(uint64_t from, uint64_t to) {
-    branch_count_map_[Branch(from, to)]++;
+  void IncRange(uint64_t start, uint64_t end, int64_t counter = 1) {
+    range_count_map_[Range(start, end)] += counter;
   }
-  void set_profile_file(const std::string &file) { profile_file_ = file; }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TextSampleReaderWriter);
+  void IncBranch(uint64_t from, uint64_t to, int64_t counter = 1) {
+    branch_count_map_[Branch(from, to)] += counter;
+  }
+  void set_profile_file(absl::string_view file) { profile_file_ = file; }
 };
 
 // Reads in the sample data from 'perf -g' output file.
 class PerfDataSampleReader : public FileSampleReader {
  public:
-  PerfDataSampleReader(const std::string &profile_file, const std::string &re,
-                       const std::string &build_id);
+  PerfDataSampleReader(absl::string_view profile_file, const std::string &re,
+                       absl::string_view build_id);
+
+  // This type is neither copyable nor movable.
+  PerfDataSampleReader(const PerfDataSampleReader &) = delete;
+  PerfDataSampleReader &operator=(const PerfDataSampleReader &) = delete;
+
   ~PerfDataSampleReader() override;
   bool Append(const std::string &profile_file) override;
 
@@ -151,10 +159,8 @@ class PerfDataSampleReader : public FileSampleReader {
 
  private:
   std::set<std::string> focus_bins_;
-  absl::flat_hash_map<const quipper::DSOInfo *, bool> re_cache_;
   const std::regex re_;
-
-  DISALLOW_COPY_AND_ASSIGN(PerfDataSampleReader);
+  absl::flat_hash_map<const quipper::DSOInfo *, bool> match_cache_;
 };
 }  // namespace devtools_crosstool_autofdo
 

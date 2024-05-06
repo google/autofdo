@@ -1,29 +1,40 @@
 #ifndef AUTOFDO_PERFDATA_READER_H_
 #define AUTOFDO_PERFDATA_READER_H_
 
+#include <cstdint>
 #include <map>
-#include <memory>
-#include <optional>
-#include <ostream>
 #include <set>
 #include <string>
 #include <utility>
-#include <vector>
 
+#include "branch_frequencies.h"
+#include "lbr_aggregation.h"
+#include "llvm_propeller_binary_content.h"
 #include "llvm_propeller_perf_data_provider.h"
-#include "llvm/BinaryFormat/ELF.h"
-#include "llvm/Object/ELFObjectFile.h"
-#include "llvm/Object/ELFTypes.h"
-#include "llvm/Object/ObjectFile.h"
-#include "quipper/perf_parser.h"
+#include "third_party/abseil/absl/container/flat_hash_set.h"
+#include "third_party/abseil/absl/functional/function_ref.h"
+#include "base/logging.h"
+#include "third_party/abseil/absl/status/status.h"
+#include "third_party/abseil/absl/status/statusor.h"
+#include "third_party/abseil/absl/strings/str_format.h"
+#include "third_party/abseil/absl/strings/string_view.h"
+#include "third_party/abseil/absl/types/span.h"
+#include "quipper/arm_spe_decoder.h"
+#include "quipper/perf_reader.h"
 
 namespace devtools_crosstool_autofdo {
 
 // A memory mapping entry contains load start address, load size, page
 // offset and file name.
 struct MMapEntry {
-  MMapEntry(uint64_t addr, uint64_t size, uint64_t pgoff, const std::string &fn)
-      : load_addr(addr), load_size(size), page_offset(pgoff), file_name(fn) {}
+  MMapEntry(uint32_t pid, uint64_t addr, uint64_t size, uint64_t pgoff,
+            absl::string_view fn)
+      : pid(pid),
+        load_addr(addr),
+        load_size(size),
+        page_offset(pgoff),
+        file_name(fn) {}
+  const uint32_t pid;
   const uint64_t load_addr;
   const uint64_t load_size;
   const uint64_t page_offset;
@@ -34,8 +45,7 @@ struct MMapEntry {
     if (load_size != other.load_size) return load_size < other.load_size;
     if (page_offset != other.page_offset)
       return page_offset < other.page_offset;
-    if (file_name != other.file_name)
-      return file_name < other.file_name;
+    if (file_name != other.file_name) return file_name < other.file_name;
     return false;
   }
 
@@ -43,121 +53,79 @@ struct MMapEntry {
     return load_addr == other.load_addr && load_size == other.load_size &&
            page_offset == other.page_offset && file_name == other.file_name;
   }
-};
 
-// BinaryInfo represents information for an ELF executable or a shared object,
-// the data contained include (loadable) segments, file name, file content and
-// DYN tag (is_pie).
-struct BinaryInfo {
-  struct Segment {
-    uint64_t offset;
-    uint64_t vaddr;
-    uint64_t memsz;
-  };
-
-  std::string file_name;
-  std::unique_ptr<llvm::MemoryBuffer> file_content = nullptr;
-  std::unique_ptr<llvm::object::ObjectFile> object_file = nullptr;
-  bool is_pie = false;
-  std::vector<Segment> segments;
-  std::string build_id;
-
-  BinaryInfo(const BinaryInfo&) = delete;
-  BinaryInfo() {}
-  BinaryInfo(BinaryInfo &&bi)
-      : file_name(std::move(bi.file_name)),
-        file_content(std::move(bi.file_content)),
-        object_file(std::move(bi.object_file)),
-        is_pie(bi.is_pie),
-        segments(std::move(bi.segments)),
-        build_id(std::move(bi.build_id)) {}
-};
-
-// MMaps indexed by pid.
-using BinaryMMaps = std::map<uint64_t, std::set<MMapEntry>>;
-
-struct BinaryPerfInfo {
-  BinaryMMaps binary_mmaps;
-  BinaryInfo binary_info;
-  std::optional<PerfDataProvider::BufferHandle> perf_data;
-
-  BinaryPerfInfo() = default;
-  BinaryPerfInfo(const BinaryPerfInfo &) = delete;
-  BinaryPerfInfo(BinaryPerfInfo &&bpi) = default;
-
-  void ResetPerfInfo() {
-    perf_data.reset();
-    binary_mmaps.clear();
+  std::string DebugString() const {
+    return absl::StrFormat("[%#x, %#x](pgoff=%#x, size=%#x, fn='%s')",
+                           load_addr, load_addr + load_size, page_offset,
+                           load_size, file_name);
   }
 };
 
-struct LBRAggregation {
-  // <from_address, to_address> -> branch counter.
-  // Note all addresses are binary addresses, not runtime addresses.
-  using BranchCountersTy = std::map<std::pair<uint64_t, uint64_t>, uint64_t>;
+// MMaps indexed by pid. (pid has to be uint32_t to be consistent with
+// quippers's pid type.)
+using BinaryMMaps = std::map<uint32_t, std::set<MMapEntry>>;
 
-  // <fallthrough_from, fallthrough_to> -> fallthrough counter.
-  // Note all addresses are symbol address, not virtual addresses.
-  using FallthroughCountersTy =
-      std::map<std::pair<uint64_t, uint64_t>, uint64_t>;
+// Returns the set of file names with profiles in `perf_reader` with build IDs
+// matching `build_id`.
+absl::StatusOr<absl::flat_hash_set<std::string>> GetBuildIdNames(
+    const quipper::PerfReader &perf_reader, absl::string_view build_id);
 
-  LBRAggregation() = default;
-  ~LBRAggregation() = default;
-
-  LBRAggregation(LBRAggregation &&o)
-      : branch_counters(std::move(o.branch_counters)),
-        fallthrough_counters(std::move(o.fallthrough_counters)) {}
-
-  LBRAggregation &operator=(LBRAggregation &&o) {
-    branch_counters = std::move(o.branch_counters);
-    fallthrough_counters = std::move(o.fallthrough_counters);
-    return *this;
-  }
-
-  LBRAggregation(const LBRAggregation &) = delete;
-  LBRAggregation &operator=(const LBRAggregation &) = delete;
-
-  // See BranchCountersTy.
-  BranchCountersTy branch_counters;
-
-  // See FallthroughCountersTy.
-  FallthroughCountersTy fallthrough_counters;
-};
+// Selects mmap events from perfdata file by comparing the mmap event's
+// filename against "match_mmap_names".
+//
+// `binary_content` contains static information and `perf_data` contains dynamic
+// mmap information. The former is extracted from the binary's file name. the
+// latter from perf mmap events by matching mmap's filename with
+// "match_mmap_names".
+//
+// "binary_file_name" and the contents of "match_mmap_names" can be different;
+// the former is the file name on the file system that we can read, the latter
+// is the file name captured by perf, and it can reside on a deployed server.
+// For example, binary_file_names can be "build/libxxx.so", whereas the
+// match_mmap_names can be "/deployed/opt/release/runtime/libxxx_released.so".
+//
+// When match_mmap_names is empty, `SelectMMaps` will use the
+// build-id name, if the build id is present. Otherwise, it fails.
+absl::StatusOr<BinaryMMaps> SelectMMaps(
+    PerfDataProvider::BufferHandle &perf_data,
+    absl::Span<const absl::string_view> match_mmap_names,
+    const BinaryContent &binary_content);
 
 class PerfDataReader {
  public:
-  PerfDataReader() {}
-  virtual ~PerfDataReader() {}
+  // The PID for mmaps belonging to the kernel.
+  static constexpr uint32_t kKernelPid = static_cast<uint32_t>(-1);
 
-  virtual bool GetBuildIdNames(const quipper::PerfReader &perf_reader,
-                               const std::string &buildid,
-                               std::set<std::string> *buildid_names);
+  // Does not take ownership of `binary_content` which must refer to a valid
+  // object that outlives the one constructed.
+  PerfDataReader(PerfDataProvider::BufferHandle perf_data,
+                 BinaryMMaps binary_mmaps, const BinaryContent *binary_content)
+      : perf_data_(std::move(perf_data)),
+        binary_mmaps_(std::move(binary_mmaps)),
+        binary_content_(binary_content) {}
+  PerfDataReader(const PerfDataReader &) = delete;
+  PerfDataReader &operator=(const PerfDataReader &) = delete;
+  PerfDataReader(PerfDataReader &&) = default;
+  PerfDataReader &operator=(PerfDataReader &&) = default;
 
-  bool SelectBinaryInfo(const std::string &binary_file_name,
-                        BinaryInfo *binary_info) const;
+  // Reads the profile and applies the `callback` function on each sample event.
+  // Only applies `callback` on events matching some mmap in `binary_mmaps_`.
+  void ReadWithSampleCallBack(
+      absl::FunctionRef<void(const quipper::PerfDataProto_SampleEvent &)>
+          callback) const;
 
-  // Get BinaryPerfInfo from binary_file_name and perf data. The BinaryPerfInfo
-  // contains static information and dynamic mmap information. The former is
-  // extracted from the "binary_file_name", the latter from perf mmap events by
-  // matching mmap's filename with "match_mmap_name".
-  //
-  // "binary_file_name" and "match_mmap_name" can be different, the former is
-  // the file name on the file system that we can read, the latter is the file
-  // name captured by perf, and it can reside on a deployed server. For example,
-  // binary_file_names can be "build/libxxx.so", whereas the match_mmap_names
-  // can be "/deployed/opt/release/runtime/libxxx_released.so".
-  //
-  // When match_mmap_name is "", SelectBinaryPerfInfo will automatically use the
-  // build-id name, if build id is present, otherwise, it falls back to use
-  // binary_file_name.
-  bool SelectPerfInfo(PerfDataProvider::BufferHandle perf_data,
-                      const std::string &match_mmap_name,
-                      BinaryPerfInfo *binary_perf_info) const;
+  // Reads the profile and applies the `callback` function on each SPE record.
+  absl::Status ReadWithSpeRecordCallBack(
+      absl::FunctionRef<void(const quipper::ArmSpeDecoder::Record &, int)>
+          callback) const;
 
-  // Parse LBR events that are matched by mmaps in perf_parse and store the data
-  // in the aggregated counters.
-  void AggregateLBR(const BinaryPerfInfo &binary_perf_info,
-                    LBRAggregation *result) const;
+  // Parses LBR events that are matched by mmaps in perf_parse and stores the
+  // data in the aggregated counters.
+  void AggregateLBR(LbrAggregation *result) const;
+
+  // Parses SPE events that are matched by mmaps in perf_parse and merges the
+  // branch data with the branch frequencies in `result`.
+  absl::Status AggregateSpe(BranchFrequencies &result) const;
 
   // "binary address" vs. "runtime address":
   //   binary address:  the address we get from "nm -n" or "readelf -s".
@@ -168,69 +136,28 @@ class PerfDataReader {
   // Parameters:
   //    pid:  process id
   //   addr:  runtime address, as is from perf data
-  //    bpi:  binary inforamtion needed to compute the mapping
-  uint64_t RuntimeAddressToBinaryAddress(uint64_t pid, uint64_t addr,
-                                         const BinaryPerfInfo &bpi) const;
+  uint64_t RuntimeAddressToBinaryAddress(uint32_t pid, uint64_t addr) const;
 
-  static const uint64_t kInvalidAddress = static_cast<uint64_t>(-1);
+  const BinaryMMaps &binary_mmaps() const { return binary_mmaps_; }
+  const PerfDataProvider::BufferHandle &perf_data() const { return perf_data_; }
 
- private:
-  // Select mmap events from perfdata file by comparing the mmap event's
-  // filename against "match_mmap_name".
-  bool SelectMMaps(BinaryPerfInfo *info, const quipper::PerfReader &perf_reader,
-                   const quipper::PerfParser &perf_parser,
-                   const std::string &match_mmap_name) const;
-};
-
-// Utility class that wraps utility functions that need templated
-// ELFFile<ELFT> support.
-class ELFFileUtilBase {
- protected:
-  ELFFileUtilBase() {}
-
- public:
-  virtual ~ELFFileUtilBase() {}
-
-  virtual std::string GetBuildId() = 0;
-
-  virtual bool ReadLoadableSegments(
-      devtools_crosstool_autofdo::BinaryInfo *binary_info) = 0;
-
- protected:
-  static constexpr llvm::StringRef kBuildIDSectionName = ".note.gnu.build-id";
-  static constexpr llvm::StringRef kBuildIdNoteName = "GNU";
-  static constexpr llvm::StringRef kBbAddrMapSectionName = ".llvm_bb_addr_map";
-
-  friend std::unique_ptr<ELFFileUtilBase> CreateELFFileUtil(
-      llvm::object::ObjectFile *object_file);
-};
-
-template <class ELFT>
-class ELFFileUtil : public ELFFileUtilBase {
- public:
-  explicit ELFFileUtil(llvm::object::ObjectFile *object) {
-    llvm::object::ELFObjectFile<ELFT> *elf_object =
-        llvm::dyn_cast<llvm::object::ELFObjectFile<ELFT>,
-                       llvm::object::ObjectFile>(object);
-    if (elf_object)
-      elf_file_ = &elf_object->getELFFile();
-  }
-
-  // Get binary build id.
-  std::string GetBuildId() override;
-
-  // Read loadable and executable segment information into BinaryInfo::segments.
-  bool ReadLoadableSegments(
-      devtools_crosstool_autofdo::BinaryInfo *binary_info) override;
+  // Returns if the perf data was collected in kernel mode.
+  bool IsKernelMode() const;
 
  private:
-  const llvm::object::ELFFile<ELFT> *elf_file_ = nullptr;
+  PerfDataProvider::BufferHandle perf_data_;
+  BinaryMMaps binary_mmaps_;
+  const BinaryContent *binary_content_;
 };
 
-std::unique_ptr<ELFFileUtilBase> CreateELFFileUtil(
-    llvm::object::ObjectFile *object_file);
-
-std::ostream &operator<<(std::ostream &os, const MMapEntry &me);
+// Returns a `PerfDataReader` for profile represented by `perf_data` and
+// binary represented by `binary_content`. Will use binary name matching
+// instead of build-id if `match_mmap_name` is not empty.
+// `binary_content` which must refer to a valid object that outlives the
+// constructed object.
+absl::StatusOr<PerfDataReader> BuildPerfDataReader(
+    PerfDataProvider::BufferHandle perf_data,
+    const BinaryContent *binary_content, absl::string_view match_mmap_name);
 
 }  // namespace devtools_crosstool_autofdo
 

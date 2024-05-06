@@ -1,368 +1,271 @@
 cfg {
-  name : "_init"
+  name: "_init"
+  function_index: 0
   node {
-    symbol_ordinal: 1
-    bb_index: 0
+    bb_id: 0
     size: 0
-    freq: 0
   }
 }
 cfg {
-  name : "_start"
+  name: "_start"
+  function_index: 1
   node {
-    symbol_ordinal: 2
-    bb_index: 0
+    bb_id: 0
     size: 43
-    freq: 0
   }
 }
 cfg {
-  name : "deregister_tm_clones"
+  name: "deregister_tm_clones"
+  function_index: 2
   node {
-    symbol_ordinal: 3
-    bb_index: 0
+    bb_id: 0
     size: 0
-    freq: 0
   }
 }
 cfg {
-  name : "register_tm_clones"
+  name: "register_tm_clones"
+  function_index: 3
   node {
-    symbol_ordinal: 4
-    bb_index: 0
+    bb_id: 0
     size: 0
-    freq: 0
   }
 }
 cfg {
-  name : "__do_global_dtors_aux"
+  name: "__do_global_dtors_aux"
+  function_index: 4
   node {
-    symbol_ordinal: 5
-    bb_index: 0
+    bb_id: 0
     size: 0
-    freq: 0
   }
 }
 cfg {
-  name : "frame_dummy"
+  name: "frame_dummy"
+  function_index: 5
   node {
-    symbol_ordinal: 6
-    bb_index: 0
+    bb_id: 0
     size: 0
-    freq: 0
   }
 }
 cfg {
-  name : "this_is_very_code"
-  name : "this_is_very_code.alias"
+  name: "this_is_very_code"
+  name: "this_is_very_code.alias"
+  function_index: 6
   node {
-    symbol_ordinal: 7
-    bb_index: 0
+    bb_id: 0
     size: 90
-    freq: 0
   }
 }
 cfg {
-  name : "compute_flag"
+  name: "compute_flag"
+  function_index: 7
   node {
-    symbol_ordinal: 8
-    bb_index: 0
+    bb_id: 0
     size: 27
-    freq: 3656
-    intra_outs {
-      source: 8
-      sink: 10
+    out_edges {
+      sink {
+        function_index: 7
+        bb_index: 2
+      }
       weight: 2273
       kind: BRANCH_OR_FALLTHROUGH
     }
-    intra_outs {
-      source: 8
-      sink: 9
+    out_edges {
+      sink {
+        function_index: 7
+        bb_index: 1
+      }
       weight: 1128
       kind: BRANCH_OR_FALLTHROUGH
     }
-    inter_ins {
-      source: 15
-      sink: 8
-      weight: 3656
-      kind: CALL
-    }
   }
   node {
-    symbol_ordinal: 9
-    bb_index : 1
+    bb_id: 1
     size: 14
-    freq: 1170
-    intra_outs {
-      source: 9
-      sink: 11
+    out_edges {
+      sink {
+        function_index: 7
+        bb_index: 3
+      }
       weight: 1170
       kind: BRANCH_OR_FALLTHROUGH
     }
-    intra_ins {
-      source: 8
-      sink: 9
-      weight: 1128
-      kind: BRANCH_OR_FALLTHROUGH
-    }
   }
   node {
-    symbol_ordinal: 10
-    bb_index: 2
+    bb_id: 2
     size: 7
-    freq: 2273
-    intra_outs {
-      source: 10
-      sink: 11
+    out_edges {
+      sink {
+        function_index: 7
+        bb_index: 3
+      }
       weight: 2212
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-    intra_ins {
-      source: 8
-      sink: 10
-      weight: 2273
       kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
-    symbol_ordinal: 11
-    bb_index: 3
+    bb_id: 3
     size: 5
-    freq: 3449
-    intra_ins {
-      source: 9
-      sink: 11
-      weight: 1170
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-    intra_ins {
-      source: 10
-      sink: 11
-      weight: 2212
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-    inter_outs {
-      source: 11
-      sink: 15
+    out_edges {
+      sink {
+        function_index: 9
+        bb_index: 2
+      }
       weight: 3449
       kind: RETURN
     }
   }
 }
 cfg {
-  name : "sample1_func"
+  name: "sample1_func"
+  function_index: 8
   node {
-    symbol_ordinal: 12
-    bb_index: 0
+    bb_id: 0
     size: 11
-    freq: 0
   }
 }
 cfg {
-  name : "main"
+  name: "main"
+  function_index: 9
   node {
-    symbol_ordinal: 13
-    bb_index: 0
+    bb_id: 0
     size: 56
-    freq: 0
   }
   node {
-    symbol_ordinal: 14
-    bb_index: 1
+    bb_id: 1
     size: 13
-    freq: 3582
-    intra_outs {
-      source: 14
-      sink: 15
+    out_edges {
+      sink {
+        function_index: 9
+        bb_index: 2
+      }
       weight: 3565
       kind: BRANCH_OR_FALLTHROUGH
     }
-    intra_ins {
-      source: 20
-      sink: 14
-      weight: 3582
-      kind: BRANCH_OR_FALLTHROUGH
-    }
   }
   node {
-    symbol_ordinal: 15
-    bb_index: 2
+    bb_id: 2
     size: 36
-    freq: 3656
-    intra_outs {
-      source: 15
-      sink: 17
+    out_edges {
+      sink {
+        function_index: 9
+        bb_index: 4
+      }
       weight: 2345
       kind: BRANCH_OR_FALLTHROUGH
     }
-    intra_outs {
-      source: 15
-      sink: 16
+    out_edges {
+      sink {
+        function_index: 9
+        bb_index: 3
+      }
       weight: 1007
       kind: BRANCH_OR_FALLTHROUGH
     }
-    intra_ins {
-      source: 14
-      sink: 15
-      weight: 3565
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-    inter_outs {
-      source: 15
-      sink: 8
+    out_edges {
+      sink {
+        function_index: 8
+        bb_index: 0
+      }
       weight: 3656
       kind: CALL
     }
-    inter_ins {
-      source: 11
-      sink: 15
-      weight: 3449
-      kind: RETURN
-    }
   }
   node {
-    symbol_ordinal: 16
-    bb_index: 3
+    bb_id: 3
     size: 46
-    freq: 1007
-    intra_outs {
-      source: 16
-      sink: 17
-      weight: 1007
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-    intra_ins {
-      source: 15
-      sink: 16
+    out_edges {
+      sink {
+        function_index: 9
+        bb_index: 4
+      }
       weight: 1007
       kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
-    symbol_ordinal: 17
-    bb_index: 4
+    bb_id: 4
     size: 26
-    freq: 3455
-    intra_outs {
-      source: 17
-      sink: 19
+    out_edges {
+      sink {
+        function_index: 9
+        bb_index: 6
+      }
       weight: 3438
       kind: BRANCH_OR_FALLTHROUGH
     }
-    intra_outs {
-      source: 17
-      sink: 18
+    out_edges {
+      sink {
+        function_index: 9
+        bb_index: 5
+      }
       weight: 17
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-    intra_ins {
-      source: 15
-      sink: 17
-      weight: 2345
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-    intra_ins {
-      source: 16
-      sink: 17
-      weight: 1007
       kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
-    symbol_ordinal: 18
-    bb_index: 5
+    bb_id: 5
     size: 52
-    freq: 17
-    intra_outs {
-      source: 18
-      sink: 19
-      weight: 17
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-    intra_ins {
-      source: 17
-      sink: 18
+    out_edges {
+      sink {
+        function_index: 9
+        bb_index: 6
+      }
       weight: 17
       kind: BRANCH_OR_FALLTHROUGH
     }
   }
   node {
-    symbol_ordinal: 19
-    bb_index: 6
+    bb_id: 6
     size: 5
-    freq: 3528
-    intra_outs {
-      source: 19
-      sink: 20
+    out_edges {
+      sink {
+        function_index: 9
+        bb_index: 7
+      }
       weight: 3528
       kind: BRANCH_OR_FALLTHROUGH
     }
-    intra_ins {
-      source: 17
-      sink: 19
-      weight: 3438
-      kind: BRANCH_OR_FALLTHROUGH
-    }
-    intra_ins {
-      source: 18
-      sink: 19
-      weight: 17
-      kind: BRANCH_OR_FALLTHROUGH
-    }
   }
   node {
-    symbol_ordinal: 20
-    bb_index: 7
+    bb_id: 7
     size: 14
-    freq: 3582
-    intra_outs {
-      source: 20
-      sink: 14
+    out_edges {
+      sink {
+        function_index: 9
+        bb_index: 1
+      }
       weight: 3582
       kind: BRANCH_OR_FALLTHROUGH
     }
-    intra_ins {
-      source: 19
-      sink: 20
-      weight: 3528
-      kind: BRANCH_OR_FALLTHROUGH
-    }
   }
 }
 cfg {
-  name : "__libc_csu_init"
+  name: "__libc_csu_init"
+  function_index: 10
   node {
-    symbol_ordinal: 22
-    bb_index: 0
+    bb_id: 0
     size: 93
-    freq: 0
   }
 }
 cfg {
-  name : "__libc_csu_fini"
+  name: "__libc_csu_fini"
+  function_index: 11
   node {
-    symbol_ordinal: 23
-    bb_index: 0
+    bb_id: 0
     size: 1
-    freq: 0
   }
 }
 cfg {
-  name : "_fini"
+  name: "_fini"
+  function_index: 12
   node {
-    symbol_ordinal: 24
-    bb_index: 0
+    bb_id: 0
     size: 0
-    freq: 672
-    intra_outs {
-      source: 24
-      sink: 24
-      weight: 672
-      kind: RETURN
-    }
-    intra_ins {
-      source: 24
-      sink: 24
+    out_edges {
+      sink {
+        function_index: 12
+        bb_index: 0
+      }
       weight: 672
       kind: RETURN
     }

@@ -1,0 +1,41 @@
+## CFG Proto for a function consisting of three cold blocks and two hot blocks.
+##
+##            foo
+##
+##            foo.2    foo.4
+##
+##                    40
+##            foo.3 -----> foo.1
+
+cfg {
+  name: "foo"
+  function_index: 999
+  node {
+    bb_id: 0
+    size: 10
+  }
+  node {
+    bb_id: 1
+    size: 6
+  }
+  node {
+    bb_id: 2
+    size: 5
+  }
+  node {
+    bb_id: 3
+    size: 4
+    out_edges {
+      sink : {
+        function_index: 999
+        bb_index: 1
+      }
+      weight: 40
+      kind: BRANCH_OR_FALLTHROUGH
+    }
+  }
+  node {
+    bb_id: 4
+    size: 3
+  }
+}

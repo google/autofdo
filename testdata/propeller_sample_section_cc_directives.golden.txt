@@ -1,0 +1,9 @@
+v1
+f anycall
+c0
+f othercall
+c0 2
+f compute_flag
+c0
+f main
+c0 5 1 2 3

@@ -8,8 +8,11 @@
 #include <inttypes.h>
 
 #include <cstdint>
-#include <list>
-#include <memory>
+#include <cstdio>
+#include <cstring>
+#include <ios>
+#include <map>
+#include <regex>
 #include <set>
 #include <string>
 #include <utility>
@@ -19,7 +22,7 @@
 #include "base/port.h"
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/str_format.h"
-#include "third_party/abseil/absl/strings/str_join.h"
+#include "third_party/abseil/absl/strings/string_view.h"
 #include "quipper/perf_parser.h"
 #include "quipper/perf_reader.h"
 
@@ -29,9 +32,9 @@ ABSL_FLAG(uint64_t, strip_dup_backedge_stride_limit, 0x1000,
 
 namespace devtools_crosstool_autofdo {
 
-PerfDataSampleReader::PerfDataSampleReader(const std::string &profile_file,
+PerfDataSampleReader::PerfDataSampleReader(absl::string_view profile_file,
                                            const std::string &re,
-                                           const std::string &build_id)
+                                           absl::string_view build_id)
     : FileSampleReader(profile_file), build_id_(build_id), re_(re.c_str()) {}
 
 PerfDataSampleReader::~PerfDataSampleReader() {}
@@ -40,31 +43,33 @@ PerfDataSampleReader::~PerfDataSampleReader() {}
 // focus_bins_, or focus_bins_ is empty and name matches re_.
 bool PerfDataSampleReader::MatchBinary(
     const quipper::ParsedEvent::DSOAndOffset &dso_and_offset) {
+  // If we already know whether we've accepted the given dso before, return
+  // the cached result.
+  auto match_cache_it = match_cache_.find(dso_and_offset.dso_info_);
+  if (match_cache_it != match_cache_.end()) {
+    return match_cache_it->second;
+  }
+  bool is_found = false;
   if (focus_bins_.empty()) {
-    // If we already know whether we've accepted the given dso before, return
-    // the cached result.
-    auto re_cache_it = re_cache_.find(dso_and_offset.dso_info_);
-    if (re_cache_it != re_cache_.end()) {
-      return re_cache_it->second;
-    }
-
-    bool is_found = std::regex_search(dso_and_offset.dso_name().c_str(), re_);
-    re_cache_[dso_and_offset.dso_info_] = is_found;
-    return is_found;
+    is_found = std::regex_search(dso_and_offset.dso_name().c_str(), re_);
   } else {
     std::string name = dso_and_offset.dso_name();
-    for (const auto &binary_path : focus_bins_) {
-      if (name == binary_path) {
-        return true;
+    if (!name.empty()) {
+      for (const auto &binary_path : focus_bins_) {
+        if (name == binary_path) {
+          is_found = true;
+          break;
+        }
       }
     }
-    return false;
   }
+  match_cache_[dso_and_offset.dso_info_] = is_found;
+  return is_found;
 }
 
 // Stores matching binary paths to focus_bins_ for a given build_id_.
-void PerfDataSampleReader::GetFileNameFromBuildID(const quipper::PerfReader*
-                                                  reader) {
+void PerfDataSampleReader::GetFileNameFromBuildID(
+    const quipper::PerfReader *reader) {
   std::map<std::string, std::string> name_buildid_map;
   reader->GetFilenamesToBuildIDs(&name_buildid_map);
 
@@ -86,6 +91,7 @@ void PerfDataSampleReader::GetFileNameFromBuildID(const quipper::PerfReader*
         focus_bins_.insert("[kernel.kallsyms]");
         focus_bins_.insert("[kernel.kallsyms]_stext");
         focus_bins_.insert("[kernel.kallsyms]_text");
+        is_kernel_ = true;
       } else {
         focus_bins_.insert(name_buildid.first);
       }
@@ -98,7 +104,7 @@ void PerfDataSampleReader::GetFileNameFromBuildID(const quipper::PerfReader*
 
 std::set<uint64_t> SampleReader::GetSampledAddresses() const {
   std::set<uint64_t> addrs;
-  if (range_count_map_.size() > 0) {
+  if (!range_count_map_.empty()) {
     for (const auto &[range, count] : range_count_map_) {
       addrs.insert(range.first);
     }
@@ -121,7 +127,7 @@ uint64_t SampleReader::GetSampleCountOrZero(uint64_t addr) const {
 uint64_t SampleReader::GetTotalSampleCount() const {
   uint64_t ret = 0;
 
-  if (range_count_map_.size() > 0) {
+  if (!range_count_map_.empty()) {
     for (const auto &[range, count] : range_count_map_) {
       ret += count;
     }
@@ -137,7 +143,7 @@ bool SampleReader::ReadAndSetTotalCount() {
   if (!Read()) {
     return false;
   }
-  if (range_count_map_.size() > 0) {
+  if (!range_count_map_.empty()) {
     for (const auto &[range, count] : range_count_map_) {
       total_count_ += count * (1 + range.second - range.first);
     }
@@ -149,9 +155,7 @@ bool SampleReader::ReadAndSetTotalCount() {
   return true;
 }
 
-bool FileSampleReader::Read() {
-  return Append(profile_file_);
-}
+bool FileSampleReader::Read() { return Append(profile_file_); }
 
 bool TextSampleReaderWriter::Append(const std::string &profile_file) {
   FILE *fp = fopen(profile_file.c_str(), "r");
@@ -272,12 +276,17 @@ bool PerfDataSampleReader::Append(const std::string &profile_file) {
   // If we can find build_id from binary, and the exact build_id was found
   // in the profile, then we use focus_bins to match samples. Otherwise,
   // focus_binary_re_ is used to match the binary name with the samples.
-  if (build_id_ != "") {
+  if (!build_id_.empty()) {
     GetFileNameFromBuildID(&reader);
-    if (focus_bins_.empty())
-      return false;
+    if (focus_bins_.empty()) {
+      // The binary with build_id_ was not found in perf.data.
+      // That could happen when e.g. perf.data is a system-wide profile,
+      // and the binary of interest was not running when the profile
+      // was collected.
+      return true;
+    }
   } else {
-    LOG(WARNING) << "No buildid found in binary";
+    LOG(INFO) << "No buildid found in binary";
   }
 
   for (const auto &event : parser.parsed_events()) {
@@ -288,13 +297,23 @@ bool PerfDataSampleReader::Append(const std::string &profile_file) {
     if (MatchBinary(event.dso_and_offset)) {
       address_count_map_[event.dso_and_offset.offset()]++;
     }
-    if (event.branch_stack.size() > 0 &&
-        MatchBinary(event.branch_stack[0].to) &&
-        MatchBinary(event.branch_stack[0].from)) {
-      branch_count_map_[Branch(event.branch_stack[0].from.offset(),
-                               event.branch_stack[0].to.offset())]++;
+    int start_index = 0;
+    while (start_index < event.branch_stack.size() &&
+           event.branch_stack[start_index].spec ==
+               quipper::PERF_BR_SPEC_WRONG_PATH) {
+      start_index++;
     }
-    for (int i = 1; i < event.branch_stack.size(); i++) {
+    if (event.branch_stack.size() > start_index &&
+        MatchBinary(event.branch_stack[start_index].to) &&
+        MatchBinary(event.branch_stack[start_index].from)) {
+      branch_count_map_[Branch(event.branch_stack[start_index].from.offset(),
+                               event.branch_stack[start_index].to.offset())]++;
+    }
+    for (int i = start_index + 1; i < event.branch_stack.size(); i++) {
+      if (event.branch_stack[i].spec == quipper::PERF_BR_SPEC_WRONG_PATH) {
+        continue;
+      }
+
       if (!MatchBinary(event.branch_stack[i].to)) {
         continue;
       }
@@ -313,13 +332,18 @@ bool PerfDataSampleReader::Append(const std::string &profile_file) {
            event.branch_stack[1].to.offset()) &&
           (event.branch_stack[0].from.offset() -
                event.branch_stack[0].to.offset() >
-           absl::GetFlag(FLAGS_strip_dup_backedge_stride_limit)))
+           absl::GetFlag(FLAGS_strip_dup_backedge_stride_limit))) {
+        LOG(WARNING) << "Bogus LBR data (duplicated top entry)";
         continue;
+      }
       uint64_t begin = event.branch_stack[i].to.offset();
       uint64_t end = event.branch_stack[i - 1].from.offset();
       // The interval between two taken branches should not be too large.
       if (end < begin || end - begin > (1 << 20)) {
-        LOG(WARNING) << "Bogus LBR data: " << begin << "->" << end;
+        const std::string reason =
+            (end < begin ? "(range is negative)" : "(range is too large)");
+        LOG(WARNING) << "Bogus LBR data " << reason << ": " << std::hex << begin
+                     << "->" << end << " index=" << i;
         continue;
       }
       range_count_map_[Range(begin, end)]++;

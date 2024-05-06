@@ -7,15 +7,12 @@
 #define AUTOFDO_INSTRUCTION_MAP_H_
 
 #include <cstdint>
-#include <map>
 #include <string>
-#include <utility>
+#include <vector>
 
-#include "base/integral_types.h"
-#include "base/logging.h"
-#include "base/macros.h"
+#include "source_info.h"
 #include "symbol_map.h"
-
+#include "third_party/abseil/absl/strings/string_view.h"
 
 namespace devtools_crosstool_autofdo {
 
@@ -36,8 +33,12 @@ class InstructionMap {
       : symbol_map_(symbol), addr2line_(addr2line) {
   }
 
+  // This type is neither copyable nor movable.
+  InstructionMap(const InstructionMap &) = delete;
+  InstructionMap &operator=(const InstructionMap &) = delete;
+
   // Builds instruction map for a function.
-  void BuildPerFunctionInstructionMap(const std::string &name,
+  void BuildPerFunctionInstructionMap(absl::string_view name,
                                       uint64_t start_addr, uint64_t end_addr);
 
   // Contains information about each instruction.
@@ -63,8 +64,6 @@ class InstructionMap {
 
   // Addr2line driver which is used to derive source stack.
   Addr2line *addr2line_;
-
-  DISALLOW_COPY_AND_ASSIGN(InstructionMap);
 };
 }  // namespace devtools_crosstool_autofdo
 
