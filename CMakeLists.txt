@@ -134,6 +134,7 @@ function (config_with_llvm)
     third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper
     util/regexp
+    ${PROTOBUF_INCLUDE_DIR}
     ${PROJECT_BINARY_DIR}/third_party/perf_data_converter/src/quipper)
   target_link_libraries(llvm_profile_writer
     absl::flat_hash_map
@@ -285,6 +286,8 @@ function (config_with_llvm)
     llvm_propeller_cfg_testutil.cc
     llvm_propeller_function_cluster_info_matchers.cc
     llvm_propeller_mock_program_cfg_builder.cc)
+  target_include_directories(llvm_propeller_test_objects
+    PUBLIC ${PROTOBUF_INCLUDE_DIR})
 
   add_library(llvm_propeller_objects OBJECT
     addr2cu.cc
