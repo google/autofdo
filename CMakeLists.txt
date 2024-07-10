@@ -198,22 +198,29 @@ function (config_with_llvm)
     util/regexp)
 
   find_package(Protobuf REQUIRED)
-  protobuf_generate_cpp(PERF_DATA_PROTO_CC PERF_DATA_PROTO_HDR third_party/perf_data_converter/src/quipper/perf_data.proto)
-  protobuf_generate_cpp(PERF_PARSER_OPTIONS_CC PERF_PARSER_OPTIONS_HDR third_party/perf_data_converter/src/quipper/perf_parser_options.proto)
-  protobuf_generate_cpp(PERF_STAT_CC PERF_STAT_HDR third_party/perf_data_converter/src/quipper/perf_stat.proto)
-  add_library(perf_data_proto OBJECT ${PERF_DATA_PROTO_CC})
-  add_library(perf_parser_options_proto OBJECT ${PERF_PARSER_OPTIONS_CC})
-  add_library(perf_stat_proto OBJECT ${PERF_STAT_CC})
 
-  protobuf_generate_cpp(LLVM_PROPELLER_CFG_PROTO_CC LLVM_PROPELLER_CFG_PROTO_HDR llvm_propeller_cfg.proto)
-  add_library(llvm_propeller_cfg_proto OBJECT ${LLVM_PROPELLER_CFG_PROTO_CC})
+  add_library(perf_proto
+    third_party/perf_data_converter/src/quipper/perf_data.proto
+    third_party/perf_data_converter/src/quipper/perf_parser_options.proto
+    third_party/perf_data_converter/src/quipper/perf_stat.proto)
+  protobuf_generate(
+    TARGET perf_proto
+    LANGUAGE cpp)
+  target_link_libraries(perf_proto PUBLIC protobuf::libprotobuf)
 
-  protobuf_generate_cpp(LLVM_PROPELLER_OPTIONS_PROTO_CC LLVM_PROPELLER_OPTIONS_PROTO_HDR llvm_propeller_options.proto)
-  add_library(llvm_propeller_options OBJECT llvm_propeller_options_builder.cc ${LLVM_PROPELLER_OPTIONS_PROTO_CC})
-  add_dependencies(llvm_propeller_options quipper_perf)
-
-  add_library(create_llvm_prof_object OBJECT create_llvm_prof.cc)
-  add_dependencies(create_llvm_prof_object llvm_propeller_options LLVMDebugInfoDWARF)
+  add_library(llvm_propeller_cfg_proto llvm_propeller_cfg.proto)
+  protobuf_generate(
+    TARGET llvm_propeller_cfg_proto
+    LANGUAGE cpp)
+  target_link_libraries(llvm_propeller_cfg_proto PUBLIC protobuf::libprotobuf)
+  
+  add_library(llvm_propeller_options_proto llvm_propeller_options.proto)
+  target_link_libraries(llvm_propeller_options_proto PUBLIC protobuf::libprotobuf)
+  protobuf_generate(
+    TARGET llvm_propeller_options_proto
+    LANGUAGE cpp)
+  add_library(llvm_propeller_options STATIC llvm_propeller_options_builder.cc)
+  target_link_libraries(llvm_propeller_options quipper_perf llvm_propeller_options_proto)
 
   add_library(mini_disassembler OBJECT mini_disassembler.cc)
   target_link_libraries(mini_disassembler
@@ -233,14 +240,13 @@ function (config_with_llvm)
 
   add_library(sample_reader OBJECT sample_reader.cc spe_sample_reader.cc)
   target_include_directories(sample_reader PUBLIC util)
-  target_link_libraries(sample_reader absl::base quipper_perf LLVMObject)
-  add_dependencies(sample_reader perf_data_proto)
+  target_link_libraries(sample_reader absl::base quipper_perf perf_proto LLVMObject)
   add_dependencies(sample_reader llvm_propeller_objects)
 
   add_library(perfdata_reader OBJECT perfdata_reader.cc)
-  add_dependencies(perfdata_reader perf_data_proto)
-  add_dependencies(perfdata_reader perf_parser_options_proto)
-  add_dependencies(perfdata_reader perf_stat_proto)
+  target_include_directories(perfdata_reader
+    PUBLIC ${PROJECT_BINARY_DIR}/third_party/perf_data_converter/src/quipper)
+  target_link_libraries(perfdata_reader PUBLIC protobuf::libprotobuf perf_proto)
 
   add_library(symbol_map OBJECT
     source_info.cc
@@ -266,7 +272,8 @@ function (config_with_llvm)
     libprotobuf
     third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper
-    util/regexp)
+    util/regexp
+    ${PROJECT_BINARY_DIR}/third_party/perf_data_converter/src/quipper)
   target_link_libraries(llvm_profile_writer
     absl::flat_hash_map
     absl::node_hash_set
@@ -336,7 +343,7 @@ function (config_with_llvm)
     LLVMDebugInfoDWARF
     LLVMSupport)
 
-  add_executable(create_llvm_prof)
+  add_executable(create_llvm_prof create_llvm_prof.cc)
   target_link_libraries(create_llvm_prof 
     absl::base
     absl::check
@@ -346,7 +353,6 @@ function (config_with_llvm)
     absl::statusor
     absl::str_format
     absl::strings
-    create_llvm_prof_object
     glog
     llvm_profile_reader
     llvm_profile_writer
@@ -436,7 +442,6 @@ function (config_with_llvm)
     llvm_propeller_node_chain.cc
     llvm_propeller_node_chain_assembly.cc
     llvm_propeller_node_chain_builder.cc
-    llvm_propeller_options_builder.cc
     llvm_propeller_perf_branch_frequencies_aggregator.cc
     llvm_propeller_perf_lbr_aggregator.cc
     llvm_propeller_profile_computer.cc
@@ -447,11 +452,14 @@ function (config_with_llvm)
     llvm_propeller_program_cfg_proto_builder.cc
     llvm_propeller_statistics.cc
     llvm_propeller_telemetry_reporter.cc
-    spe_tid_pid_provider.cc
-    ${LLVM_PROPELLER_CFG_PROTO_CC}
-    ${LLVM_PROPELLER_OPTIONS_PROTO_CC})
-  add_dependencies(llvm_propeller_objects absl::statusor llvm_profile_writer status_provider)
-  target_link_libraries(llvm_propeller_objects LLVMDebugInfoDWARF)
+    spe_tid_pid_provider.cc)
+  target_link_libraries(llvm_propeller_objects
+    absl::statusor
+    llvm_profile_writer
+    llvm_propeller_options
+    llvm_propeller_cfg_proto
+    status_provider
+    LLVMDebugInfoDWARF)
 
   add_executable(instruction_map_test addr2line.cc instruction_map.cc instruction_map_test.cc)
   target_link_libraries(instruction_map_test
@@ -777,20 +785,17 @@ function (config_with_llvm)
     third_party/perf_data_converter/src/quipper/perf_reader.cc
     third_party/perf_data_converter/src/quipper/perf_parser.cc
     third_party/perf_data_converter/src/quipper/sample_info_reader.cc
-    third_party/perf_data_converter/src/quipper/string_utils.cc
-    ${PERF_DATA_PROTO_HDR}
-    ${PERF_DATA_PROTO_CC}
-    ${PERF_PARSER_OPTIONS_HDR}
-    ${PERF_PARSER_OPTIONS_CC}
-    ${PERF_STAT_CC}
-    ${PERF_STAT_HDR})
+    third_party/perf_data_converter/src/quipper/string_utils.cc)
+
   target_include_directories(quipper_perf PRIVATE
     third_party/abseil)
   target_include_directories(quipper_perf BEFORE
     PUBLIC
     third_party/perf_data_converter/src
-    third_party/perf_data_converter/src/quipper)
-  target_link_libraries(quipper_perf ${Protobuf_LIBRARIES} ${LIBELF_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
+    third_party/perf_data_converter/src/quipper
+    ${PROJECT_BINARY_DIR}/third_party/perf_data_converter/src/quipper)
+  target_link_libraries(quipper_perf
+    perf_proto ${LIBELF_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
 
   add_custom_command(PRE_BUILD
     OUTPUT prepare_cmds
