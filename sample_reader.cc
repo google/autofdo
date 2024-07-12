@@ -318,6 +318,13 @@ bool PerfDataSampleReader::Append(const std::string &profile_file) {
         continue;
       }
 
+      // if from_ip map in perf_data_converter PerfParser::MapBranchStack fails but to_ip map succeeeds.
+      // Then from.offset() == 0 and to.offset() == ${offset}.
+      // This will cause the following check to erroneously warning "Bogus LBR data".
+      if (event.branch_stack[i - 1].from.dso_info_ == NULL) {
+        continue;
+      }
+
       // TODO(b/62827958): Get rid of this temporary workaround once the issue
       // of duplicate entries in LBR is resolved. It only happens at the head
       // of the LBR. In addition, it is possible that the duplication is
@@ -333,7 +340,8 @@ bool PerfDataSampleReader::Append(const std::string &profile_file) {
           (event.branch_stack[0].from.offset() -
                event.branch_stack[0].to.offset() >
            absl::GetFlag(FLAGS_strip_dup_backedge_stride_limit))) {
-        LOG(WARNING) << "Bogus LBR data (duplicated top entry)";
+        if (event.branch_stack[1].from.dso_info_ == NULL)
+          LOG(WARNING) << "Bogus LBR data (duplicated top entry)";
         continue;
       }
       uint64_t begin = event.branch_stack[i].to.offset();
