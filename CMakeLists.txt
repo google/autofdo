@@ -4,6 +4,135 @@ set(ABSL_PROPAGATE_CXX_STD on)
 
 project(autofdo)
 
+function (execute_perf_protobuf)
+
+  find_package(Protobuf REQUIRED)
+
+  add_library(perf_proto
+    third_party/perf_data_converter/src/quipper/perf_data.proto
+    third_party/perf_data_converter/src/quipper/perf_parser_options.proto
+    third_party/perf_data_converter/src/quipper/perf_stat.proto)
+  protobuf_generate(TARGET perf_proto LANGUAGE cpp)
+  target_link_libraries(perf_proto PUBLIC protobuf::libprotobuf)
+  
+endfunction()
+
+function (config_without_llvm)
+  add_subdirectory(third_party/abseil)
+  add_subdirectory(third_party/glog)
+
+  include_directories(${CMAKE_HOME_DIRECTORY}
+    third_party/glog/src
+    third_party/abseil
+    third_party/perf_data_converter/src
+    third_party/perf_data_converter/src/quipper
+    util
+    ${PROJECT_BINARY_DIR}
+    ${PROJECT_BINARY_DIR}/third_party/glog
+    ${PROJECT_BINARY_DIR}/third_party/perf_data_converter/src/quipper)
+
+  find_library (LIBELF_LIBRARIES NAMES elf REQUIRED)
+  find_library (LIBCRYPTO_LIBRARIES NAMES crypto REQUIRED)
+
+  add_library(create_gcov_lib OBJECT
+    create_gcov.cc
+    gcov.cc
+    instruction_map.cc
+    legacy_addr2line.cc
+    profile.cc
+    profile_creator.cc
+    profile_writer.cc
+    sample_reader.cc
+    symbol_map.cc
+    util/symbolize/addr2line_inlinestack.cc
+    util/symbolize/bytereader.cc
+    util/symbolize/functioninfo.cc
+    util/symbolize/dwarf2reader.cc
+    util/symbolize/dwarf3ranges.cc
+    util/symbolize/elf_reader.cc
+    util/symbolize/index_helper.cc
+  )
+  target_link_libraries(create_gcov_lib perf_proto)
+
+  add_library(quipper_perf OBJECT 
+    third_party/perf_data_converter/src/quipper/address_mapper.cc
+    third_party/perf_data_converter/src/quipper/base/logging.cc
+    third_party/perf_data_converter/src/quipper/binary_data_utils.cc
+    third_party/perf_data_converter/src/quipper/binary_data_utils.cc
+    third_party/perf_data_converter/src/quipper/buffer_reader.cc
+    third_party/perf_data_converter/src/quipper/buffer_writer.cc
+    third_party/perf_data_converter/src/quipper/compat/log_level.cc
+    third_party/perf_data_converter/src/quipper/data_reader.cc
+    third_party/perf_data_converter/src/quipper/data_writer.cc
+    third_party/perf_data_converter/src/quipper/dso.cc
+    third_party/perf_data_converter/src/quipper/file_reader.cc
+    third_party/perf_data_converter/src/quipper/file_utils.cc
+    third_party/perf_data_converter/src/quipper/huge_page_deducer.cc
+    third_party/perf_data_converter/src/quipper/perf_buildid.cc
+    third_party/perf_data_converter/src/quipper/perf_data_utils.cc
+    third_party/perf_data_converter/src/quipper/perf_serializer.cc
+    third_party/perf_data_converter/src/quipper/perf_reader.cc
+    third_party/perf_data_converter/src/quipper/perf_parser.cc
+    third_party/perf_data_converter/src/quipper/sample_info_reader.cc
+    third_party/perf_data_converter/src/quipper/string_utils.cc)
+  target_include_directories(quipper_perf PRIVATE
+    third_party/abseil)
+  target_include_directories(quipper_perf BEFORE
+    PUBLIC
+    third_party/perf_data_converter/src
+    third_party/perf_data_converter/src/quipper)
+  target_link_libraries(quipper_perf
+    perf_proto ${Protobuf_LIBRARIES} ${LIBELF_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
+
+  add_executable(create_gcov)
+  target_link_libraries(create_gcov
+    absl::flags
+    absl::flags_parse
+    create_gcov_lib
+    glog
+    quipper_perf
+  )
+
+  add_library(profile_merger_lib OBJECT
+    gcov.cc
+    instruction_map.cc
+    profile_merger.cc
+    profile.cc
+    profile_reader.cc
+    profile_writer.cc
+    symbol_map.cc
+    util/symbolize/elf_reader.cc
+  )
+  target_link_libraries(profile_merger_lib perf_proto)
+
+  add_executable(profile_merger)
+  target_link_libraries(profile_merger
+    absl::flags
+    absl::flags_parse
+    profile_merger_lib
+    glog
+    quipper_perf
+  )
+
+  add_library(dump_gcov_lib OBJECT
+    dump_gcov.cc
+    gcov.cc
+    instruction_map.cc
+    profile.cc
+    profile_reader.cc
+    symbol_map.cc
+    util/symbolize/elf_reader.cc)
+  target_link_libraries(dump_gcov_lib perf_proto)
+
+  add_executable(dump_gcov)
+  target_link_libraries(dump_gcov
+    absl::flags
+    absl::flags_parse
+    dump_gcov_lib
+    glog)
+
+endfunction()
+
 function (config_with_llvm)
   execute_process(COMMAND sh -c "git -C ${CMAKE_HOME_DIRECTORY}/third_party/llvm-project log -1 --format=%h"
      RESULT_VARIABLE clang_version_status
@@ -61,15 +190,6 @@ function (config_with_llvm)
     third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper
     util/regexp)
-
-  find_package(Protobuf REQUIRED)
-
-  add_library(perf_proto
-    third_party/perf_data_converter/src/quipper/perf_data.proto
-    third_party/perf_data_converter/src/quipper/perf_parser_options.proto
-    third_party/perf_data_converter/src/quipper/perf_stat.proto)
-  protobuf_generate(TARGET perf_proto LANGUAGE cpp)
-  target_link_libraries(perf_proto PUBLIC protobuf::libprotobuf)
 
   add_library(llvm_propeller_cfg_proto llvm_propeller_cfg.proto)
   protobuf_generate(TARGET llvm_propeller_cfg_proto LANGUAGE cpp)
@@ -667,5 +787,10 @@ function (config_with_llvm)
     DEPENDS prepare_cmds)
 endfunction()
 
-config_with_llvm()
+execute_perf_protobuf()
+if (DEFINED WITH_LLVM)
+  config_with_llvm()
+else ()
+  config_without_llvm()
+endif ()
 enable_testing()
