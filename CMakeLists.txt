@@ -14,7 +14,7 @@ function (execute_perf_protobuf)
     third_party/perf_data_converter/src/quipper/perf_stat.proto)
   protobuf_generate(TARGET perf_proto LANGUAGE cpp)
   target_link_libraries(perf_proto PUBLIC protobuf::libprotobuf)
-  
+
 endfunction()
 
 function (config_without_llvm)
@@ -50,8 +50,7 @@ function (config_without_llvm)
     util/symbolize/dwarf2reader.cc
     util/symbolize/dwarf3ranges.cc
     util/symbolize/elf_reader.cc
-    util/symbolize/index_helper.cc
-  )
+    util/symbolize/index_helper.cc)
   target_link_libraries(create_gcov_lib perf_proto)
 
   add_library(quipper_perf OBJECT 
@@ -90,8 +89,7 @@ function (config_without_llvm)
     absl::flags_parse
     create_gcov_lib
     glog
-    quipper_perf
-  )
+    quipper_perf)
 
   add_library(profile_merger_lib OBJECT
     gcov.cc
@@ -101,8 +99,7 @@ function (config_without_llvm)
     profile_reader.cc
     profile_writer.cc
     symbol_map.cc
-    util/symbolize/elf_reader.cc
-  )
+    util/symbolize/elf_reader.cc)
   target_link_libraries(profile_merger_lib perf_proto)
 
   add_executable(profile_merger)
@@ -111,8 +108,7 @@ function (config_without_llvm)
     absl::flags_parse
     profile_merger_lib
     glog
-    quipper_perf
-  )
+    quipper_perf)
 
   add_library(dump_gcov_lib OBJECT
     dump_gcov.cc
@@ -134,7 +130,8 @@ function (config_without_llvm)
 endfunction()
 
 function (config_with_llvm)
-  execute_process(COMMAND sh -c "git -C ${CMAKE_HOME_DIRECTORY}/third_party/llvm-project log -1 --format=%h"
+  execute_process(COMMAND sh -c
+    "git -C ${CMAKE_HOME_DIRECTORY}/third_party/llvm-project log -1 --format=%h"
      RESULT_VARIABLE clang_version_status
      OUTPUT_VARIABLE CLANG_VERSION_OUTPUT)
 
@@ -142,7 +139,8 @@ function (config_with_llvm)
   if (clang_version_status)
      message(WARNING "Could not get clang commit hash : Use clang git hash " ${CLANG_KNOWN_GIT_COMMIT_HASH})
   else()
-     string(REGEX MATCH "([0-9|a-f]+)" CLANG_GIT_COMMIT_HASH ${CLANG_VERSION_OUTPUT})
+     string(REGEX MATCH "([0-9|a-f]+)"
+       CLANG_GIT_COMMIT_HASH ${CLANG_VERSION_OUTPUT})
      if ("${CLANG_GIT_COMMIT_HASH}" STREQUAL ${CLANG_KNOWN_GIT_COMMIT_HASH})
        message(STATUS "Found known git commit hash of clang (" ${CLANG_GIT_COMMIT_HASH} ") - Success")
      else()
@@ -155,9 +153,9 @@ function (config_with_llvm)
   set (LLVM_INCLUDE_TESTS OFF)
   set (LLVM_INCLUDE_TOOLS OFF)
   set (LLVM_INCLUDE_DOCS OFF)
-  
+
   set (LLVM_ENABLE_RTTI ON)
-  set (LLVM_ENABLE_PROJECTS clang CACHE STRING 
+  set (LLVM_ENABLE_PROJECTS clang CACHE STRING
     "Semicolon-separated list of projects to build (${LLVM_KNOWN_PROJECTS}), or \"all\".")
   set (LLVM_TARGETS_TO_BUILD X86 AArch64 CACHE STRING
     "Semicolon-separated list of LLVM targets to build, or \"all\".")
@@ -168,7 +166,7 @@ function (config_with_llvm)
   add_subdirectory(third_party/googletest)
   add_subdirectory(third_party/llvm-project/llvm)
 
-  add_custom_target(exclude_extlib_tests ALL 
+  add_custom_target(exclude_extlib_tests ALL
     COMMAND rm -f ${gtest_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${gmock_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${googletest-distribution_BINARY_DIR}/CTestTestfile.cmake
@@ -194,7 +192,7 @@ function (config_with_llvm)
   add_library(llvm_propeller_cfg_proto llvm_propeller_cfg.proto)
   protobuf_generate(TARGET llvm_propeller_cfg_proto LANGUAGE cpp)
   target_link_libraries(llvm_propeller_cfg_proto PUBLIC protobuf::libprotobuf)
-  
+
   add_library(llvm_propeller_options_proto llvm_propeller_options.proto)
   target_link_libraries(llvm_propeller_options_proto PUBLIC
     protobuf::libprotobuf)
@@ -202,7 +200,8 @@ function (config_with_llvm)
     TARGET llvm_propeller_options_proto
     LANGUAGE cpp)
   add_library(llvm_propeller_options STATIC llvm_propeller_options_builder.cc)
-  target_link_libraries(llvm_propeller_options quipper_perf llvm_propeller_options_proto)
+  target_link_libraries(llvm_propeller_options
+    quipper_perf llvm_propeller_options_proto)
 
   add_library(mini_disassembler OBJECT mini_disassembler.cc)
   target_link_libraries(mini_disassembler
@@ -214,7 +213,8 @@ function (config_with_llvm)
     LLVMSupport
     LLVMTargetParser)
   foreach (tgt ${LLVM_TARGETS_TO_BUILD})
-    set( tp ${PROJECT_BINARY_DIR}/third_party/llvm-project/llvm/lib/libLLVM${tgt})
+    set(tp
+      ${PROJECT_BINARY_DIR}/third_party/llvm-project/llvm/lib/libLLVM${tgt})
     foreach (tool AsmParser Desc Disassembler Info)
       target_link_libraries(mini_disassembler LLVM${tgt}${tool})
     endforeach()
@@ -222,7 +222,8 @@ function (config_with_llvm)
 
   add_library(sample_reader OBJECT sample_reader.cc spe_sample_reader.cc)
   target_include_directories(sample_reader PUBLIC util)
-  target_link_libraries(sample_reader absl::base quipper_perf perf_proto LLVMObject)
+  target_link_libraries(sample_reader
+    absl::base quipper_perf perf_proto LLVMObject)
   add_dependencies(sample_reader llvm_propeller_objects)
 
   add_library(perfdata_reader OBJECT perfdata_reader.cc)
@@ -326,7 +327,7 @@ function (config_with_llvm)
     LLVMSupport)
 
   add_executable(create_llvm_prof create_llvm_prof.cc)
-  target_link_libraries(create_llvm_prof 
+  target_link_libraries(create_llvm_prof
     absl::base
     absl::check
     absl::flags
@@ -418,7 +419,7 @@ function (config_with_llvm)
     llvm_propeller_binary_address_mapper.cc
     llvm_propeller_binary_content.cc
     llvm_propeller_cfg.cc
-    llvm_propeller_chain_cluster_builder.cc 
+    llvm_propeller_chain_cluster_builder.cc
     llvm_propeller_code_layout.cc
     llvm_propeller_code_layout_scorer.cc
     llvm_propeller_formatting.cc
@@ -444,7 +445,8 @@ function (config_with_llvm)
     status_provider
     LLVMDebugInfoDWARF)
 
-  add_executable(instruction_map_test addr2line.cc instruction_map.cc instruction_map_test.cc)
+  add_executable(instruction_map_test
+    addr2line.cc instruction_map.cc instruction_map_test.cc)
   target_link_libraries(instruction_map_test
     gtest
     gtest_main
@@ -505,7 +507,8 @@ function (config_with_llvm)
     symbol_map)
   add_test(NAME addr2cu_test COMMAND addr2cu_test)
 
-  add_executable(branch_frequencies_autofdo_sample_test branch_frequencies_autofdo_sample_test.cc)
+  add_executable(branch_frequencies_autofdo_sample_test
+    branch_frequencies_autofdo_sample_test.cc)
   target_link_libraries(branch_frequencies_autofdo_sample_test
     gmock
     gtest
@@ -518,7 +521,8 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME branch_frequencies_autofdo_sample_test COMMAND branch_frequencies_autofdo_sample_test)
+  add_test(NAME branch_frequencies_autofdo_sample_test
+    COMMAND branch_frequencies_autofdo_sample_test)
 
   add_executable(lbr_branch_aggregator_test lbr_branch_aggregator_test.cc)
   target_link_libraries(lbr_branch_aggregator_test
@@ -535,7 +539,8 @@ function (config_with_llvm)
     symbol_map)
   add_test(NAME lbr_branch_aggregator_test COMMAND lbr_branch_aggregator_test)
 
-  add_executable(llvm_propeller_binary_address_mapper_test llvm_propeller_binary_address_mapper_test.cc)
+  add_executable(llvm_propeller_binary_address_mapper_test
+    llvm_propeller_binary_address_mapper_test.cc)
   target_link_libraries(llvm_propeller_binary_address_mapper_test
     gmock
     gtest
@@ -548,7 +553,8 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME llvm_propeller_binary_address_mapper_test COMMAND llvm_propeller_binary_address_mapper_test)
+  add_test(NAME llvm_propeller_binary_address_mapper_test
+    COMMAND llvm_propeller_binary_address_mapper_test)
 
   add_executable(llvm_propeller_cfg_test llvm_propeller_cfg_test.cc)
   target_link_libraries(llvm_propeller_cfg_test
@@ -566,7 +572,8 @@ function (config_with_llvm)
     symbol_map)
   add_test(NAME llvm_propeller_cfg_test COMMAND llvm_propeller_cfg_test)
 
-  add_executable(llvm_propeller_file_perf_data_provider_test llvm_propeller_file_perf_data_provider_test.cc)
+  add_executable(llvm_propeller_file_perf_data_provider_test
+    llvm_propeller_file_perf_data_provider_test.cc)
   target_link_libraries(llvm_propeller_file_perf_data_provider_test
     gmock
     gtest
@@ -579,9 +586,11 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME llvm_propeller_file_perf_data_provider_test COMMAND llvm_propeller_file_perf_data_provider_test)
+  add_test(NAME llvm_propeller_file_perf_data_provider_test
+    COMMAND llvm_propeller_file_perf_data_provider_test)
 
-  add_executable(llvm_propeller_perf_branch_frequencies_aggregator_test llvm_propeller_perf_branch_frequencies_aggregator_test.cc)
+  add_executable(llvm_propeller_perf_branch_frequencies_aggregator_test
+    llvm_propeller_perf_branch_frequencies_aggregator_test.cc)
   target_link_libraries(llvm_propeller_perf_branch_frequencies_aggregator_test
     gmock
     gtest
@@ -594,9 +603,11 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME llvm_propeller_perf_branch_frequencies_aggregator_test COMMAND llvm_propeller_perf_branch_frequencies_aggregator_test)
+  add_test(NAME llvm_propeller_perf_branch_frequencies_aggregator_test
+    COMMAND llvm_propeller_perf_branch_frequencies_aggregator_test)
 
-  add_executable(llvm_propeller_perf_lbr_aggregator_test llvm_propeller_perf_lbr_aggregator_test.cc)
+  add_executable(llvm_propeller_perf_lbr_aggregator_test
+    llvm_propeller_perf_lbr_aggregator_test.cc)
   target_link_libraries(llvm_propeller_perf_lbr_aggregator_test
     gtest_main
     llvm_profile_writer
@@ -607,9 +618,11 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME llvm_propeller_perf_lbr_aggregator_test COMMAND llvm_propeller_perf_lbr_aggregator_test)
+  add_test(NAME llvm_propeller_perf_lbr_aggregator_test
+    COMMAND llvm_propeller_perf_lbr_aggregator_test)
 
-  add_executable(llvm_propeller_profile_computer_test llvm_propeller_profile_computer_test.cc)
+  add_executable(llvm_propeller_profile_computer_test
+    llvm_propeller_profile_computer_test.cc)
   target_link_libraries(llvm_propeller_profile_computer_test
     gmock
     gtest
@@ -622,9 +635,11 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME llvm_propeller_profile_computer_test COMMAND llvm_propeller_profile_computer_test)
+  add_test(NAME llvm_propeller_profile_computer_test
+    COMMAND llvm_propeller_profile_computer_test)
 
-  add_executable(llvm_propeller_profile_generator_test llvm_propeller_profile_generator_test.cc)
+  add_executable(llvm_propeller_profile_generator_test
+    llvm_propeller_profile_generator_test.cc)
   target_link_libraries(llvm_propeller_profile_generator_test
     gmock
     gtest
@@ -637,9 +652,11 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME llvm_propeller_profile_generator_test COMMAND llvm_propeller_profile_generator_test)
+  add_test(NAME llvm_propeller_profile_generator_test
+    COMMAND llvm_propeller_profile_generator_test)
 
-  add_executable(llvm_propeller_program_cfg_builder_test llvm_propeller_program_cfg_builder_test.cc)
+  add_executable(llvm_propeller_program_cfg_builder_test
+    llvm_propeller_program_cfg_builder_test.cc)
   target_link_libraries(llvm_propeller_program_cfg_builder_test
     gmock
     gtest
@@ -652,9 +669,11 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME llvm_propeller_program_cfg_builder_test COMMAND llvm_propeller_program_cfg_builder_test)
+  add_test(NAME llvm_propeller_program_cfg_builder_test
+    COMMAND llvm_propeller_program_cfg_builder_test)
 
-  add_executable(llvm_propeller_program_cfg_proto_builder_test llvm_propeller_program_cfg_proto_builder_test.cc)
+  add_executable(llvm_propeller_program_cfg_proto_builder_test
+    llvm_propeller_program_cfg_proto_builder_test.cc)
   target_link_libraries(llvm_propeller_program_cfg_proto_builder_test
     gtest
     gtest_main
@@ -666,9 +685,11 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME llvm_propeller_program_cfg_proto_builder_test COMMAND llvm_propeller_program_cfg_proto_builder_test)
+  add_test(NAME llvm_propeller_program_cfg_proto_builder_test
+    COMMAND llvm_propeller_program_cfg_proto_builder_test)
 
-  add_executable(llvm_propeller_program_cfg_test llvm_propeller_program_cfg_test.cc)
+  add_executable(llvm_propeller_program_cfg_test
+    llvm_propeller_program_cfg_test.cc)
   target_link_libraries(llvm_propeller_program_cfg_test
     gmock
     gtest
@@ -682,9 +703,11 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME llvm_propeller_program_cfg_test COMMAND llvm_propeller_program_cfg_test)
+  add_test(NAME llvm_propeller_program_cfg_test
+    COMMAND llvm_propeller_program_cfg_test)
 
-  add_executable(llvm_propeller_statistics_test llvm_propeller_statistics_test.cc)
+  add_executable(llvm_propeller_statistics_test
+    llvm_propeller_statistics_test.cc)
   target_link_libraries(llvm_propeller_statistics_test
     gtest
     gtest_main
@@ -696,7 +719,8 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME llvm_propeller_statistics_test COMMAND llvm_propeller_statistics_test)
+  add_test(NAME llvm_propeller_statistics_test
+    COMMAND llvm_propeller_statistics_test)
 
   add_executable(perfdata_reader_test perfdata_reader_test.cc)
   target_link_libraries(perfdata_reader_test
@@ -728,7 +752,8 @@ function (config_with_llvm)
     symbol_map)
   add_test(NAME spe_sample_reader_test COMMAND spe_sample_reader_test)
 
-  add_executable(llvm_propeller_code_layout_test llvm_propeller_code_layout_test.cc)
+  add_executable(llvm_propeller_code_layout_test
+    llvm_propeller_code_layout_test.cc)
   target_link_libraries(llvm_propeller_code_layout_test
     gmock
     gtest
@@ -742,12 +767,13 @@ function (config_with_llvm)
     quipper_perf
     status_provider
     symbol_map)
-  add_test(NAME llvm_propeller_code_layout_test COMMAND llvm_propeller_code_layout_test)
+  add_test(NAME llvm_propeller_code_layout_test
+    COMMAND llvm_propeller_code_layout_test)
 
   add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
   add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
 
-  add_library(quipper_perf OBJECT 
+  add_library(quipper_perf OBJECT
     third_party/perf_data_converter/src/quipper/address_mapper.cc
     third_party/perf_data_converter/src/quipper/arm_spe_decoder.cc
     third_party/perf_data_converter/src/quipper/base/logging.cc
