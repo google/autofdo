@@ -1,0 +1,25 @@
+name: autofdo CI
+
+on:
+  push:
+    branches: [ $default-branch ]
+  pull_request:
+    branches: [ $default-branch ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+    - name: install dependencies
+      run: sudo apt-get -y install libunwind-dev libgflags-dev libssl-dev libelf-dev protobuf-compiler libzstd-dev
+    - name: cmake
+      run: cmake -DWITH_LLVM=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -S autofdo -B build
+    - name: build
+      run: make -j 4 -C build
+    - name: run tests
+      run: make test -C build
