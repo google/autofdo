@@ -17,7 +17,7 @@ jobs:
     - name: install dependencies
       run: sudo apt-get -y install libunwind-dev libgflags-dev libssl-dev libelf-dev protobuf-compiler libzstd-dev
     - name: cmake
-      run: cmake -DWITH_LLVM=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -S autofdo -B build
+      run: cmake -DWITH_LLVM=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -B build
     - name: build
       run: make -j 4 -C build
     - name: run tests
