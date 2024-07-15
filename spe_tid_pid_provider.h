@@ -11,7 +11,7 @@
 #include "third_party/abseil/absl/container/flat_hash_map.h"
 #include "third_party/abseil/absl/status/statusor.h"
 #include "quipper/arm_spe_decoder.h"
-#include "google/protobuf/repeated_ptr_field.h"
+#include "google/protobuf/repeated_field.h"
 
 namespace devtools_crosstool_autofdo {
 
