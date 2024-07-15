@@ -2,7 +2,7 @@
 # 1. Install prerequisites on Ubuntu 20.04
 
 ```
-    $ sudo apt install libunwind-dev libgflags-dev libssl-dev libelf-dev protobuf-compiler cmake clang g++
+    $ sudo apt install libunwind-dev libgflags-dev libssl-dev libelf-dev protobuf-compiler cmake zstd clang g++
 ```
 
 ## 2 Build autofdo tools using clang-10

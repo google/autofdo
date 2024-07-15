@@ -14,7 +14,7 @@
 #include "third_party/abseil/absl/strings/str_cat.h"
 #include "quipper/arm_spe_decoder.h"
 #include "quipper/perf_data_utils.h"
-#include "google/protobuf/repeated_ptr_field.h"
+#include "google/protobuf/repeated_field.h"
 
 namespace devtools_crosstool_autofdo {
 
