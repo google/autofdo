@@ -153,7 +153,7 @@ function (config_with_llvm)
      if ("${CLANG_GIT_COMMIT_HASH_12}" STREQUAL ${CLANG_KNOWN_GIT_COMMIT_HASH})
        message(STATUS "Found known git commit hash of clang (" ${CLANG_GIT_COMMIT_HASH} ") - Success")
      else()
-       message(FATAL_ERROR "Unverified git commit hash of llvm source - ${CLANG_GIT_COMMIT_HASH_12}. Do not modify or update third_party/llvm-project")
+       message(FATAL_ERROR "Unverified git commit hash of llvm source - GOT ${CLANG_GIT_COMMIT_HASH} WANT ${CLANG_KNOWN_GIT_COMMIT_HASH} . Do not modify or update third_party/llvm-project")
      endif()
   endif()
 
