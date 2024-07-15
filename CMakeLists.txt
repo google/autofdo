@@ -144,7 +144,7 @@ function (config_with_llvm)
      RESULT_VARIABLE clang_version_status
      OUTPUT_VARIABLE CLANG_VERSION_OUTPUT)
 
-  set(CLANG_KNOWN_GIT_COMMIT_HASH "e4f9175d2395")
+  set(CLANG_KNOWN_GIT_COMMIT_HASH "e4f9175d23950ecaef32db075ed47dafe3be555c")
   if (clang_version_status)
      message(WARNING "Could not get clang commit hash : Use clang git hash " ${CLANG_KNOWN_GIT_COMMIT_HASH})
   else()
@@ -153,7 +153,7 @@ function (config_with_llvm)
      if ("${CLANG_GIT_COMMIT_HASH_12}" STREQUAL ${CLANG_KNOWN_GIT_COMMIT_HASH})
        message(STATUS "Found known git commit hash of clang (" ${CLANG_GIT_COMMIT_HASH} ") - Success")
      else()
-       message(FATAL_ERROR "Unverified git commit hash of llvm source - GOT ${CLANG_GIT_COMMIT_HASH} WANT ${CLANG_KNOWN_GIT_COMMIT_HASH} . Do not modify or update third_party/llvm-project")
+       message(FATAL_ERROR "Unverified git commit hash of llvm source - GOT ${CLANG_GIT_COMMIT_HASH} WANT ${CLANG_KNOWN_GIT_COMMIT_HASH}. Do not modify or update third_party/llvm-project")
      endif()
   endif()
 
