@@ -159,6 +159,7 @@ function (config_with_llvm)
     "Semicolon-separated list of projects to build (${LLVM_KNOWN_PROJECTS}), or \"all\".")
   set (LLVM_TARGETS_TO_BUILD X86 AArch64 CACHE STRING
     "Semicolon-separated list of LLVM targets to build, or \"all\".")
+  set (LLVM_ENABLE_ZSTD, FORCE_ON)
   ###
 
   add_subdirectory(third_party/abseil)
