@@ -19,6 +19,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
+        ref: 'shenhanc78-build-release-3'
 
     - name: install dependencies
       run: sudo apt-get -y install libunwind-dev libgflags-dev libssl-dev libelf-dev protobuf-compiler libzstd-dev
