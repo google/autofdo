@@ -33,4 +33,4 @@ jobs:
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
     - name: run tests
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} test
+      run: make -C ${{github.workspace}}/build test
