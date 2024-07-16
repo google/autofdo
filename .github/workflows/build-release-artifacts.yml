@@ -1,0 +1,72 @@
+# This starter workflow is for a CMake project running on a single platform.
+name: Build release binaries
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+
+jobs:
+  build_release:
+    runs-on: ubuntu-22.04-8core
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+        ref: 'shenhanc78-build-release-3'
+
+    - name: install dependencies
+      run: sudo apt-get -y install libunwind-dev libgflags-dev libssl-dev libelf-dev protobuf-compiler libzstd-dev
+
+    - name: Configure CMake
+      # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
+      # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DWITH_LLVM=On -S ${{github.workspace}}
+
+    - name: Build
+      # Build your program with the given configuration
+      run: make -C ${{github.workspace}}/build -j6
+
+    - name: run tests
+      run: make -C ${{github.workspace}}/build test
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: create_llvm_prof.zip
+        path: ${{github.workspace}}/build/create_llvm_prof
+
+  create_release:
+    name: Create release
+    needs: build_release
+    runs-on: ubuntu-22.04-8core
+    steps:
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}} # This token is provided by Actions, you do not need to create your own token
+        with:
+          tag_name: master # ${{github.ref}}
+          release_name: Release master # ${{github.ref}}
+          body: |
+            Change in this Release
+            - first change
+            - second change
+          draft: false
+          prerelease: false
+      - name: Upload Release Asset
+        id: upload_release_asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        with:
+          upload_url: ${{steps.create_release.outputs.upload_url}}
+          asset_path: ${{github.workspace}}/build/create_llvm_prof
+          asset_name: create_llvm_prof
+          asset_content_type: application/zip
