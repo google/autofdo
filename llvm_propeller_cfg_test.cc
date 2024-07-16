@@ -177,7 +177,8 @@ TEST(LlvmPropellerCfg, CloneCfg) {
                IsCfgEdge(NodeIntraIdIs(CFGNode::IntraCfgId{3, 0}),
                          NodeIntraIdIs(CFGNode::IntraCfgId{1, 0}), 100,
                          CFGEdge::Kind::kBranchOrFallthough)}),
-          CfgInterEdgesMatcher(absl::Span<const testing::Matcher<CFGEdge>>{}))));
+          CfgInterEdgesMatcher(
+              absl::Span<const testing::Matcher<CFGEdge>>{}))));
 }
 
 TEST(LlvmPropellerCfg, GetNodeFrequencyStats) {
