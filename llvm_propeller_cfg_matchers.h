@@ -149,9 +149,6 @@ class CfgInterEdgesMatcher {
  public:
   using is_gtest_matcher = void;
 
-  CfgInterEdgesMatcher(const CfgInterEdgesMatcher&) = delete;
-  CfgInterEdgesMatcher(CfgInterEdgesMatcher &&) = delete;
-
   explicit CfgInterEdgesMatcher() { matcher_ = testing::_; }
 
   explicit CfgInterEdgesMatcher(
