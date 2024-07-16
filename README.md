@@ -14,9 +14,9 @@
     $ mkdir build
     $ cd build 
 	$ # To build LLVM Propeller support
-    $ cmake -DWITH_LLVM=On -DCMAKE_C_COMPILER=clang-10 -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_BUILD_TYPE=Release ../
+    $ cmake -DENABLE_TOOL=LLVM -DCMAKE_C_COMPILER=clang-10 -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_BUILD_TYPE=Release ../
 	$ # Or to build tools for GCC
-	$ cmake -DCMAKE_C_COMPILER=clang-10 -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_BUILD_TYPE=Release ../
+	$ cmake -DENABLE_TOOL=GCOV -DCMAKE_C_COMPILER=clang-10 -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_BUILD_TYPE=Release ../
     $ make -j 4
 ```
 To build with g++-9 installed from the package repository use `-DCMAKE_C_COMPILER=gcc-9 -DCMAKE_CXX_COMPILER=g++9` instead in the cmake command above.

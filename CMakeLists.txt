@@ -14,10 +14,10 @@ function (execute_perf_protobuf)
     third_party/perf_data_converter/src/quipper/perf_stat.proto)
   protobuf_generate(TARGET perf_proto LANGUAGE cpp)
   target_link_libraries(perf_proto PUBLIC protobuf::libprotobuf)
-  
+
 endfunction()
 
-function (config_without_llvm)
+function (build_gcov)
   add_subdirectory(third_party/abseil)
   add_subdirectory(third_party/glog)
 
@@ -54,7 +54,7 @@ function (config_without_llvm)
   )
   target_link_libraries(create_gcov_lib perf_proto)
 
-  add_library(quipper_perf OBJECT 
+  add_library(quipper_perf OBJECT
     third_party/perf_data_converter/src/quipper/address_mapper.cc
     third_party/perf_data_converter/src/quipper/base/logging.cc
     third_party/perf_data_converter/src/quipper/binary_data_utils.cc
@@ -133,7 +133,7 @@ function (config_without_llvm)
 
 endfunction()
 
-function (config_with_llvm)
+function (build_llvm)
   execute_process(COMMAND sh -c "git -C ${CMAKE_HOME_DIRECTORY}/third_party/llvm-project log -1 --format=%h"
      RESULT_VARIABLE clang_version_status
      OUTPUT_VARIABLE CLANG_VERSION_OUTPUT)
@@ -155,9 +155,9 @@ function (config_with_llvm)
   set (LLVM_INCLUDE_TESTS OFF)
   set (LLVM_INCLUDE_TOOLS OFF)
   set (LLVM_INCLUDE_DOCS OFF)
-  
+
   set (LLVM_ENABLE_RTTI ON)
-  set (LLVM_ENABLE_PROJECTS clang CACHE STRING 
+  set (LLVM_ENABLE_PROJECTS clang CACHE STRING
     "Semicolon-separated list of projects to build (${LLVM_KNOWN_PROJECTS}), or \"all\".")
   set (LLVM_TARGETS_TO_BUILD X86 AArch64 CACHE STRING
     "Semicolon-separated list of LLVM targets to build, or \"all\".")
@@ -169,7 +169,7 @@ function (config_with_llvm)
   add_subdirectory(third_party/googletest)
   add_subdirectory(third_party/llvm-project/llvm)
 
-  add_custom_target(exclude_extlib_tests ALL 
+  add_custom_target(exclude_extlib_tests ALL
     COMMAND rm -f ${gtest_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${gmock_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${googletest-distribution_BINARY_DIR}/CTestTestfile.cmake
@@ -195,7 +195,7 @@ function (config_with_llvm)
   add_library(llvm_propeller_cfg_proto llvm_propeller_cfg.proto)
   protobuf_generate(TARGET llvm_propeller_cfg_proto LANGUAGE cpp)
   target_link_libraries(llvm_propeller_cfg_proto PUBLIC protobuf::libprotobuf)
-  
+
   add_library(llvm_propeller_options_proto llvm_propeller_options.proto)
   target_link_libraries(llvm_propeller_options_proto PUBLIC
     protobuf::libprotobuf)
@@ -327,7 +327,7 @@ function (config_with_llvm)
     LLVMSupport)
 
   add_executable(create_llvm_prof create_llvm_prof.cc)
-  target_link_libraries(create_llvm_prof 
+  target_link_libraries(create_llvm_prof
     absl::base
     absl::check
     absl::flags
@@ -419,7 +419,7 @@ function (config_with_llvm)
     llvm_propeller_binary_address_mapper.cc
     llvm_propeller_binary_content.cc
     llvm_propeller_cfg.cc
-    llvm_propeller_chain_cluster_builder.cc 
+    llvm_propeller_chain_cluster_builder.cc
     llvm_propeller_code_layout.cc
     llvm_propeller_code_layout_scorer.cc
     llvm_propeller_formatting.cc
@@ -748,7 +748,7 @@ function (config_with_llvm)
   add_library(llvm_propeller_cfg OBJECT llvm_propeller_cfg.cc)
   add_library(llvm_propeller_formatting OBJECT llvm_propeller_formatting.cc)
 
-  add_library(quipper_perf OBJECT 
+  add_library(quipper_perf OBJECT
     third_party/perf_data_converter/src/quipper/address_mapper.cc
     third_party/perf_data_converter/src/quipper/arm_spe_decoder.cc
     third_party/perf_data_converter/src/quipper/base/logging.cc
@@ -788,10 +788,23 @@ function (config_with_llvm)
     DEPENDS prepare_cmds)
 endfunction()
 
+if (DEFINED ENABLE_TOOL)
+   string(TOLOWER ${ENABLE_TOOL} enable_tool)
+else()
+   set(enable_tool llvm)
+endif()
+
+# perf protobuf is required by both tools.
 execute_perf_protobuf()
-if (DEFINED WITH_LLVM)
-  config_with_llvm()
+if (${enable_tool} STREQUAL gcov)
+  message(STATUS "Building tool \"GCOV\" ...")
+  build_gcov()
+elseif (${enable_tool} STREQUAL llvm)
+  message(STATUS "Building tool \"LLVM\" ...")
+  build_llvm()
 else ()
-  config_without_llvm()
+  message(FATAL_ERROR
+    "ENABLE_TOOL must equal to one of \"LLVM\" (default) or \"GCOV\"")
 endif ()
+
 enable_testing()
