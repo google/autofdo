@@ -12,7 +12,7 @@ env:
   BUILD_TYPE: Release
 
 jobs:
-  build:
+  build_release:
     runs-on: ubuntu-22.04-8core
 
     steps:
@@ -38,5 +38,35 @@ jobs:
 
     - uses: actions/upload-artifact@v4
       with:
-        name: create_llvm_prof
+        name: create_llvm_prof.zip
         path: ${{github.workspace}}/build/create_llvm_prof
+
+  create_release:
+    name: Create release
+    needs: build_release
+    runs-on: ubuntu-22.04-8core
+    steps:
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}} # This token is provided by Actions, you do not need to create your own token
+        with:
+          tag_name: ${{github.ref}}
+          release_name: Release ${{github.ref}}
+          body: |
+            Change in this Release
+            - first change
+            - second change
+          draft: false
+          prerelease: false
+      - name: Upload Release Asset
+        id: upload_release_asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        with:
+          upload_url: ${{steps.create_release.outputs.upload_url}}
+          asset_path: ${{github.workspace}}/build/create_llvm_prof
+          asset_name: create_llvm_prof
+          asset_content_type: application/zip
