@@ -49,10 +49,7 @@ jobs:
       with:
         tag_name: master # ${{github.ref}}
         release_name: Release master # ${{github.ref}}
-        body: |
-          Change in this Release
-          - first change
-          - second change
+        body_path: "${{github.workspace}}/RELEASE.md"
         draft: false
         prerelease: false
 
