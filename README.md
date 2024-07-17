@@ -23,10 +23,10 @@
     $ mkdir build
     $ cd build 
     $ # Build LLVM tools for AUtoFDO and Propeller
-    $ cmake -DENABLE_TOOL=LLVM -DCMAKE_C_COMPILER=clang-10 -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_BUILD_TYPE=Release ../
+    $ cmake -DENABLE_TOOL=LLVM -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release ../
     $ # Build autofdo tools
-    $ cmake -DENABLE_TOOL=GCOV -DCMAKE_C_COMPILER=clang-10 -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_BUILD_TYPE=Release ../
+    $ cmake -DENABLE_TOOL=GCOV -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release ../
     $ make -j 4
 ```
 
-To build with g++-9 installed from the package repository use `-DCMAKE_C_COMPILER=gcc-9 -DCMAKE_CXX_COMPILER=g++9` instead in the cmake command above.
+To build with g++-9 installed from the package repository use `-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++` instead in the cmake command above.
