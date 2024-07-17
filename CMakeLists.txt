@@ -140,7 +140,7 @@ function (config_without_llvm)
 endfunction ()
 
 function (config_with_llvm)
-  execute_process(COMMAND sh -c "git -C ${CMAKE_HOME_DIRECTORY}/third_party/llvm-project log -1 --format=%h"
+  execute_process(COMMAND sh -c "git -C ${CMAKE_HOME_DIRECTORY}/third_party/llvm-project log -1 --format=%H"
      RESULT_VARIABLE clang_version_status
      OUTPUT_VARIABLE CLANG_VERSION_OUTPUT)
 
@@ -149,10 +149,11 @@ function (config_with_llvm)
      message(WARNING "Could not get clang commit hash : Use clang git hash " ${CLANG_KNOWN_GIT_COMMIT_HASH})
   else()
      string(REGEX MATCH "([0-9|a-f]+)" CLANG_GIT_COMMIT_HASH ${CLANG_VERSION_OUTPUT})
-     if ("${CLANG_GIT_COMMIT_HASH}" STREQUAL ${CLANG_KNOWN_GIT_COMMIT_HASH})
+     string(SUBSTRING ${CLANG_GIT_COMMIT_HASH} 0 12 CLANG_GIT_COMMIT_HASH_12)
+     if ("${CLANG_GIT_COMMIT_HASH_12}" STREQUAL ${CLANG_KNOWN_GIT_COMMIT_HASH})
        message(STATUS "Found known git commit hash of clang (" ${CLANG_GIT_COMMIT_HASH} ") - Success")
      else()
-       message(FATAL_ERROR "Unverified git commit hash of llvm source - ${CLANG_GIT_COMMIT_HASH}. Do not modify or update third_party/llvm-project")
+       message(FATAL_ERROR "Unverified git commit hash of llvm source - ${CLANG_GIT_COMMIT_HASH_12}. Do not modify or update third_party/llvm-project")
      endif()
   endif()
 
