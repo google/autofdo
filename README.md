@@ -5,7 +5,9 @@
     $ sudo apt install libunwind-dev libgflags-dev libssl-dev libelf-dev protobuf-compiler cmake libzstd-dev clang g++
 ```
 
-## 1.1 For Ubuntu 20.04 users, the cmake version (3.16.3) is too old to build third_party/llvm, you can upgrade your cmake by following steps in https://askubuntu.com/questions/355565/how-do-i-install-the-latest-version-of-cmake-from-the-command-line
+## 1.1 For Ubuntu 20.04 users
+
+The cmake version (3.16.3) on Ubuntu 20.04 LTS is too old to build third_party/llvm, you can upgrade your cmake by following steps in https://askubuntu.com/questions/355565/how-do-i-install-the-latest-version-of-cmake-from-the-command-line
 
 ```
     $ sudo apt purge --auto-remove cmake
