@@ -31,4 +31,4 @@ The cmake version (3.16.3) on Ubuntu 20.04 LTS is too old to build third_party/l
     $ make -j 4
 ```
 
-To build with g++-9 installed from the package repository use `-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++` instead in the cmake command above.
+To build with g++ installed from the package repository use `-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++` instead in the cmake command above.
