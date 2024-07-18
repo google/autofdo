@@ -151,9 +151,6 @@ function (build_llvm)
      endif()
   endif()
 
-  # Build static binaries.
-  set (BUILD_SHARED_LIBS OFF)
-
   # Disable GFLAGS and UNWIND for glog, we do not control glog using
   # gflags, nor does call stacks used in log information. And glog
   # does not provide a way to force static link these two libraries.
@@ -374,11 +371,9 @@ function (build_llvm)
     LLVMSupport)
   add_test(NAME symbol_map_test COMMAND symbol_map_test)
 
-  # Using ".a" to force find static libraries.
-  # (https://cmake.org/cmake/help/latest/command/find_library.html)
-  find_library (LIBELF_LIBRARIES NAMES libelf.a REQUIRED)
-  find_library (LIBZ_LIBRARIES NAMES libz.a REQUIRED)
-  find_library (LIBCRYPTO_LIBRARIES NAMES libcrypto.a REQUIRED)
+  find_library (LIBELF_LIBRARIES NAMES elf REQUIRED)
+  find_library (LIBZ_LIBRARIES NAMES z REQUIRED)
+  find_library (LIBCRYPTO_LIBRARIES NAMES crypto REQUIRED)
 
   add_executable(llvm_profile_reader_test llvm_profile_reader_test.cc)
   target_link_libraries(llvm_profile_reader_test
@@ -817,6 +812,13 @@ if (${enable_tool} STREQUAL gcov)
   build_gcov()
 elseif (${enable_tool} STREQUAL llvm)
   message(STATUS "Building tool \"LLVM\" ...")
+
+  # Build static binaries.
+  set (BUILD_SHARED_LIBS OFF)
+  set (CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+  # Link static executables.
+  set (CMAKE_EXE_LINKER_FLAGS "-static")
+
   build_llvm()
 else ()
   message(FATAL_ERROR
