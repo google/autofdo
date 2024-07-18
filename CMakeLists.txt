@@ -153,6 +153,8 @@ function (build_llvm)
 
   # Build static binaries.
   set (BUILD_SHARED_LIBS OFF)
+
+  # Disable GFLAGS and UNWIND for glog.
   set (WITH_GFLAGS OFF)
   set (WITH_UNWIND OFF)
 
