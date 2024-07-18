@@ -3,6 +3,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(ABSL_PROPAGATE_CXX_STD on)
 
 project(autofdo)
+set (Protobuf_USE_STATIC_LIBS TRUE)
 
 function (execute_perf_protobuf)
 
@@ -150,6 +151,11 @@ function (build_llvm)
      endif()
   endif()
 
+  # Build static binaries.
+  set (BUILD_SHARED_LIBS OFF)
+  set (WITH_GFLAGS OFF)
+  set (WITH_UNWIND OFF)
+
   ### LLVM Configuration
   set (LLVM_INCLUDE_UTILS OFF)
   set (LLVM_INCLUDE_TESTS OFF)
@@ -162,6 +168,10 @@ function (build_llvm)
   set (LLVM_TARGETS_TO_BUILD X86 AArch64 CACHE STRING
     "Semicolon-separated list of LLVM targets to build, or \"all\".")
   set (LLVM_ENABLE_ZSTD FORCE_ON)
+  set (LLVM_USE_STATIC_ZSTD TRUE CACHE BOOL "use static zstd" FORCE)
+  set (LLVM_ENABLE_ZLIB OFF CACHE BOOL "turn off zlib" FORCE)
+  # terminfo is not needed by create_llvm_prof
+  set (LLVM_ENABLE_TERMINFO OFF CACHE BOOL "disable terminfo" FORCE)
   ###
 
   add_subdirectory(third_party/abseil)
@@ -361,8 +371,9 @@ function (build_llvm)
     LLVMSupport)
   add_test(NAME symbol_map_test COMMAND symbol_map_test)
 
-  find_library (LIBELF_LIBRARIES NAMES elf REQUIRED)
-  find_library (LIBCRYPTO_LIBRARIES NAMES crypto REQUIRED)
+  find_library (LIBELF_LIBRARIES NAMES libelf.a REQUIRED)
+  find_library (LIBZ_LIBRARIES NAMES libz.a REQUIRED)
+  find_library (LIBCRYPTO_LIBRARIES NAMES libcrypto.a REQUIRED)
 
   add_executable(llvm_profile_reader_test llvm_profile_reader_test.cc)
   target_link_libraries(llvm_profile_reader_test
@@ -779,7 +790,7 @@ function (build_llvm)
     third_party/perf_data_converter/src/quipper
     ${PROJECT_BINARY_DIR}/third_party/perf_data_converter/src/quipper)
   target_link_libraries(quipper_perf
-    perf_proto ${LIBELF_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
+    perf_proto ${LIBELF_LIBRARIES} ${LIBZ_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
 
   add_custom_command(PRE_BUILD
     OUTPUT prepare_cmds
