@@ -154,7 +154,9 @@ function (build_llvm)
   # Build static binaries.
   set (BUILD_SHARED_LIBS OFF)
 
-  # Disable GFLAGS and UNWIND for glog.
+  # Disable GFLAGS and UNWIND for glog, we do not control glog using
+  # gflags, nor does call stacks used in log information. And glog
+  # does not provide a way to force static link these two libraries.
   set (WITH_GFLAGS OFF)
   set (WITH_UNWIND OFF)
 
@@ -170,10 +172,10 @@ function (build_llvm)
   set (LLVM_TARGETS_TO_BUILD X86 AArch64 CACHE STRING
     "Semicolon-separated list of LLVM targets to build, or \"all\".")
   set (LLVM_ENABLE_ZSTD FORCE_ON)
-  set (LLVM_USE_STATIC_ZSTD TRUE CACHE BOOL "use static zstd" FORCE)
-  set (LLVM_ENABLE_ZLIB OFF CACHE BOOL "turn off zlib" FORCE)
+  set (LLVM_USE_STATIC_ZSTD TRUE CACHE BOOL "use static zstd")
+  set (LLVM_ENABLE_ZLIB OFF CACHE BOOL "enable zlib")
   # terminfo is not needed by create_llvm_prof
-  set (LLVM_ENABLE_TERMINFO OFF CACHE BOOL "disable terminfo" FORCE)
+  set (LLVM_ENABLE_TERMINFO OFF CACHE BOOL "enable terminfo")
   ###
 
   add_subdirectory(third_party/abseil)
