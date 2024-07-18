@@ -374,6 +374,8 @@ function (build_llvm)
     LLVMSupport)
   add_test(NAME symbol_map_test COMMAND symbol_map_test)
 
+  # Using ".a" to force find static libraries.
+  # (https://cmake.org/cmake/help/latest/command/find_library.html)
   find_library (LIBELF_LIBRARIES NAMES libelf.a REQUIRED)
   find_library (LIBZ_LIBRARIES NAMES libz.a REQUIRED)
   find_library (LIBCRYPTO_LIBRARIES NAMES libcrypto.a REQUIRED)
