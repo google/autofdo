@@ -20,7 +20,6 @@ The cmake version (3.16.3) on Ubuntu 20.04 LTS is too old to build third_party/l
 
 ```
     $ git clone --recursive --depth 1 https://github.com/google/autofdo.git
-    $ git checkout v0.20.1
     $ cd autofdo
     $ mkdir build
     $ cd build 
