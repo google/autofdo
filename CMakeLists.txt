@@ -173,7 +173,6 @@ function (build_llvm)
     "Semicolon-separated list of LLVM targets to build, or \"all\".")
   set (LLVM_ENABLE_ZSTD FORCE_ON)
   set (LLVM_USE_STATIC_ZSTD TRUE CACHE BOOL "use static zstd")
-  set (LLVM_ENABLE_ZLIB OFF CACHE BOOL "enable zlib")
   # terminfo is not needed by create_llvm_prof
   set (LLVM_ENABLE_TERMINFO OFF CACHE BOOL "enable terminfo")
   ###
