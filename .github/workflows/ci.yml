@@ -1,0 +1,39 @@
+name: autofdo CI
+
+on:
+  push:
+    branches: [ $default-branch ]
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+  # Manual trigger using the Actions page.
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+
+    runs-on: ubuntu-22.04-8core
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+    - name: install dependencies
+      run: sudo apt-get -y install libunwind-dev libgflags-dev libssl-dev libelf-dev protobuf-compiler libzstd-dev
+
+    - name: cmake for llvm
+      run: cmake -DENABLE_TOOL=LLVM -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -B build-llvm
+    - name: build for llvm
+      run: make -j 8 -C build-llvm
+    - name: run tests for llvm
+      run: make test -C build-llvm
+
+    - name: cmake for gcov
+      run: cmake -DENABLE_TOOL=GCOV -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc -B build-gcov
+    - name: build for gcov
+      run: make -j 8 -C build-gcov
+
