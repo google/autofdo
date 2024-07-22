@@ -11,7 +11,4 @@ Release Notes for v0.30
 * Add a workflow to create release build. by @shenhanc78 in https://github.com/google/autofdo/pull/217
 * Build full-static LLVM tools binaries by @shenhanc78 in https://github.com/google/autofdo/pull/216
 
-## New Contributors
-* @snehasish made their first contribution in https://github.com/google/autofdo/pull/213
-
 **Full Changelog**: https://github.com/google/autofdo/compare/v0.20.1...v0.30
