@@ -187,6 +187,9 @@ devtools_crosstool_autofdo::PropellerOptions CreatePropellerOptionsFromFlags() {
           .SetHttp(absl::GetFlag(FLAGS_http))
           .SetOutputModuleName(
               absl::GetFlag(FLAGS_propeller_output_module_name))
+          .SetClusterOutVersion(
+              static_cast<devtools_crosstool_autofdo::ClusterEncodingVersion>(
+                  absl::GetFlag(FLAGS_propeller_cluster_encoding_version)))
           .SetVerboseClusterOutput(
               absl::GetFlag(FLAGS_propeller_verbose_cluster_output)));
 }
