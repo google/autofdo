@@ -61,7 +61,7 @@ ABSL_FLAG(std::string, propeller_cfg_dump_dir, "",
 ABSL_FLAG(uint32_t, propeller_chain_split_threshold, 0,
           "Maximum chain length (in number of nodes) for which propeller tries "
           "splitting and remerging at every splitting position.");
-ABSL_FLAG(bool, propeller_chain_split, false,
+ABSL_FLAG(bool, propeller_chain_split, true,
           "Whether propeller is allowed to split chains before merging with "
           "other chains.");
 ABSL_FLAG(bool, propeller_verbose_cluster_output, false,
