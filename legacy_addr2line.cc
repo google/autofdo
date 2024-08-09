@@ -105,27 +105,28 @@ bool Google3Addr2line::Prepare() {
   size_t debug_info_size = 0;
   size_t debug_addr_size = 0;
   size_t debug_ranges_size = 0;
+  size_t debug_rnglists_size = 0;
   const char *debug_info_data = NULL;
   const char *debug_addr_data = NULL;
   const char *debug_ranges_data = NULL;
+  const char *debug_rnglists_data = NULL;
   bool is_rnglists_section = false;
   GetSection(sections, ".debug_info", &debug_info_data, &debug_info_size);
   if (debug_info_data == NULL)
     LOG(WARNING) << "File '" << binary_name_ << "' does not have .debug_info section.";
   GetSection(sections, ".debug_addr", &debug_addr_data, &debug_addr_size);
   GetSection(sections, ".debug_ranges", &debug_ranges_data, &debug_ranges_size);
-  if (debug_ranges_data == NULL) {
-      GetSection(sections, ".debug_rnglists", &debug_ranges_data, &debug_ranges_size);
-      if (debug_ranges_data != NULL) 
-        is_rnglists_section = true;
-      else 
-        LOG(WARNING) << "File '" << binary_name_ << "' does not have .debug_ranges nor .debug_rnglists sections.";
+  GetSection(sections, ".debug_rnglists", &debug_rnglists_data, &debug_rnglists_size);
+
+  if (debug_ranges_data == NULL && debug_rnglists_data == NULL) {
+    LOG(WARNING) << "File '" << binary_name_ << "' does not have .debug_ranges nor .debug_rnglists sections.";
   }
 
   AddressRangeList debug_ranges(debug_ranges_data,
                                 debug_ranges_size,
+                                debug_rnglists_data,
+                                debug_rnglists_size,
                                 &reader,
-                                is_rnglists_section, 
                                 debug_addr_data, 
                                 debug_addr_size);
   inline_stack_handler_ = new InlineStackHandler(

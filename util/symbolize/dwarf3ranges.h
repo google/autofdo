@@ -68,35 +68,37 @@ class AddressRangeList {
   typedef pair<uint64, uint64> Range;
   typedef vector<Range> RangeList;
   typedef std::map<uint64, RngListsData> RngDataMap;
-  AddressRangeList(const char* buffer,
-                   uint64 buffer_length,
+  AddressRangeList(const char* ranges_buffer,
+                   uint64 ranges_buffer_length,
+                   const char* rnglist_buffer,
+                   uint64 rnglist_buffer_length,
                    ByteReader* reader,
-                   bool is_rnglists_section,
                    const char* addr_buffer,
                    uint64 addr_buffer_length)
       : reader_(reader),
-        buffer_(buffer),
-        buffer_length_(buffer_length),
-        is_rnglists_section(is_rnglists_section),
+        ranges_buffer_(ranges_buffer),
+        ranges_buffer_length_(ranges_buffer_length),
+        rnglist_buffer_(rnglist_buffer),
+        rnglist_buffer_length_(rnglist_buffer_length),
         addr_buffer_(addr_buffer),
         addr_buffer_length_(addr_buffer_length),
         rngdatamap_() {
-      if (is_rnglists_section) {
+      if (rnglist_buffer != NULL) {
           ReadDwarfRngListsHeader();
       }
   }
 
   void ReadRangeList(uint64 offset, uint64 base,
-                     RangeList* output, uint64 addr_base = 0);
+                     RangeList* output, uint8 dwarf_version, uint64 addr_base = 0);
 
   // This handles the case where we read ranges with DW_FORM_sec_offset.
-  // In this case, the buffer does not have offset array. So for calculating the position, 
-  // we only add the offset to buffer_.
+  // In this case, the rnglist_buffer_ does not have offset array. So for calculating the position,
+  // we only add the offset to rnglist_buffer_.
   void ReadDwarfRngListsDirectly(uint64 offset, uint64 base,
                                  AddressRangeList::RangeList* ranges, uint64 addr_base);
 
-  // In this case DW_FORM_rnglistx, buffer_ includes offset array too.
-  // So we have to add that to the the buffer_ to be able to read the RngLists.
+  // In this case DW_FORM_rnglistx, rnglist_buffer_ includes offset array too.
+  // So we have to add that to the the rnglist_buffer_ to be able to read the RngLists.
   void ReadDwarfRngListwithOffsetArray(uint64 offset, uint64 base,
                                        AddressRangeList::RangeList* ranges, 
                                        uint64 addr_base, uint64 range_base_);
@@ -112,10 +114,6 @@ class AddressRangeList {
       result = min(result, iter->first);
     }
     return result;
-  }
-
-  bool IsRngListsSection() {
-    return is_rnglists_section;
   }
 
   uint64 GetRngListsElementOffsetByIndex(uint64 addr_base, uint64 rng_index);
@@ -136,12 +134,12 @@ class AddressRangeList {
   // The associated ByteReader that handles endianness issues for us
   ByteReader* reader_;
 
-  // buffer is the buffer for our range info
-  const char* buffer_;
-  uint64 buffer_length_;
+  const char* ranges_buffer_;
+  uint64 ranges_buffer_length_;
+  const char* rnglist_buffer_;
+  uint64 rnglist_buffer_length_;
   const char* addr_buffer_;
   uint64 addr_buffer_length_;
-  bool is_rnglists_section;
 
   // a map of addr_base_ -> RngListsData
   // If the RngList we are processing does not have offset array,
