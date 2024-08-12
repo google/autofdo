@@ -36,4 +36,6 @@ jobs:
       run: cmake -DENABLE_TOOL=GCOV -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc -B build-gcov
     - name: build for gcov
       run: make -j 8 -C build-gcov
+    - name: run tests for gcov
+      run: make test -C build-gcov
 
