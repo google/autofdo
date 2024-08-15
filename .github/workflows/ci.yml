@@ -37,5 +37,5 @@ jobs:
     - name: build for gcov
       run: make -j 8 -C build-gcov
     - name: run tests for gcov
-      run: ctest -E "symbolize"
+      run: ctest -E "symbolize" --test-dir build-gcov
 
