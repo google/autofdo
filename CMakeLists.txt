@@ -22,6 +22,10 @@ function (build_gcov)
   add_subdirectory(third_party/abseil)
   add_subdirectory(third_party/glog)
 
+  add_custom_target(exclude_extlib_tests ALL
+    COMMAND rm -f ${glog_BINARY_DIR}/CTestTestfile.cmake
+    COMMAND rm -f ${absl_BINARY_DIR}/CTestTestfile.cmake)
+
   include_directories(${CMAKE_HOME_DIRECTORY}
     third_party/glog/src
     third_party/abseil
