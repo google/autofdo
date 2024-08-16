@@ -99,7 +99,7 @@ bool InlineStackHandler::StartCompilationUnit(uint64 offset,
                                               uint8 /*address_size*/,
                                               uint8 /*offset_size*/,
                                               uint64 /*cu_length*/,
-                                              uint8 /*dwarf_version*/) {
+                                              uint8 dwarf_version) {
   CHECK(subprogram_stack_.empty());
   compilation_unit_offset_ = offset;
   compilation_unit_base_ = 0;
@@ -109,6 +109,7 @@ bool InlineStackHandler::StartCompilationUnit(uint64 offset,
     input_file_index_ = 0;
     subprograms_by_offset_maps_.push_back(new SubprogramsByOffsetMap);
   }
+  dwarf_version_ = dwarf_version;
   return true;
 }
 
@@ -348,13 +349,14 @@ void InlineStackHandler::ProcessAttributeUnsigned(
       case DW_AT_ranges: {
         CHECK_EQ(0, subprogram_stack_.back()->address_ranges()->size());
         AddressRangeList::RangeList ranges;
-        if (form == DW_FORM_sec_offset) {
-            address_ranges_->ReadRangeList(data, compilation_unit_base_, &ranges);
+
+        if (form == DW_FORM_sec_offset || form == DW_FORM_data4 || form == DW_FORM_data8) {
+          address_ranges_->ReadRangeList(data, compilation_unit_base_, &ranges, dwarf_version_);
         }
         else {
-            CHECK(form == DW_FORM_rnglistx);
-            uint64 address_ = address_ranges_->GetRngListsElementOffsetByIndex(ranges_base_, data);
-            address_ranges_->ReadDwarfRngListwithOffsetArray(address_, compilation_unit_base_, &ranges, addr_base_, ranges_base_);
+          CHECK(form == DW_FORM_rnglistx);
+          uint64 address_ = address_ranges_->GetRngListsElementOffsetByIndex(ranges_base_, data);
+          address_ranges_->ReadDwarfRngListwithOffsetArray(address_, compilation_unit_base_, &ranges, addr_base_, ranges_base_);
         }
 
         if (subprogram_stack_.size() == 1) {
@@ -440,7 +442,7 @@ void InlineStackHandler::ProcessAttributeUnsigned(
         str_offset_base_ = data;
         break;
       case DW_AT_ranges: 
-        CHECK(form == DW_FORM_sec_offset);
+        CHECK(form == DW_FORM_sec_offset || form == DW_FORM_data4 || form == DW_FORM_data8);
         FALLTHROUGH_INTENDED;
       case DW_AT_GNU_ranges_base:
       case DW_AT_rnglists_base:

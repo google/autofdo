@@ -282,6 +282,7 @@ class InlineStackHandler: public Dwarf2Handler {
   int overlap_count_;
   bool have_two_level_line_tables_;
   bool subprogram_added_by_cu_;
+  uint8 dwarf_version_;
   
   DISALLOW_COPY_AND_ASSIGN(InlineStackHandler);
 };

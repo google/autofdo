@@ -21,8 +21,12 @@ endfunction()
 function (build_gcov)
   add_subdirectory(third_party/abseil)
   add_subdirectory(third_party/glog)
+  add_subdirectory(third_party/googletest)
 
   add_custom_target(exclude_extlib_tests ALL
+    COMMAND rm -f ${gtest_BINARY_DIR}/CTestTestfile.cmake
+    COMMAND rm -f ${gmock_BINARY_DIR}/CTestTestfile.cmake
+    COMMAND rm -f ${googletest-distribution_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${glog_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${absl_BINARY_DIR}/CTestTestfile.cmake)
 
@@ -31,6 +35,8 @@ function (build_gcov)
     third_party/abseil
     third_party/perf_data_converter/src
     third_party/perf_data_converter/src/quipper
+    third_party/googletest/googletest/include
+    third_party/googletest/googlemock/include
     util
     ${PROJECT_BINARY_DIR}
     ${PROJECT_BINARY_DIR}/third_party/glog
@@ -39,16 +45,8 @@ function (build_gcov)
   find_library (LIBELF_LIBRARIES NAMES elf REQUIRED)
   find_library (LIBCRYPTO_LIBRARIES NAMES crypto REQUIRED)
 
-  add_library(create_gcov_lib OBJECT
-    create_gcov.cc
-    gcov.cc
-    instruction_map.cc
+  add_library(addr2line_lib OBJECT
     legacy_addr2line.cc
-    profile.cc
-    profile_creator.cc
-    profile_writer.cc
-    sample_reader.cc
-    symbol_map.cc
     util/symbolize/addr2line_inlinestack.cc
     util/symbolize/bytereader.cc
     util/symbolize/functioninfo.cc
@@ -56,6 +54,17 @@ function (build_gcov)
     util/symbolize/dwarf3ranges.cc
     util/symbolize/elf_reader.cc
     util/symbolize/index_helper.cc
+  )
+
+  add_library(create_gcov_lib OBJECT
+    create_gcov.cc
+    gcov.cc
+    instruction_map.cc
+    profile.cc
+    profile_creator.cc
+    profile_writer.cc
+    sample_reader.cc
+    symbol_map.cc
   )
   target_link_libraries(create_gcov_lib perf_proto)
 
@@ -94,6 +103,7 @@ function (build_gcov)
     absl::flags
     absl::flags_parse
     create_gcov_lib
+    addr2line_lib
     glog
     quipper_perf
   )
@@ -135,6 +145,24 @@ function (build_gcov)
     absl::flags_parse
     dump_gcov_lib
     glog)
+
+    add_executable(addr2line_test addr2line_test.cc)
+    target_link_libraries(addr2line_test
+      absl::base
+      gtest
+      gtest_main
+      absl::flags
+      absl::flags_parse
+      addr2line_lib
+      glog
+      quipper_perf)
+    add_test(NAME addr2line_test COMMAND addr2line_test)
+
+    add_custom_command(PRE_BUILD
+      OUTPUT prepare_cmds
+      COMMAND ln -s -f ${CMAKE_HOME_DIRECTORY}/testdata)
+    add_custom_target(prepare ALL
+      DEPENDS prepare_cmds)
 
 endfunction()
 

@@ -1017,15 +1017,17 @@ void CompilationUnit::ProcessSplitDwarf() {
         auto iter = sections.find(".debug_rnglists");
         size_t debug_ranges_size = 0;
         const char *debug_ranges_data = NULL;
+        size_t debug_rnglist_size = 0;
+        const char *debug_rnglist_data = NULL;
         if (iter != sections.end()) {
-          debug_ranges_data = iter->second.first;
-          debug_ranges_size = iter->second.second;
-          const bool is_rnglists_section = true;
+          debug_rnglist_data = iter->second.first;
+          debug_rnglist_size = iter->second.second;
           AddressRangeList *debug_ranges = 
                 new AddressRangeList(debug_ranges_data,
                                       debug_ranges_size,
+                                      debug_rnglist_data,
+                                      debug_rnglist_size,
                                       &reader,
-                                      is_rnglists_section,
                                       addr_buffer_, 
                                       addr_buffer_length_);
           InlineStackHandler *inlinestackhandler = dynamic_cast<InlineStackHandler*>(handler_);
