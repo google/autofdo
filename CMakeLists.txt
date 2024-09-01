@@ -3,7 +3,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(ABSL_PROPAGATE_CXX_STD on)
 
 project(autofdo)
-set (Protobuf_USE_STATIC_LIBS TRUE)
+
+if (NOT DEFINED BUILD_SHARED)
+  set(BUILD_SHARED FALSE)
+endif()
+
+if (NOT ${BUILD_SHARED})
+  set (Protobuf_USE_STATIC_LIBS TRUE)
+endif()
 
 function (execute_perf_protobuf)
 
@@ -201,7 +208,9 @@ function (build_llvm)
   set (LLVM_TARGETS_TO_BUILD X86 AArch64 CACHE STRING
     "Semicolon-separated list of LLVM targets to build, or \"all\".")
   set (LLVM_ENABLE_ZSTD FORCE_ON)
-  set (LLVM_USE_STATIC_ZSTD TRUE CACHE BOOL "use static zstd")
+  if (NOT ${BUILD_SHARED})
+    set (LLVM_USE_STATIC_ZSTD TRUE CACHE BOOL "use static zstd")
+  endif()
   # terminfo is not needed by create_llvm_prof
   set (LLVM_ENABLE_TERMINFO OFF CACHE BOOL "enable terminfo")
   ###
@@ -452,6 +461,8 @@ function (build_llvm)
     llvm_propeller_mock_program_cfg_builder.cc)
   target_include_directories(llvm_propeller_test_objects
     PUBLIC ${PROTOBUF_INCLUDE_DIR})
+  target_link_libraries(llvm_propeller_test_objects
+    llvm_propeller_cfg_proto)
 
   add_library(llvm_propeller_objects OBJECT
     addr2cu.cc
@@ -845,11 +856,13 @@ if (${enable_tool} STREQUAL gcov)
 elseif (${enable_tool} STREQUAL llvm)
   message(STATUS "Building tool \"LLVM\" ...")
 
-  # Build static binaries.
-  set (BUILD_SHARED_LIBS OFF)
-  set (CMAKE_FIND_LIBRARY_SUFFIXES ".a")
-  # Link static executables.
-  set (CMAKE_EXE_LINKER_FLAGS "-static")
+  if (NOT ${BUILD_SHARED})
+    # Build static binaries.
+    set (BUILD_SHARED_LIBS OFF)
+    set (CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+    # Link static executables.
+    set (CMAKE_EXE_LINKER_FLAGS "-static")
+  endif()
 
   build_llvm()
 else ()
