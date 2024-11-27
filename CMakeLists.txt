@@ -178,7 +178,7 @@ function (build_llvm)
      RESULT_VARIABLE clang_version_status
      OUTPUT_VARIABLE CLANG_VERSION_OUTPUT)
 
-  set(CLANG_KNOWN_GIT_COMMIT_HASH "e4f9175d23950ecaef32db075ed47dafe3be555c")
+  set(CLANG_KNOWN_GIT_COMMIT_HASH "9fde1a498f2dc97a737a3564cb427c6f2a7bfe6c")
   if (clang_version_status)
      message(WARNING "Could not get clang commit hash : Use clang git hash " ${CLANG_KNOWN_GIT_COMMIT_HASH})
   else()

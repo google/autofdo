@@ -79,12 +79,12 @@ void LLVMProfileBuilder::VisitTopSymbol(const std::string &name,
                                         const Symbol *node) {
   llvm::StringRef name_ref = GetNameRef(name);
   llvm::sampleprof::FunctionSamples &profile = profiles_[name_ref];
-  if (std::error_code EC =
-          llvm::MergeResult(result_, profile.addHeadSamples(node->head_count)))
+  if (std::error_code EC = llvm::mergeSampleProfErrors(
+          result_, profile.addHeadSamples(node->head_count)))
     LOG(FATAL) << "Error updating head samples for '" << name
                << "': " << EC.message();
 
-  if (std::error_code EC = llvm::MergeResult(
+  if (std::error_code EC = llvm::mergeSampleProfErrors(
           result_, profile.addTotalSamples(node->total_count)))
     LOG(FATAL) << "Error updating total samples for '" << name
                << "': " << EC.message();
@@ -118,7 +118,7 @@ void LLVMProfileBuilder::Visit(const Symbol *node) {
 
   if (level_ > 1) {
     // If this is a nested inline call, update its total count.
-    if (std::error_code EC = llvm::MergeResult(
+    if (std::error_code EC = llvm::mergeSampleProfErrors(
             result_, profile.addTotalSamples(node->total_count)))
       LOG(FATAL) << "Error updating total samples for '" << node->info.func_name
                  << "': " << EC.message();
@@ -130,7 +130,7 @@ void LLVMProfileBuilder::Visit(const Symbol *node) {
     uint32_t line = SourceInfo::GetLineNumberFromOffset(offset);
     uint32_t discriminator = SourceInfo::GetDiscriminatorFromOffset(offset);
     const auto &num_samples = pos_count.second.count;
-    if (std::error_code EC = llvm::MergeResult(
+    if (std::error_code EC = llvm::mergeSampleProfErrors(
             result_, profile.addBodySamples(line, discriminator, num_samples)))
       LOG(FATAL) << "Error updating body samples for '" << node->info.func_name
                  << "': " << EC.message();
@@ -141,7 +141,7 @@ void LLVMProfileBuilder::Visit(const Symbol *node) {
     // or more functions.
     const auto &target_map = pos_count.second.target_map;
     for (const auto &target_count : target_map) {
-      if (std::error_code EC = llvm::MergeResult(
+      if (std::error_code EC = llvm::mergeSampleProfErrors(
               result_,
               profile.addCalledTargetSamples(
                   line, discriminator,

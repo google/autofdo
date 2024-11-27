@@ -255,7 +255,7 @@ int main(int argc, char **argv) {
     // sample_profile_writer is created because resetSecLayout will reset
     // all the section flags in the extbinary profile.
     if (absl::GetFlag(FLAGS_split_layout)) {
-      sample_profile_writer->resetSecLayout(llvm::sampleprof::CtxSplitLayout);
+      sample_profile_writer->setUseCtxSplitLayout();
     }
     if (absl::GetFlag(FLAGS_use_fs_discriminator) || numFSDProfiles != 0) {
       devtools_crosstool_autofdo::SourceInfo::use_fs_discriminator = true;
