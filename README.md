@@ -1,5 +1,10 @@
 AutoFDO tools can be built on Ubuntu 20.04, 22.04 or CentOS 9, choose 1a or 1b to install prerequisites.
 
+> [!NOTE]
+> The Propeller codebase has moved to its own repository (as of
+> 2025Q1). For the most up-to-date version, see
+> [google/llvm-propeller](https://github.com/google/llvm-propeller).
+
 # 1a. Install prerequisites on Ubuntu 20.04 and 22.04
 
 ```
