@@ -153,7 +153,8 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
   int length_4bytes = 0, current_name_index = 0;
   string_index_map[std::string()] = 0;
 
-  StringTableUpdater::Update(*symbol_map_, &string_index_map);
+  FileIndexMap file_map;
+  StringTableUpdater::Update(*symbol_map_, &string_index_map, &file_map);
 
   for (auto &name_index : string_index_map) {
     name_index.second = current_name_index++;
@@ -166,6 +167,9 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
   // Writes the GCOV_TAG_AFDO_FILE_NAMES section.
   gcov_write_unsigned(GCOV_TAG_AFDO_FILE_NAMES);
   gcov_write_unsigned(length_4bytes);
+  gcov_write_unsigned (file_map.Size());
+  for (const auto &file_name : file_map.GetFileNames())
+    gcov_write_string (file_name.c_str());
   gcov_write_unsigned(string_index_map.size());
   for (const auto &[name, index] : string_index_map) {
     char *c = strdup(name.c_str());
@@ -182,6 +186,11 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
       c[len - 10] = '2';
     }
     gcov_write_string(c);
+    if (int lookup = file_map.GetFileIndex(name); lookup != -1)
+      gcov_write_unsigned (lookup);
+    else
+      gcov_write_unsigned (-1);
+
     free(c);
   }
 
@@ -352,7 +361,8 @@ class ProfileDumper : public SymbolTraverser {
 // Emit a dump of the input profile on stdout.
 void ProfileWriter::Dump() {
   StringIndexMap string_index_map;
-  StringTableUpdater::Update(*symbol_map_, &string_index_map);
+  FileIndexMap file_map;
+  StringTableUpdater::Update(*symbol_map_, &string_index_map, &file_map);
   SourceProfileLengther length(*symbol_map_);
   printf("Length of symbol map: %d\n", length.length() + 1);
   printf("Number of functions:  %d\n", length.num_functions());

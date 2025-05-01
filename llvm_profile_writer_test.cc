@@ -33,7 +33,8 @@ TEST(LlvmProfileWriterTest, ReadProfile) {
   ASSERT_TRUE(creator.ComputeProfile(&symbol_map, true));
 
   StringIndexMap name_table;
-  StringTableUpdater::Update(symbol_map, &name_table);
+  FileIndexMap file_table;
+  StringTableUpdater::Update(symbol_map, &name_table, &file_table);
 
   LLVMProfileBuilder builder(name_table);
   const auto &profiles = builder.ConvertProfiles(symbol_map);
@@ -98,7 +99,8 @@ TEST(LlvmProfileWriterTest, ConvertProfile) {
   symbol_map.AddSourceCount("foo", src2, 200, 1);
 
   StringIndexMap name_table;
-  StringTableUpdater::Update(symbol_map, &name_table);
+  FileIndexMap file_table;
+  StringTableUpdater::Update(symbol_map, &name_table, &file_table);
   LLVMProfileBuilder builder(name_table);
   const auto &profiles = builder.ConvertProfiles(symbol_map);
 // LLVM_BEFORE_SAMPLEFDO_SPLIT_CONTEXT is defined when llvm version is before
