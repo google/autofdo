@@ -58,7 +58,8 @@ class AutoFDOProfileReader : public ProfileReader {
 
   SymbolMap *symbol_map_;
   bool force_update_;
-  std::vector<std::string> names_;
+  std::vector<std::pair<std::string, int>> names_;
+  std::vector<std::string> file_names_;
 };
 
 }  // namespace devtools_crosstool_autofdo
