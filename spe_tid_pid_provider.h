@@ -41,6 +41,7 @@ class SpeTidPidProvider : public SpePidProvider {
   // TID -> (timestamp -> pid)
   absl::flat_hash_map<int, absl::btree_map<uint64_t, pid_t>> tids_to_pids_;
   quipper::PerfDataProto::TimeConvEvent time_conv_event_;
+  std::unordered_set<pid_t> pids_;
 };
 }  // namespace devtools_crosstool_autofdo
 

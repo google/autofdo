@@ -33,6 +33,7 @@ SpeTidPidProvider::SpeTidPidProvider(
       VLOG(7) << absl::StrCat("tid = ", tid, ", timestamp = ", timestamp,
                               ", pid = ", pid, "\n");
       pids.insert(std::make_pair(timestamp, pid));
+      pids_.insert(pid);
     };
 
     record(event.fork_event().pid(), event.fork_event().tid(),
@@ -73,6 +74,9 @@ absl::StatusOr<int> SpeTidPidProvider::GetPid(
   // neither are present, the context is still value-initialized and the context
   // ID is meaningless.
   if (!record.context.el1 && !record.context.el2) {
+    if (pids_.size() == 1) {
+       return *pids_.begin();
+    }
     return absl::InvalidArgumentError(
         "Cannot get PID for an SPE event with an invalid context");
   }
