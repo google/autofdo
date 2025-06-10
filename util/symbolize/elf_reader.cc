@@ -657,32 +657,32 @@ class ElfReaderImpl {
   friend class SymbolIterator<ElfArch>;
 
   // The file we're reading.
-  const string path_;
+  const string path_ {};
   // Open file descriptor for path_. Not owned by this object.
-  const int fd_;
+  const int fd_ {};
 
   // The global header of the ELF file.
-  typename ElfArch::Ehdr header_;
+  typename ElfArch::Ehdr header_ {};
 
   // The header of the first section. This may be used to supplement the ELF
   // file header.
-  typename ElfArch::Shdr first_section_header_;
+  typename ElfArch::Shdr first_section_header_ {};
 
   // Array of GetNumSections() section headers, allocated when we read
   // in the global header.
-  typename ElfArch::Shdr *section_headers_;
+  typename ElfArch::Shdr *section_headers_ {};
 
   // Array of GetNumProgramHeaders() program headers, allocated when we read
   // in the global header.
-  typename ElfArch::Phdr *program_headers_;
+  typename ElfArch::Phdr *program_headers_ {};
 
   // An array of pointers to ElfSectionReaders. Sections are
   // mmaped as they're needed and not released until this object is
   // destroyed.
-  vector<ElfSectionReader<ElfArch>*> sections_;
+  vector<ElfSectionReader<ElfArch>*> sections_ {};
 
   // True if this is a .dwp file.
-  bool is_dwp_;
+  bool is_dwp_ {};
 
   DISALLOW_EVIL_CONSTRUCTORS(ElfReaderImpl);
 };
