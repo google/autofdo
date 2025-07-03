@@ -186,7 +186,8 @@ bool LLVMProfileWriter::WriteToFile(const std::string &output_filename) {
   // Populate the symbol table. This table contains all the symbols
   // for functions found in the binary.
   StringIndexMap name_table;
-  StringTableUpdater::Update(*symbol_map_, &name_table);
+  FileIndexMap file_table;
+  StringTableUpdater::Update(*symbol_map_, &name_table, &file_table);
 
   // If the underlying llvm profile writer has not been created yet,
   // create it here.
