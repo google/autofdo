@@ -98,14 +98,17 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
 void AutoFDOProfileReader::ReadNameTable() {
   CHECK_EQ(gcov_read_unsigned(), GCOV_TAG_AFDO_FILE_NAMES);
   gcov_read_unsigned();
-  uint32_t file_name_vector_size = gcov_read_unsigned();
-  for (uint32_t i = 0; i < file_name_vector_size; i++) {
-    file_names_.push_back(gcov_read_string());
+  if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
+    uint32_t file_name_vector_size = gcov_read_unsigned();
+    for (uint32_t i = 0; i < file_name_vector_size; i++) {
+      file_names_.push_back(gcov_read_string());
+    }
   }
   uint32_t name_vector_size = gcov_read_unsigned();
   for (uint32_t i = 0; i < name_vector_size; i++) {
     const char *name = gcov_read_string();
-    uint32_t file_index = gcov_read_unsigned();
+    uint32_t file_index =
+        absl::GetFlag(FLAGS_gcov_version) >= 3 ? gcov_read_unsigned() : -1;
     names_.emplace_back(name, file_index);
   }
 }
