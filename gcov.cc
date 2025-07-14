@@ -36,7 +36,7 @@ const uint32 GCOV_TAG_AFDO_WORKING_SET = 0xaf000000;
 const uint32 GCOV_DATA_MAGIC = 0x67636461; /* "gcda" */
 const char *GCOV_ELF_SECTION_NAME = ".gnu.switches.text";
 
-#define GCOV_BLOCK_BYTE_SIZE (1 << 12)
+#define GCOV_BLOCK_BYTE_SIZE (1 << 14)
 
 struct gcov_var {
   FILE *file;
