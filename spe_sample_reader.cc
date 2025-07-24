@@ -162,6 +162,7 @@ absl::StatusOr<PerfDataReader> PerfSpeDataSampleReader::CreatePerfDataReader(
   ASSIGN_OR_RETURN(PerfDataProvider::BufferHandle perf_data,
                    FetchPerfData(profile_file));
 
+  std::set<std::string> filenames;
   std::vector<absl::string_view> match_mmap_names;
   // Only use the mmap name regex if there is no build_id.
   if (binary_content.build_id.empty()) {
@@ -174,7 +175,6 @@ absl::StatusOr<PerfDataReader> PerfSpeDataSampleReader::CreatePerfDataReader(
 
     reader.ReadFromPointer(perf_data.buffer->getBufferStart(),
                            perf_data.buffer->getBufferSize());
-    std::set<std::string> filenames;
     reader.GetFilenamesAsSet(&filenames);
     // Filter out filenames that don't match the regex.
     absl::c_copy_if(filenames, std::back_inserter(match_mmap_names),
