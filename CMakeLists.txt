@@ -26,9 +26,51 @@ function (execute_perf_protobuf)
 endfunction()
 
 function (build_gcov)
+  execute_process(COMMAND sh -c "git -C ${CMAKE_HOME_DIRECTORY}/third_party/llvm-project log -1 --format=%H"
+     RESULT_VARIABLE clang_version_status
+     OUTPUT_VARIABLE CLANG_VERSION_OUTPUT)
+
+  set(CLANG_KNOWN_GIT_COMMIT_HASH "9fde1a498f2dc97a737a3564cb427c6f2a7bfe6c")
+  if (clang_version_status)
+     message(WARNING "Could not get clang commit hash : Use clang git hash " ${CLANG_KNOWN_GIT_COMMIT_HASH})
+  else()
+     string(REGEX MATCH "([0-9|a-f]+)" CLANG_GIT_COMMIT_HASH ${CLANG_VERSION_OUTPUT})
+     if ("${CLANG_GIT_COMMIT_HASH}" STREQUAL ${CLANG_KNOWN_GIT_COMMIT_HASH})
+       message(STATUS "Found known git commit hash of clang (" ${CLANG_GIT_COMMIT_HASH} ") - Success")
+     else()
+       message(FATAL_ERROR "Unverified git commit hash of llvm source - ${CLANG_GIT_COMMIT_HASH}. Do not modify or update third_party/llvm-project")
+     endif()
+  endif()
+
+  # Disable GFLAGS and UNWIND for glog, we do not control glog using
+  # gflags, nor does call stacks used in log information. And glog
+  # does not provide a way to force static link these two libraries.
+  set (WITH_GFLAGS OFF)
+  set (WITH_UNWIND OFF)
+
+  ### LLVM Configuration
+  set (LLVM_INCLUDE_UTILS OFF)
+  set (LLVM_INCLUDE_TESTS OFF)
+  set (LLVM_INCLUDE_TOOLS OFF)
+  set (LLVM_INCLUDE_DOCS OFF)
+
+  set (LLVM_ENABLE_RTTI ON)
+  set (LLVM_ENABLE_PROJECTS clang CACHE STRING
+    "Semicolon-separated list of projects to build (${LLVM_KNOWN_PROJECTS}), or \"all\".")
+  set (LLVM_TARGETS_TO_BUILD X86 AArch64 CACHE STRING
+    "Semicolon-separated list of LLVM targets to build, or \"all\".")
+  set (LLVM_ENABLE_ZSTD FORCE_ON)
+  if (NOT ${BUILD_SHARED})
+    set (LLVM_USE_STATIC_ZSTD TRUE CACHE BOOL "use static zstd")
+  endif()
+  # terminfo is not needed by create_llvm_prof
+  set (LLVM_ENABLE_TERMINFO OFF CACHE BOOL "enable terminfo")
+  ###
+
   add_subdirectory(third_party/abseil)
   add_subdirectory(third_party/glog)
   add_subdirectory(third_party/googletest)
+  add_subdirectory(third_party/llvm-project/llvm)
 
   add_custom_target(exclude_extlib_tests ALL
     COMMAND rm -f ${gtest_BINARY_DIR}/CTestTestfile.cmake
@@ -37,6 +79,7 @@ function (build_gcov)
     COMMAND rm -f ${glog_BINARY_DIR}/CTestTestfile.cmake
     COMMAND rm -f ${absl_BINARY_DIR}/CTestTestfile.cmake)
 
+  add_definitions(-DHAVE_LLVM=1)
   include_directories(${CMAKE_HOME_DIRECTORY}
     third_party/glog/src
     third_party/abseil
@@ -45,6 +88,8 @@ function (build_gcov)
     third_party/googletest/googletest/include
     third_party/googletest/googlemock/include
     util
+    third_party/llvm-project/llvm/include
+    ${PROJECT_BINARY_DIR}/third_party/llvm-project/llvm/include
     ${PROJECT_BINARY_DIR}
     ${PROJECT_BINARY_DIR}/third_party/glog
     ${PROJECT_BINARY_DIR}/third_party/perf_data_converter/src/quipper)
@@ -52,8 +97,35 @@ function (build_gcov)
   find_library (LIBELF_LIBRARIES NAMES elf REQUIRED)
   find_library (LIBCRYPTO_LIBRARIES NAMES crypto REQUIRED)
 
+  add_library(mini_disassembler OBJECT mini_disassembler.cc)
+  target_link_libraries(mini_disassembler
+    absl::status
+    absl::statusor
+    LLVMMC
+    LLVMObject
+    LLVMSupport
+    LLVMTargetParser)
+  foreach (tgt ${LLVM_TARGETS_TO_BUILD})
+    set( tp ${PROJECT_BINARY_DIR}/third_party/llvm-project/llvm/lib/libLLVM${tgt})
+    foreach (tool AsmParser Desc Disassembler Info)
+      target_link_libraries(mini_disassembler LLVM${tgt}${tool})
+    endforeach()
+  endforeach()
+
+  add_library(symbol_map OBJECT
+    source_info.cc
+    symbol_map.cc
+    util/symbolize/elf_reader.cc)
+
+  target_include_directories(symbol_map PUBLIC util)
+  target_link_libraries(symbol_map
+    perf_proto
+    glog
+    LLVMCore
+    LLVMProfileData)
+
   add_library(addr2line_lib OBJECT
-    legacy_addr2line.cc
+    addr2line.cc
     util/symbolize/addr2line_inlinestack.cc
     util/symbolize/bytereader.cc
     util/symbolize/functioninfo.cc
@@ -62,24 +134,58 @@ function (build_gcov)
     util/symbolize/elf_reader.cc
     util/symbolize/index_helper.cc
   )
+  target_include_directories(addr2line_lib PUBLIC util)
+  target_link_libraries(addr2line_lib
+    mini_disassembler
+    perf_proto
+    glog
+    LLVMCore
+    LLVMProfileData)
+
+
+  add_library(sample_reader OBJECT sample_reader.cc spe_sample_reader.cc)
+  target_include_directories(sample_reader PUBLIC util)
+  target_link_libraries(sample_reader absl::base quipper_perf perf_proto LLVMObject)
+
+  add_library(perfdata_reader OBJECT perfdata_reader.cc)
+  target_include_directories(perfdata_reader
+    PUBLIC ${PROJECT_BINARY_DIR}/third_party/perf_data_converter/src/quipper)
+  target_link_libraries(perfdata_reader PUBLIC perf_proto)
+
+  add_library(profile_creator OBJECT
+    instruction_map.cc
+    profile.cc
+    profile_creator.cc
+    profile_symbol_list.cc)
+  target_include_directories(profile_creator PUBLIC
+    third_party/perf_data_converter/src
+    third_party/perf_data_converter/src/quipper
+    util/regexp)
+  target_link_libraries(profile_creator
+    sample_reader)
 
   add_library(create_gcov_lib OBJECT
     create_gcov.cc
     gcov.cc
-    instruction_map.cc
-    profile.cc
-    profile_creator.cc
-    profile_writer.cc
-    sample_reader.cc
+    symbol_map.cc
+    source_info.cc
     symbol_map.cc
   )
-  target_link_libraries(create_gcov_lib perf_proto)
+  target_include_directories(create_gcov_lib PUBLIC util)
+  target_link_libraries(create_gcov_lib
+    perf_proto
+    glog
+    LLVMCore
+    LLVMProfileData)
 
   add_library(quipper_perf OBJECT
     third_party/perf_data_converter/src/quipper/address_mapper.cc
+    third_party/perf_data_converter/src/quipper/arm_spe_decoder.cc
     third_party/perf_data_converter/src/quipper/base/logging.cc
     third_party/perf_data_converter/src/quipper/binary_data_utils.cc
     third_party/perf_data_converter/src/quipper/binary_data_utils.cc
+    third_party/perf_data_converter/src/quipper/buffer_reader.cc
+    third_party/perf_data_converter/src/quipper/buffer_writer.cc
     third_party/perf_data_converter/src/quipper/buffer_reader.cc
     third_party/perf_data_converter/src/quipper/buffer_writer.cc
     third_party/perf_data_converter/src/quipper/compat/log_level.cc
@@ -105,14 +211,101 @@ function (build_gcov)
   target_link_libraries(quipper_perf
     perf_proto ${Protobuf_LIBRARIES} ${LIBELF_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
 
+  add_library(status_provider OBJECT
+    status_provider.cc
+    status_consumer_registry.cc)
+
+  add_library(llvm_propeller_objects OBJECT
+    addr2cu.cc
+    branch_aggregation.cc
+    branch_frequencies_autofdo_sample.cc
+    frequencies_branch_aggregator.cc
+    lbr_branch_aggregator.cc
+    llvm_propeller_binary_address_mapper.cc
+    llvm_propeller_binary_content.cc
+    llvm_propeller_cfg.cc
+    llvm_propeller_chain_cluster_builder.cc
+    llvm_propeller_code_layout.cc
+    llvm_propeller_code_layout_scorer.cc
+    llvm_propeller_formatting.cc
+    llvm_propeller_node_chain.cc
+    llvm_propeller_node_chain_assembly.cc
+    llvm_propeller_node_chain_builder.cc
+    llvm_propeller_perf_branch_frequencies_aggregator.cc
+    llvm_propeller_perf_lbr_aggregator.cc
+    llvm_propeller_profile_computer.cc
+    llvm_propeller_profile_writer.cc
+    llvm_propeller_program_cfg.cc
+    llvm_propeller_program_cfg_builder.cc
+    llvm_propeller_program_cfg_proto_builder.cc
+    llvm_propeller_statistics.cc
+    llvm_propeller_telemetry_reporter.cc
+    spe_tid_pid_provider.cc)
+  target_link_libraries(llvm_propeller_objects
+    absl::statusor
+    llvm_propeller_options
+    llvm_propeller_cfg_proto
+    status_provider
+    LLVMSupport
+    LLVMCore
+    LLVMAnalysis
+    LLVMDebugInfoDWARF)
+
+  add_library(llvm_propeller_options_proto llvm_propeller_options.proto)
+  target_link_libraries(llvm_propeller_options_proto PUBLIC
+    protobuf::libprotobuf)
+  protobuf_generate(
+    TARGET llvm_propeller_options_proto
+    LANGUAGE cpp)
+  add_library(llvm_propeller_options STATIC llvm_propeller_options_builder.cc)
+  target_link_libraries(llvm_propeller_options quipper_perf llvm_propeller_options_proto)
+
+  add_library(llvm_propeller_cfg_proto llvm_propeller_cfg.proto)
+  protobuf_generate(TARGET llvm_propeller_cfg_proto LANGUAGE cpp)
+  target_link_libraries(llvm_propeller_cfg_proto PUBLIC protobuf::libprotobuf)
+
+  add_library(llvm_propeller_perf_data_provider OBJECT
+    llvm_propeller_file_perf_data_provider.cc)
+
+  add_library(llvm_profile_writer OBJECT
+    llvm_profile_writer.cc
+    profile_writer.cc)
+  add_dependencies(llvm_profile_writer quipper_perf)
+  target_include_directories(llvm_profile_writer PUBLIC
+    third_party/perf_data_converter/src
+    third_party/perf_data_converter/src/quipper
+    util/regexp
+    ${PROTOBUF_INCLUDE_DIR}
+    ${PROJECT_BINARY_DIR}/third_party/perf_data_converter/src/quipper)
+  target_link_libraries(llvm_profile_writer
+    absl::flat_hash_map
+    absl::node_hash_set
+    absl::flags
+    symbol_map)
+  add_library(llvm_profile_reader OBJECT llvm_profile_reader.cc)
+  target_link_libraries(llvm_profile_reader
+    absl::flat_hash_map
+    absl::node_hash_set
+    symbol_map)
+  add_library(profile_reader OBJECT profile_reader.cc)
+  add_dependencies(profile_reader LLVMCore)
+
   add_executable(create_gcov)
   target_link_libraries(create_gcov
+    mini_disassembler
     absl::flags
     absl::flags_parse
     create_gcov_lib
     addr2line_lib
     glog
     quipper_perf
+    sample_reader
+    perfdata_reader
+    profile_creator
+    llvm_propeller_perf_data_provider
+    llvm_profile_reader
+    llvm_profile_writer
+    llvm_propeller_objects
   )
 
   add_library(profile_merger_lib OBJECT
@@ -121,33 +314,53 @@ function (build_gcov)
     profile_merger.cc
     profile.cc
     profile_reader.cc
-    profile_writer.cc
     symbol_map.cc
     util/symbolize/elf_reader.cc
+    source_info.cc
   )
-  target_link_libraries(profile_merger_lib perf_proto)
+  target_include_directories(profile_merger_lib PUBLIC util)
+  target_link_libraries(profile_merger_lib
+    perf_proto
+    glog
+    LLVMCore
+    LLVMProfileData)
 
   add_executable(profile_merger)
   target_link_libraries(profile_merger
     absl::flags
     absl::flags_parse
     profile_merger_lib
+    mini_disassembler
+    sample_reader
+    perfdata_reader
+    llvm_propeller_perf_data_provider
+    llvm_profile_reader
+    llvm_profile_writer
+    llvm_propeller_objects
     glog
     quipper_perf
+    LLVMCore
   )
 
   add_library(dump_gcov_lib OBJECT
     dump_gcov.cc
+    source_info.cc
     gcov.cc
     instruction_map.cc
     profile.cc
     profile_reader.cc
     symbol_map.cc
     util/symbolize/elf_reader.cc)
-  target_link_libraries(dump_gcov_lib perf_proto)
+  target_include_directories(dump_gcov_lib PUBLIC util)
+  target_link_libraries(dump_gcov_lib
+    perf_proto
+    LLVMCore
+  )
+
 
   add_executable(dump_gcov)
   target_link_libraries(dump_gcov
+    mini_disassembler
     absl::flags
     absl::flags_parse
     dump_gcov_lib
@@ -155,6 +368,7 @@ function (build_gcov)
 
     add_executable(addr2line_test addr2line_test.cc)
     target_link_libraries(addr2line_test
+      LLVMDebugInfoDWARF
       absl::base
       gtest
       gtest_main
