@@ -203,7 +203,8 @@ class StringTableUpdater: public SymbolTraverser {
 
  protected:
   void Visit(const Symbol *node) override {
-    file_map_->AddFileName(node->info.func_name, node->info.file_name);
+    if (node->info.func_name != nullptr)
+      file_map_->AddFileName(node->info.func_name, node->info.file_name);
     for (const auto &pos_count : node->pos_counts) {
       for (const auto &name_count : pos_count.second.target_map) {
         (*map_)[name_count.first] = 0;
