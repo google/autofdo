@@ -38,11 +38,17 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
   } else {
     head_count = 0;
   }
-  const char *name = names_.at(gcov_read_unsigned()).c_str();
+  uint32_t name_index = gcov_read_unsigned();
+  const char *name = names_.at(name_index).first.c_str();
+  uint32_t file_index = names_.at(name_index).second;
+  const std::string &file_name =
+      file_index < file_names_.size() ? file_names_.at(file_index) : "";
   uint32_t num_pos_counts = gcov_read_unsigned();
   uint32_t num_callsites = gcov_read_unsigned();
   if (stack.size() == 0) {
     symbol_map_->AddSymbol(name);
+    const_cast<Symbol *>(symbol_map_->GetSymbolByName(name))->info.file_name =
+        file_name;
     if (!force_update_ && symbol_map_->GetSymbolByName(name)->total_count > 0) {
       update = false;
     }
@@ -55,6 +61,7 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
     uint32_t num_targets = gcov_read_unsigned();
     uint64_t count = gcov_read_counter();
     SourceInfo info(name, "", "", 0, offset >> 16, offset & 0xffff);
+    info.file_name = file_name;
     SourceStack new_stack;
     new_stack.push_back(info);
     new_stack.insert(new_stack.end(), stack.begin(), stack.end());
@@ -65,7 +72,7 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
     for (int j = 0; j < num_targets; j++) {
       // Only indirect call target histogram is supported now.
       CHECK_EQ(gcov_read_unsigned(), HIST_TYPE_INDIR_CALL_TOPN);
-      const std::string &target_name = names_.at(gcov_read_counter());
+      const std::string &target_name = names_.at(gcov_read_counter()).first;
       uint64_t target_count = gcov_read_counter();
       if (force_update_ || update) {
         symbol_map_->AddIndirectCallTarget(
@@ -80,6 +87,7 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
     //   lower 16 bits: discriminator.
     uint32_t offset = gcov_read_unsigned();
     SourceInfo info(name, "", "", 0, offset >> 16, offset & 0xffff);
+    info.file_name = file_name;
     SourceStack new_stack;
     new_stack.push_back(info);
     new_stack.insert(new_stack.end(), stack.begin(), stack.end());
@@ -90,9 +98,18 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
 void AutoFDOProfileReader::ReadNameTable() {
   CHECK_EQ(gcov_read_unsigned(), GCOV_TAG_AFDO_FILE_NAMES);
   gcov_read_unsigned();
+  if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
+    uint32_t file_name_vector_size = gcov_read_unsigned();
+    for (uint32_t i = 0; i < file_name_vector_size; i++) {
+      file_names_.push_back(gcov_read_string());
+    }
+  }
   uint32_t name_vector_size = gcov_read_unsigned();
   for (uint32_t i = 0; i < name_vector_size; i++) {
-    names_.push_back(gcov_read_string());
+    const char *name = gcov_read_string();
+    uint32_t file_index =
+        absl::GetFlag(FLAGS_gcov_version) >= 3 ? gcov_read_unsigned() : -1;
+    names_.emplace_back(name, file_index);
   }
 }
 

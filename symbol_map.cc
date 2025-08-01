@@ -634,7 +634,8 @@ void Symbol::DumpBody(int indent, bool for_analysis) const {
     GetSortedTargetCountPairs(ret->second.target_map, &target_count_pairs);
     for (const auto &target_count : target_count_pairs) {
       const std::string printed_name = getPrintName(target_count.first.data());
-      absl::PrintF("  %s:%u", printed_name, target_count.second);
+      absl::PrintF("  %s:%s:%u", printed_name, info.file_name,
+                   target_count.second);
     }
     printf("\n");
   }
@@ -655,10 +656,10 @@ void Symbol::DumpBody(int indent, bool for_analysis) const {
 void Symbol::Dump(int indent) const {
   const std::string printed_name = getPrintName(info.func_name);
   if (indent == 0) {
-    absl::PrintF("%s total:%u head:%u\n", printed_name, total_count,
-                 head_count);
+    absl::PrintF("%s:%s total:%u head:%u\n", printed_name, info.file_name,
+                 total_count, head_count);
   } else {
-    absl::PrintF("%s total:%u\n", printed_name, total_count);
+    absl::PrintF("%s:%s total:%u\n", printed_name, info.file_name, total_count);
   }
   DumpBody(indent, false);
 }
@@ -667,12 +668,12 @@ void Symbol::DumpForAnalysis(int indent) const {
   const std::string printed_name = getPrintName(info.func_name);
   if (indent == 0) {
     absl::PrintF(
-        "%s total:%u head:%u total_incl:%u total_incl_per_iter:%.2f\n",
-        printed_name, total_count, head_count, total_count_incl,
+        "%s:%s total:%u head:%u total_incl:%u total_incl_per_iter:%.2f\n",
+        printed_name, info.file_name, total_count, head_count, total_count_incl,
         head_count ? static_cast<float>(total_count_incl) / head_count : 0);
   } else {
-    absl::PrintF("%s total:%u total_incl:%u\n", printed_name, total_count,
-                 total_count_incl);
+    absl::PrintF("%s:%s total:%u total_incl:%u\n", printed_name, info.file_name,
+                 total_count, total_count_incl);
   }
   DumpBody(indent, true);
 }
