@@ -26,6 +26,10 @@
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/str_format.h"
 
+#include "llvm_profile_writer.h"
+#include "llvm/ProfileData/SampleProf.h"
+#include "llvm/ProfileData/ProfileCommon.h"
+
 // sizeof(gcov_unsigned_t)
 #define SIZEOF_UNSIGNED 4
 
@@ -154,6 +158,29 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
   string_index_map[std::string()] = 0;
 
   StringTableUpdater::Update(*symbol_map_, &string_index_map);
+
+  LLVMProfileBuilder builder(string_index_map);
+  const llvm::SampleProfileMap &profiles =
+      builder.ConvertProfiles(*symbol_map_);
+  llvm::SampleProfileSummaryBuilder summary_builder(llvm::ProfileSummaryBuilder::DefaultCutoffs);
+  std::unique_ptr<llvm::ProfileSummary> summary = summary_builder.computeSummaryForProfiles(profiles);
+
+  // Write out the GCOV_TAG_AFDO_SUMMARY section.
+  if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
+    assert(summary != nullptr);
+    gcov_write_unsigned(GCOV_TAG_AFDO_SUMMARY);
+    gcov_write_counter(summary->getTotalCount());
+    gcov_write_counter(summary->getMaxCount());
+    gcov_write_counter(summary->getMaxFunctionCount());
+    gcov_write_counter(summary->getNumCounts());
+    gcov_write_counter(summary->getNumFunctions());
+    gcov_write_counter(summary->getDetailedSummary().size());
+    for (const auto &detailed_summary : summary->getDetailedSummary()) {
+      gcov_write_unsigned(detailed_summary.Cutoff);
+      gcov_write_counter(detailed_summary.MinCount);
+      gcov_write_counter(detailed_summary.NumCounts);
+    }
+  }
 
   for (auto &name_index : string_index_map) {
     name_index.second = current_name_index++;
