@@ -54,6 +54,7 @@ class AutoFDOProfileReader : public ProfileReader {
   // where symbol_map was built purely from profile thus alias symbol info
   // is not available. In that case, we should always update the symbol.
   void ReadSymbolProfile(const SourceStack &stack, bool update);
+  void ReadSummary();
   void ReadNameTable();
 
   SymbolMap *symbol_map_;

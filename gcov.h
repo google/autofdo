@@ -20,6 +20,7 @@
 #include "base/common.h"
 #include "third_party/abseil/absl/flags/declare.h"
 
+extern const uint32 GCOV_TAG_AFDO_SUMMARY;
 extern const uint32 GCOV_TAG_AFDO_FILE_NAMES;
 extern const uint32 GCOV_TAG_AFDO_FUNCTION;
 extern const uint32 GCOV_TAG_MODULE_GROUPING;
