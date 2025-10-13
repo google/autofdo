@@ -31,6 +31,7 @@
 #include "third_party/abseil/absl/memory/memory.h"
 #include "third_party/abseil/absl/strings/string_view.h"
 #include "util/symbolize/elf_reader.h"
+#include "simple_spe_sample_reader.h"
 
 #if defined(HAVE_LLVM)
 #include "llvm_profile_writer.h"
@@ -185,16 +186,15 @@ bool ProfileCreator::ReadSample(absl::string_view input_profile_name,
     }
 
     if (profiler == "perf_spe") {
-      #if defined (HAVE_LLVM)
+#if defined(HAVE_LLVM)
       sample_reader_ = new PerfSpeDataSampleReader(
           absl::GetFlag(FLAGS_disassemble_arm_branches)
               ? PerfSpeDataSampleReader::BranchIdStrategy::kDisassembly
               : PerfSpeDataSampleReader::BranchIdStrategy::kSampling,
           input_profile_name, focus_binary_re, binary_);
-      #else
-      LOG(ERROR) << "Unsupported profiler type: " << profiler;
-      return false;
-      #endif // HAVE_LLVM
+#else
+      sample_reader_ = new SimpleSpeDataSampleReader(input_profile_name, binary_);
+#endif
     } else {
       sample_reader_ = new PerfDataSampleReader(input_profile_name,
                                                 focus_binary_re, build_id);
