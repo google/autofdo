@@ -71,12 +71,14 @@ function (build_gcov)
     profile_creator.cc
     profile_writer.cc
     sample_reader.cc
+    simple_spe_sample_reader.cc
     symbol_map.cc
   )
   target_link_libraries(create_gcov_lib perf_proto)
 
   add_library(quipper_perf OBJECT
     third_party/perf_data_converter/src/quipper/address_mapper.cc
+    third_party/perf_data_converter/src/quipper/arm_spe_decoder.cc
     third_party/perf_data_converter/src/quipper/base/logging.cc
     third_party/perf_data_converter/src/quipper/binary_data_utils.cc
     third_party/perf_data_converter/src/quipper/binary_data_utils.cc
