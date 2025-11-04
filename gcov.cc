@@ -149,7 +149,7 @@ void gcov_write_string(const char *string) {
 
   if (string) {
     length = strlen(string);
-    if (absl::GetFlag(FLAGS_gcov_version) == 2) {
+    if (absl::GetFlag(FLAGS_gcov_version) >= 2) {
       // Length includes the terminating 0 and is saved in bytes.
       alloc = length + 1;
       char *byte_buffer = gcov_write_bytes(4 + alloc);
@@ -229,7 +229,7 @@ const char * gcov_read_string(void) {
     return 0;
   }
 
-  if (absl::GetFlag(FLAGS_gcov_version) == 2) {
+  if (absl::GetFlag(FLAGS_gcov_version) >= 2) {
     return gcov_read_bytes (length);
   }
   else {

@@ -149,19 +149,66 @@ class SymbolTraverser {
 
 typedef std::map<std::string, int> StringIndexMap;
 
+class FileIndexMap {
+  std::vector<std::string> file_names_;
+  std::unordered_map<std::string, uint32_t> name_map_;
+  std::unordered_map<std::string, uint32_t> file_map_;
+
+ public:
+  int GetFileIndex(const std::string &symbol_name) {
+    if (auto it = name_map_.find(symbol_name); it != name_map_.end())
+      return it->second;
+    else
+      return -1;
+  }
+
+  std::string_view GetFileName(const std::string &symbol_name) {
+    if (auto it = name_map_.find(symbol_name); it != name_map_.end())
+      return file_names_[it->second];
+    else
+      return "";
+  }
+
+  void AddFileName(const std::string &symbol_name,
+                   const std::string &file_name) {
+    if (auto it = file_map_.find(file_name); it != file_map_.end())
+      name_map_[symbol_name] = it->second;
+    else {
+      file_names_.emplace_back(file_name);
+      file_map_[file_names_.back()] = file_names_.size() - 1;
+      name_map_[symbol_name] = file_names_.size() - 1;
+    }
+  }
+
+  size_t Size() const {
+    return file_names_.size();
+  }
+
+  const std::vector<std::string> &GetFileNames() const {
+    return file_names_;
+  }
+};
+
 class StringTableUpdater: public SymbolTraverser {
  public:
   // This type is neither copyable nor movable.
   StringTableUpdater(const StringTableUpdater &) = delete;
   StringTableUpdater &operator=(const StringTableUpdater &) = delete;
 
-  static void Update(const SymbolMap &symbol_map, StringIndexMap *map) {
-    StringTableUpdater updater(map);
+  static void Update(const SymbolMap &symbol_map, StringIndexMap *map,
+                     FileIndexMap *file_map) {
+    StringTableUpdater updater(map, file_map);
     updater.Start(symbol_map);
   }
 
  protected:
   void Visit(const Symbol *node) override {
+    if (node->info.func_name != nullptr)
+      file_map_->AddFileName(node->info.func_name,
+                             node->info.dir_name != ""
+                                 ? node->info.dir_name + "/" +
+                                       node->info.file_name
+                                 : node->info.file_name);
     for (const auto &pos_count : node->pos_counts) {
       for (const auto &name_count : pos_count.second.target_map) {
         (*map_)[name_count.first] = 0;
@@ -178,8 +225,10 @@ class StringTableUpdater: public SymbolTraverser {
   }
 
  private:
-  explicit StringTableUpdater(StringIndexMap *map) : map_(map) {}
-  StringIndexMap *map_;
+   explicit StringTableUpdater(StringIndexMap *map, FileIndexMap *file_map)
+       : map_(map), file_map_(file_map) {}
+   StringIndexMap *map_;
+   FileIndexMap *file_map_;
 };
 
 }  // namespace devtools_crosstool_autofdo
