@@ -182,6 +182,68 @@ class StringTableUpdater: public SymbolTraverser {
   StringIndexMap *map_;
 };
 
+class ProfileSummaryInformation {
+public:
+  static constexpr std::array<uint32_t, 16> default_cutoffs = {
+      10000,  100000, 200000, 300000, 400000, 500000, 600000, 700000,
+      800000, 900000, 950000, 990000, 999000, 999900, 999990, 999999};
+
+  // The detailed summary is a histogram-based calculation of the minimum
+  // execution count required to belong to a certain set of percentile of
+  // counts.
+  struct DetailedSummary {
+    // The percentile that this represents (multiplied by 1,000,000).
+    uint32_t cutoff_{};
+    // The minimum execution count required to belong to this percentile.
+    uint64_t min_count_{};
+    // The number of samples which belong to this percentile.
+    uint64_t num_counts_{};
+  };
+
+  // The sum of execution counts of all samples.
+  uint64_t total_count_{};
+  // The maximum individual count.
+  uint64_t max_count_{};
+  // The maximum head count across all functions.
+  uint64_t max_function_count_{};
+  // The number of lines that have samples.
+  uint64_t num_counts_{};
+  // The number of functions that have samples.
+  uint64_t num_functions_{};
+  // The percentile threshold information.
+  std::vector<DetailedSummary> detailed_summaries_{};
+};
+
+class ProfileSummaryComputer : public SymbolTraverser {
+public:
+  // This type is neither copyable nor movable.
+  ProfileSummaryComputer(const ProfileSummaryComputer &) = delete;
+  ProfileSummaryComputer &operator=(const ProfileSummaryComputer &) = delete;
+
+  ProfileSummaryComputer();
+  ProfileSummaryComputer(std::vector<uint32_t> cutoffs);
+
+  static ProfileSummaryInformation Compute(const SymbolMap &symbol_map,
+                                           std::vector<uint32_t> cutoffs) {
+    ProfileSummaryComputer computer(std::move(cutoffs));
+    computer.Start(symbol_map);
+    computer.ComputeDetailedSummary();
+    return std::move(computer.info_);
+  }
+
+protected:
+  void VisitTopSymbol(const std::string &name, const Symbol *node) override;
+  void Visit(const Symbol *node) override;
+
+private:
+  ProfileSummaryInformation info_{};
+  // Sorted map of frequencies - used to compute the histogram.
+  std::map<uint64_t, uint32_t, std::greater<uint64_t>> count_frequencies_;
+  std::vector<uint32_t> cutoffs_;
+
+  void ComputeDetailedSummary();
+};
+
 }  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_PROFILE_WRITER_H_

@@ -26,10 +26,6 @@
 #include "third_party/abseil/absl/flags/flag.h"
 #include "third_party/abseil/absl/strings/str_format.h"
 
-#include "llvm_profile_writer.h"
-#include "llvm/ProfileData/SampleProf.h"
-#include "llvm/ProfileData/ProfileCommon.h"
-
 // sizeof(gcov_unsigned_t)
 #define SIZEOF_UNSIGNED 4
 
@@ -159,26 +155,24 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
 
   StringTableUpdater::Update(*symbol_map_, &string_index_map);
 
-  LLVMProfileBuilder builder(string_index_map);
-  const llvm::SampleProfileMap &profiles =
-      builder.ConvertProfiles(*symbol_map_);
-  llvm::SampleProfileSummaryBuilder summary_builder(llvm::ProfileSummaryBuilder::DefaultCutoffs);
-  std::unique_ptr<llvm::ProfileSummary> summary = summary_builder.computeSummaryForProfiles(profiles);
+  ProfileSummaryInformation info = ProfileSummaryComputer::Compute(
+      *symbol_map_, {std::begin(ProfileSummaryInformation::default_cutoffs),
+                     std::end(ProfileSummaryInformation::default_cutoffs)});
 
   // Write out the GCOV_TAG_AFDO_SUMMARY section.
   if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
     assert(summary != nullptr);
     gcov_write_unsigned(GCOV_TAG_AFDO_SUMMARY);
-    gcov_write_counter(summary->getTotalCount());
-    gcov_write_counter(summary->getMaxCount());
-    gcov_write_counter(summary->getMaxFunctionCount());
-    gcov_write_counter(summary->getNumCounts());
-    gcov_write_counter(summary->getNumFunctions());
-    gcov_write_counter(summary->getDetailedSummary().size());
-    for (const auto &detailed_summary : summary->getDetailedSummary()) {
-      gcov_write_unsigned(detailed_summary.Cutoff);
-      gcov_write_counter(detailed_summary.MinCount);
-      gcov_write_counter(detailed_summary.NumCounts);
+    gcov_write_counter(info.total_count_);
+    gcov_write_counter(info.max_count_);
+    gcov_write_counter(info.max_function_count_);
+    gcov_write_counter(info.num_counts_);
+    gcov_write_counter(info.num_functions_);
+    gcov_write_counter(info.detailed_summaries_.size());
+    for (const auto &detailed_summary : info.detailed_summaries_) {
+      gcov_write_unsigned(detailed_summary.cutoff_);
+      gcov_write_counter(detailed_summary.min_count_);
+      gcov_write_counter(detailed_summary.num_counts_);
     }
   }
 
@@ -252,6 +246,64 @@ bool AutoFDOProfileWriter::WriteToFile(const std::string &output_filename) {
     return false;
   }
   return true;
+}
+
+ProfileSummaryComputer::ProfileSummaryComputer()
+    : cutoffs_{std::begin(ProfileSummaryInformation::default_cutoffs),
+               std::end(ProfileSummaryInformation::default_cutoffs)} {}
+
+ProfileSummaryComputer::ProfileSummaryComputer(std::vector<uint32_t> cutoffs)
+    : cutoffs_{std::move(cutoffs)} {}
+
+void ProfileSummaryComputer::VisitTopSymbol(const std::string &name,
+                                            const Symbol *node) {
+  info_.num_functions_++;
+  info_.max_function_count_ =
+      std::max(info_.max_function_count_, node->head_count);
+}
+
+void ProfileSummaryComputer::Visit(const Symbol *node) {
+  // There is a slight difference against the values computed by
+  // SampleProfileSummaryBuilder/LLVMProfileBuilder as it represents
+  // lineno:discriminator pairs as 16:32 bits. This causes line numbers >=
+  // UINT16_MAX to be counted incorrectly (see GetLineNumberFromOffset in
+  // source_info.h) as they collide with line numbers < UINT16_MAX. This issue
+  // is completely avoided here by just not using the offset info at all.
+  for (auto &pos_count : node->pos_counts) {
+    uint64_t count = pos_count.second.count;
+    info_.total_count_ += count;
+    info_.max_count_ = std::max(info_.max_count_, count);
+    info_.num_counts_++;
+    count_frequencies_[count]++;
+  }
+}
+
+void ProfileSummaryComputer::ComputeDetailedSummary() {
+  auto iter = count_frequencies_.begin();
+  auto end = count_frequencies_.end();
+
+  uint32_t counts_seen = 0;
+  uint64_t curr_sum = 0;
+  uint64_t count = 0;
+
+  for (const uint32_t cutoff : cutoffs_) {
+    assert(cutoff <= 999'999);
+    constexpr int scale = 1'000'000;
+    using uint128_t = unsigned __int128;
+    uint128_t desired_count = info_.total_count_;
+    desired_count = desired_count * uint128_t(cutoff);
+    desired_count = desired_count / uint128_t(scale);
+    assert(desired_count <= info_.total_count_);
+    while (curr_sum < desired_count && iter != end) {
+      count = iter->first;
+      uint32_t freq = iter->second;
+      curr_sum += (count * freq);
+      counts_seen += freq;
+      iter++;
+    }
+    assert(curr_sum >= desired_count);
+    info_.detailed_summaries_.push_back({cutoff, count, counts_seen});
+  }
 }
 
 // Debugging support.  ProfileDumper emits a detailed dump of the contents
