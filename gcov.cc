@@ -29,6 +29,7 @@
 ABSL_FLAG(uint64_t, gcov_version, 0x3430372a,
               "Gcov version number.");
 
+const uint32 GCOV_TAG_AFDO_SUMMARY = 0xa8000000;
 const uint32 GCOV_TAG_AFDO_FILE_NAMES = 0xaa000000;
 const uint32 GCOV_TAG_AFDO_FUNCTION = 0xac000000;
 const uint32 GCOV_TAG_MODULE_GROUPING = 0xae000000;
@@ -149,7 +150,7 @@ void gcov_write_string(const char *string) {
 
   if (string) {
     length = strlen(string);
-    if (absl::GetFlag(FLAGS_gcov_version) == 2) {
+    if (absl::GetFlag(FLAGS_gcov_version) >= 2) {
       // Length includes the terminating 0 and is saved in bytes.
       alloc = length + 1;
       char *byte_buffer = gcov_write_bytes(4 + alloc);
@@ -229,7 +230,7 @@ const char * gcov_read_string(void) {
     return 0;
   }
 
-  if (absl::GetFlag(FLAGS_gcov_version) == 2) {
+  if (absl::GetFlag(FLAGS_gcov_version) >= 2) {
     return gcov_read_bytes (length);
   }
   else {

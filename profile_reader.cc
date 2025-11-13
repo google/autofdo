@@ -87,6 +87,23 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
   }
 }
 
+void AutoFDOProfileReader::ReadSummary() {
+  if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
+    CHECK_EQ(gcov_read_unsigned(), GCOV_TAG_AFDO_SUMMARY);
+    gcov_read_counter(); // Total count
+    gcov_read_counter(); // Max count
+    gcov_read_counter(); // Max function count
+    gcov_read_counter(); // Num counts
+    gcov_read_counter(); // Num functions
+    unsigned num = gcov_read_counter();
+    for (unsigned i = 0; i < num; i++) {
+      gcov_read_unsigned(); // Cutoff
+      gcov_read_counter();  // Min count
+      gcov_read_counter();  // Num cutoffs
+    }
+  }
+}
+
 void AutoFDOProfileReader::ReadNameTable() {
   CHECK_EQ(gcov_read_unsigned(), GCOV_TAG_AFDO_FILE_NAMES);
   gcov_read_unsigned();
@@ -115,6 +132,7 @@ bool AutoFDOProfileReader::ReadFromFile(const std::string &output_file) {
   absl::SetFlag(&FLAGS_gcov_version, gcov_read_unsigned());
   gcov_read_unsigned();
 
+  ReadSummary();
   ReadNameTable();
   ReadFunctionProfile();
   ReadModuleGroup();
