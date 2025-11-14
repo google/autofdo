@@ -56,6 +56,10 @@ ABSL_FLAG(bool, demangle_symbol_names, false,
 ABSL_FLAG(bool, use_discriminator_encoding, false,
           "Tell the symbol map that the discriminator encoding is enabled in "
           "the profile.");
+ABSL_FLAG(bool, use_two_pass_aggregation, false,
+          "GCOV-only (gcov_version>=3, non-LLVM): pass 1 MAX per "
+          "(line, base, copy_id); pass 2 SUM after stripping copy_id in "
+          "ProfileCreator before write.");
 ABSL_FLAG(bool, use_discriminator_multiply_factor, true,
           "Tell the symbol map whether to use discriminator multiply factors.");
 #if defined(HAVE_LLVM)
@@ -162,6 +166,43 @@ void Symbol::Merge(const Symbol *other) {
   }
 }
 
+void Symbol::CollapseCopyIDs() {
+  // Pass 2: Strip copy_id from discriminators and SUM counts
+  // Aggregates across different copy_ids to get total execution count
+
+  PositionCountMap new_pos_counts;
+
+  for (const auto &pos_count : pos_counts) {
+    uint64_t old_offset = pos_count.first;
+
+    // Extract line and discriminator using helpers
+    uint32_t line = SourceInfo::GetLineNumberFromOffset(old_offset);
+    uint32_t discriminator = SourceInfo::GetDiscriminatorFromOffset(old_offset);
+
+    // Strip copy_id and multiplicity, keep only base discriminator
+#if defined(HAVE_LLVM)
+    uint32_t base = llvm::DILocation::getBaseDiscriminatorFromDiscriminator(
+        discriminator);
+#else
+    uint32_t base = GetBaseDiscriminator(discriminator);
+#endif
+
+    // Create new offset with only base discriminator
+    uint64_t new_offset = SourceInfo::GenerateOffset(line, base);
+
+    // SUM counts from different copy_ids
+    new_pos_counts[new_offset] += pos_count.second;
+  }
+
+  pos_counts = std::move(new_pos_counts);
+
+  // Recursively collapse copy_ids in all callsites
+  for (auto &callsite_symbol : callsites) {
+    if (callsite_symbol.second) {
+      callsite_symbol.second->CollapseCopyIDs();
+    }
+  }
+}
 
 void Symbol::EstimateHeadCount() {
   if (head_count != 0) return;
@@ -336,6 +377,15 @@ void SymbolMap::ElideSuffixesAndMerge() {
     ret.first->second->Merge(sym);
     for (auto &n_s : map_) {
       if (n_s.second == sym) n_s.second = ret.first->second;
+    }
+  }
+}
+
+void SymbolMap::CollapseCopyIDs() {
+  // Pass 2: Collapse copy_ids for all symbols
+  for (auto &name_symbol : map_) {
+    if (name_symbol.second) {
+      name_symbol.second->CollapseCopyIDs();
     }
   }
 }
@@ -564,10 +614,26 @@ void SymbolMap::AddSourceCount(absl::string_view symbol_name,
   if (!symbol) return;
   bool need_conversion = (data_source == PERFDATA || data_source == AFDOPROTO);
   if (need_conversion && src[0].HasInvalidInfo()) return;
-  uint64_t offset = src[0].Offset(use_discriminator_encoding);
   // If it is to convert perf data or afdoproto to afdo profile, select the
   // MAX count if there are multiple records mapping to the same offset.
   // If it is just to read afdo profile, merge those counts.
+
+  // Two-pass aggregation for discriminator encoding:
+  // Pass 1 (here): MAX per (line, base, copy_id) - keep copy_id in offset
+  // Pass 2 (before write): SUM across copy_ids - strip copy_id
+  bool use_two_pass = absl::GetFlag(FLAGS_use_two_pass_aggregation);
+
+  // Offset calculation: keep copy_id only for two-pass aggregation
+  uint64_t offset;
+  if (use_two_pass) {
+    // Pass 1: Keep copy_id for MAX aggregation per copy
+    offset = src[0].OffsetWithCopyID();
+  } else {
+    // Profile reading: strip copy_id
+    offset = src[0].Offset(use_discriminator_encoding);
+  }
+
+  // Aggregation method: MAX for raw data conversion, SUM for profile merging
   if (need_conversion) {
     if (count > symbol->pos_counts[offset].count) {
       symbol->pos_counts[offset].count = count;
@@ -584,13 +650,21 @@ bool SymbolMap::AddIndirectCallTarget(absl::string_view symbol_name,
                                       DataSource data_source) {
   bool use_discriminator_encoding =
       absl::GetFlag(FLAGS_use_discriminator_encoding);
+  bool use_two_pass = absl::GetFlag(FLAGS_use_two_pass_aggregation);
   Symbol *symbol = TraverseInlineStack(symbol_name, src, 0, data_source);
   if (!symbol) return false;
   if ((data_source == PERFDATA || data_source == AFDOPROTO) &&
       src[0].HasInvalidInfo())
     return false;
-  symbol->pos_counts[src[0].Offset(use_discriminator_encoding)]
-      .target_map[GetOriginalName(target)] = count;
+
+  uint64_t offset;
+  if (use_two_pass) {
+    offset = src[0].OffsetWithCopyID();  // Keep copy_id during Pass 1
+  } else {
+    offset = src[0].Offset(use_discriminator_encoding);  // Strip copy_id
+  }
+
+  symbol->pos_counts[offset].target_map[GetOriginalName(target)] = count;
   return true;
 }
 
