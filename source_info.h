@@ -11,6 +11,9 @@
 #include "base/macros.h"
 #if defined(HAVE_LLVM)
 #include "llvm/IR/DebugInfoMetadata.h"
+#else
+// Include discriminator encoding utilities only when LLVM is not available
+#include "gcov_discriminator_encoding.h"
 #endif
 
 namespace devtools_crosstool_autofdo {
@@ -49,7 +52,11 @@ struct SourceInfo {
                    discriminator)
              : discriminator));
 #else
-    return (static_cast<uint64_t>(line - start_line) << 32) | discriminator;
+    // Profile stores only base discriminator (bits 0-7).
+    uint32_t disc = use_discriminator_encoding 
+                    ? GetBaseDiscriminator(discriminator)
+                    : discriminator;
+    return (static_cast<uint64_t>(line - start_line) << 32) | disc;
 #endif
   }
 
@@ -59,7 +66,9 @@ struct SourceInfo {
     return llvm::DILocation::getDuplicationFactorFromDiscriminator(
         discriminator);
 #else
-    return 1;
+    // Only extract multiplicity if discriminator is non-zero
+    if (discriminator == 0) return 1;
+    return GetMultiplicity(discriminator);
 #endif
   }
 
@@ -78,6 +87,11 @@ struct SourceInfo {
   // Return the compressed offset value (from uint64_t to uint32_t).
   static constexpr uint32_t GenerateCompressedOffset(uint64_t Offset) {
     return static_cast<uint32_t>((Offset >> 16) | (Offset & 0xffff));
+  }
+  
+  // Return the full 64-bit offset for 32-bit hierarchical discriminators.
+  static constexpr uint64_t GenerateFullOffset(uint64_t Offset) {
+    return Offset;
   }
 
   // Return the line number from the offset.
