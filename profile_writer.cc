@@ -257,6 +257,11 @@ bool AutoFDOProfileWriter::WriteToFile(const std::string &output_filename) {
   if (absl::GetFlag(FLAGS_debug_dump))
     Dump();
 
+  // Pass 2: Collapse copy_ids before writing (SUM aggregation)
+  if (absl::GetFlag(FLAGS_use_two_pass_aggregation)) {
+    symbol_map_->CollapseCopyIDs();
+  }
+
   if (!WriteHeader(output_filename)) {
     return false;
   }

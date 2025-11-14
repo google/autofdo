@@ -18,22 +18,22 @@ class SymbolMap;
 
 class ProfileWriter {
  public:
-  explicit ProfileWriter(const SymbolMap *symbol_map)
+  explicit ProfileWriter(SymbolMap *symbol_map)
       : symbol_map_(symbol_map) {}
   explicit ProfileWriter() : symbol_map_(nullptr) {}
   virtual ~ProfileWriter() {}
 
   virtual bool WriteToFile(const std::string &output_file) = 0;
-  void setSymbolMap(const SymbolMap *symbol_map) { symbol_map_ = symbol_map; }
+  void setSymbolMap(SymbolMap *symbol_map) { symbol_map_ = symbol_map; }
   void Dump();
 
  protected:
-  const SymbolMap *symbol_map_;
+  SymbolMap *symbol_map_;
 };
 
 class AutoFDOProfileWriter : public ProfileWriter {
  public:
-  explicit AutoFDOProfileWriter(const SymbolMap *symbol_map,
+  explicit AutoFDOProfileWriter(SymbolMap *symbol_map,
                                 uint32_t gcov_version)
       : ProfileWriter(symbol_map), gcov_version_(gcov_version) {}
   explicit AutoFDOProfileWriter(uint32_t gcov_version)
