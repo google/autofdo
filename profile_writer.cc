@@ -156,13 +156,12 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
   FileIndexMap file_map;
   StringTableUpdater::Update(*symbol_map_, &string_index_map, &file_map);
 
-  ProfileSummaryInformation info = ProfileSummaryComputer::Compute(
-      *symbol_map_, {std::begin(ProfileSummaryInformation::default_cutoffs),
-                     std::end(ProfileSummaryInformation::default_cutoffs)});
-
   // Write out the GCOV_TAG_AFDO_SUMMARY section.
   if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
     assert(summary != nullptr);
+    ProfileSummaryInformation info = ProfileSummaryComputer::Compute(
+        *symbol_map_, {std::begin(ProfileSummaryInformation::default_cutoffs),
+                       std::end(ProfileSummaryInformation::default_cutoffs)});
     gcov_write_unsigned(GCOV_TAG_AFDO_SUMMARY);
     gcov_write_counter(info.total_count_);
     gcov_write_counter(info.max_count_);

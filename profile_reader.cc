@@ -107,7 +107,7 @@ void AutoFDOProfileReader::ReadSummary() {
     for (unsigned i = 0; i < num; i++) {
       gcov_read_unsigned(); // Cutoff
       gcov_read_counter();  // Min count
-      gcov_read_counter();  // Num cutoffs
+      gcov_read_counter();  // Num counts >= min count
     }
   }
 }
