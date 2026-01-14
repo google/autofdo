@@ -216,13 +216,15 @@ void Google3Addr2line::GetInlineStack(uint64_t address,
     if (start_line == 0)
       start_line = declaration->callsite_line();
     comp_dir = subprog->comp_directory();
-    if (comp_dir == 0)
+    if (comp_dir == 0) {
       comp_dir = inline_stack_handler_->GetAbstractOrigin(subprog)->comp_directory();
+    }
   }
 
   std::filesystem::path dir_name = LI.file.first;
-  if (!dir_name.is_absolute() && comp_dir != nullptr)
+  if (!dir_name.is_absolute() && comp_dir != nullptr) {
     dir_name = comp_dir / dir_name;
+  }
 
   stack->push_back(SourceInfo(function_name,
                               dir_name,
@@ -244,10 +246,11 @@ void Google3Addr2line::GetInlineStack(uint64_t address,
 
     dir_name = subprog->callsite_directory();
     if (!dir_name.is_absolute()) {
-      if (subprog->comp_directory())
+      if (subprog->comp_directory()) {
         dir_name = subprog->comp_directory() / dir_name;
-      else if (const char *abstract_comp = inline_stack_handler_->GetAbstractOrigin(subprog)->comp_directory())
+      } else if (const char *abstract_comp = inline_stack_handler_->GetAbstractOrigin(subprog)->comp_directory()) {
         dir_name = abstract_comp / dir_name;
+      }
     }
 
     stack->push_back(SourceInfo(

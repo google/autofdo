@@ -149,9 +149,15 @@ class SymbolTraverser {
 
 typedef std::map<std::string, int> StringIndexMap;
 
+// Store a mapping from function names back to file names (with faster lookup
+// using file_map_ -> file_names_). The ordering of file_names_ is not stable,
+// it can vary across invocations depending on the order of symbol traversal.
 class FileIndexMap {
+  // The de-duplicated list of file names found in the program.
   std::vector<std::string> file_names_;
+  // The map from function name string to an index in file_names_.
   std::unordered_map<std::string, uint32_t> name_map_;
+  // The map from file name string to an index in file_names_.
   std::unordered_map<std::string, uint32_t> file_map_;
 
  public:
@@ -169,11 +175,13 @@ class FileIndexMap {
       return "";
   }
 
+  // Add a new function name -> file name mapping. This de-duplicates the file
+  // names by re-assigning the same index if the file name already exists.
   void AddFileName(const std::string &symbol_name,
                    const std::string &file_name) {
-    if (auto it = file_map_.find(file_name); it != file_map_.end())
+    if (auto it = file_map_.find(file_name); it != file_map_.end()) {
       name_map_[symbol_name] = it->second;
-    else {
+    } else {
       file_names_.emplace_back(file_name);
       file_map_[file_names_.back()] = file_names_.size() - 1;
       name_map_[symbol_name] = file_names_.size() - 1;
@@ -204,12 +212,13 @@ class StringTableUpdater: public SymbolTraverser {
  protected:
   void Visit(const Symbol *node) override {
     if (node->info.func_name != nullptr) {
-      if (node->info.dir_name != "")
+      if (node->info.dir_name != "") {
         file_map_->AddFileName(node->info.func_name,
                                std::filesystem::path(node->info.dir_name) /
                                    node->info.file_name);
-      else
+      } else {
         file_map_->AddFileName(node->info.func_name, node->info.file_name);
+      }
     }
     for (const auto &pos_count : node->pos_counts) {
       for (const auto &name_count : pos_count.second.target_map) {

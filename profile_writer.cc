@@ -170,8 +170,9 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
   // File names in the profile are a feature of GCOV version 3.
   if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
     gcov_write_unsigned(file_map.Size());
-    for (const auto &file_name : file_map.GetFileNames())
+    for (const auto &file_name : file_map.GetFileNames()) {
       gcov_write_string(file_name.c_str());
+    }
   }
   gcov_write_unsigned(string_index_map.size());
   for (const auto &[name, index] : string_index_map) {
@@ -190,10 +191,11 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
     }
     gcov_write_string(c);
     if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
-      if (int lookup = file_map.GetFileIndex(name); lookup != -1)
+      if (int lookup = file_map.GetFileIndex(name); lookup != -1) {
         gcov_write_unsigned(lookup);
-      else
+      } else {
         gcov_write_unsigned(-1);
+      }
     }
 
     free(c);
