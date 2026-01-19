@@ -167,6 +167,19 @@ function (build_gcov)
       quipper_perf)
     add_test(NAME addr2line_test COMMAND addr2line_test)
 
+    add_executable(summary_calculation_test
+      summary_calculation_test.cc
+      gcov.cc
+      profile_writer.cc
+      symbol_map.cc)
+    target_link_libraries(summary_calculation_test
+      gtest
+      gtest_main
+      absl::flags
+      addr2line_lib
+      glog)
+    add_test(NAME summary_calculation_test COMMAND summary_calculation_test)
+
     add_custom_command(PRE_BUILD
       OUTPUT prepare_cmds
       COMMAND ln -s -f ${CMAKE_HOME_DIRECTORY}/testdata)
