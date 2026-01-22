@@ -12,18 +12,24 @@
 
 namespace devtools_crosstool_autofdo {
 
+class ProfileSummaryInformation;
 class SymbolMap;
 
 class AutoFDOProfileReader : public ProfileReader {
  public:
   // None of the args are owned by this class.
   explicit AutoFDOProfileReader(SymbolMap *symbol_map, bool force_update)
-      : symbol_map_(symbol_map), force_update_(force_update) {}
+      : symbol_map_(symbol_map), force_update_(force_update), summary_info_(nullptr) {}
 
   explicit AutoFDOProfileReader()
-      : symbol_map_(nullptr), force_update_(false) {}
+      : symbol_map_(nullptr), force_update_(false), summary_info_(nullptr) {}
+
+  ~AutoFDOProfileReader();
 
   bool ReadFromFile(const std::string &output_file) override;
+
+  // Get the summary from the profile, if it was read in.
+  ProfileSummaryInformation *GetSummaryInformation() const;
 
  private:
   void ReadWorkingSet();
@@ -54,11 +60,13 @@ class AutoFDOProfileReader : public ProfileReader {
   // where symbol_map was built purely from profile thus alias symbol info
   // is not available. In that case, we should always update the symbol.
   void ReadSymbolProfile(const SourceStack &stack, bool update);
+  // Read in the summary information. This requires at least GCOV version 3.
   void ReadSummary();
   void ReadNameTable();
 
   SymbolMap *symbol_map_;
   bool force_update_;
+  ProfileSummaryInformation *summary_info_;
   std::vector<std::pair<std::string, int>> names_;
   std::vector<std::string> file_names_;
 };

@@ -308,6 +308,8 @@ void ProfileSummaryComputer::ComputeDetailedSummary() {
     uint128_t desired_count = info_.total_count_;
     desired_count = desired_count * uint128_t(cutoff);
     desired_count = desired_count / uint128_t(scale);
+    // This should never fail as cutoff is always <= scale, so
+    // (info_.total_count_ * (cutoff / scale)) is always <= info_.total_count_.
     assert(desired_count <= info_.total_count_);
     while (curr_sum < desired_count && iter != end) {
       count = iter->first;
@@ -316,6 +318,11 @@ void ProfileSummaryComputer::ComputeDetailedSummary() {
       counts_seen += freq;
       iter++;
     }
+    // curr_sum is the cumulative sum of frequencies, of which
+    // info_.total_count_ is the maximum value (as computed in
+    // ProfileSummaryComputer::Visit). Thus, this assertion will only fail if
+    // desired_count > info_.total_count_ and the maximum value that curr_sum
+    // can sum to is lesser than it.
     assert(curr_sum >= desired_count);
     info_.detailed_summaries_.push_back({cutoff, count, counts_seen});
   }

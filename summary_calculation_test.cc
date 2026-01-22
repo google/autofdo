@@ -1,17 +1,17 @@
 #include <array>
 #include <string>
 
+#include "profile_reader.h"
 #include "profile_writer.h"
 #include "symbol_map.h"
 #include "gtest/gtest.h"
 
 using namespace devtools_crosstool_autofdo;
 
-TEST(SummaryCalculationTest, SummaryCalculator) {
-  std::string binary = ::testing::SrcDir() + "/testdata/test.binary";
+namespace {
 
+void InitializeSymbolMap(SymbolMap &symbol_map) {
   // Taken from SymbolMapTest::TestEntryCount
-  SymbolMap symbol_map(binary);
   symbol_map.AddSymbol("foo");
   symbol_map.AddSymbolEntryCount("foo", 200);
 
@@ -63,11 +63,30 @@ TEST(SummaryCalculationTest, SummaryCalculator) {
       {"boo", "", "", 0, 55, 0},
   };
   symbol_map.AddSourceCount("boo", boo_stack3, 150, 2);
+}
 
-  ProfileSummaryInformation info = ProfileSummaryComputer::Compute(
-      symbol_map, {std::begin(ProfileSummaryInformation::default_cutoffs),
-                   std::end(ProfileSummaryInformation::default_cutoffs)});
+// clang-format off
+std::array<std::tuple<int, int, int>, 16> ExpectedPercentiles = {
+  std::tuple<int, int, int>{10000, 450, 1},
+  {100000, 450, 1},
+  {200000, 450, 1},
+  {300000, 450, 1},
+  {400000, 450, 1},
+  {500000, 300, 2},
+  {600000, 300, 2},
+  {700000, 300, 2},
+  {800000, 150, 3},
+  {900000, 150, 3},
+  {950000, 100, 4},
+  {990000, 100, 4},
+  {999000, 100, 4},
+  {999900, 100, 4},
+  {999990, 100, 4},
+  {999999, 100, 4},
+};
+// clang-format on
 
+void VerifySummaryInformation(ProfileSummaryInformation &info) {
   EXPECT_EQ(info.total_count_, 1000);
   EXPECT_EQ(info.max_count_, 450);
   EXPECT_EQ(info.max_function_count_, 300);
@@ -75,28 +94,79 @@ TEST(SummaryCalculationTest, SummaryCalculator) {
   EXPECT_EQ(info.num_functions_, 2);
   EXPECT_EQ(info.detailed_summaries_.size(), 16);
 
-  std::array<std::tuple<int, int, int>, 16> expected_percentiles = {
-    std::tuple<int, int, int>{10000, 450, 1},
-    {100000, 450, 1},
-    {200000, 450, 1},
-    {300000, 450, 1},
-    {400000, 450, 1},
-    {500000, 300, 2},
-    {600000, 300, 2},
-    {700000, 300, 2},
-    {800000, 150, 3},
-    {900000, 150, 3},
-    {950000, 100, 4},
-    {990000, 100, 4},
-    {999000, 100, 4},
-    {999900, 100, 4},
-    {999990, 100, 4},
-    {999999, 100, 4},
-  };
-
   for (int i = 0; i < 16; i++) {
-    EXPECT_EQ(info.detailed_summaries_[i].cutoff_, std::get<0>(expected_percentiles[i]));
-    EXPECT_EQ(info.detailed_summaries_[i].min_count_, std::get<1>(expected_percentiles[i]));
-    EXPECT_EQ(info.detailed_summaries_[i].num_counts_, std::get<2>(expected_percentiles[i]));
+    EXPECT_EQ(info.detailed_summaries_[i].cutoff_,
+              std::get<0>(ExpectedPercentiles[i]));
+    EXPECT_EQ(info.detailed_summaries_[i].min_count_,
+              std::get<1>(ExpectedPercentiles[i]));
+    EXPECT_EQ(info.detailed_summaries_[i].num_counts_,
+              std::get<2>(ExpectedPercentiles[i]));
   }
 }
+
+TEST(ProfileSummaryCalculator, SummaryCalculationTest) {
+  std::string binary = ::testing::SrcDir() + "/testdata/test.binary";
+
+  SymbolMap symbol_map(binary);
+  InitializeSymbolMap(symbol_map);
+
+  ProfileSummaryInformation info = ProfileSummaryComputer::Compute(
+      symbol_map, {std::begin(ProfileSummaryInformation::default_cutoffs),
+                   std::end(ProfileSummaryInformation::default_cutoffs)});
+
+  // Verify that the summary was calculated correctly.
+  VerifySummaryInformation(info);
+}
+
+TEST(ProfileSummaryCalculator, SummaryReadWriteTest) {
+  std::string binary = ::testing::SrcDir() + "/testdata/test.binary";
+
+  SymbolMap symbol_map_1(binary);
+  InitializeSymbolMap(symbol_map_1);
+
+  char template_name[] = "summary_read_test.XXXXXX";
+  const char *name = mktemp(template_name);
+  ASSERT_NE(name, nullptr);
+
+  // Write out the summary information.
+  AutoFDOProfileWriter writer(&symbol_map_1, 3);
+  writer.WriteToFile(name);
+
+  // Read the summary information back in.
+  SymbolMap symbol_map_2;
+  AutoFDOProfileReader reader(&symbol_map_2, false);
+  reader.ReadFromFile(name);
+
+  // Re-calculate the summary that was written out.
+  ProfileSummaryInformation info_1 = ProfileSummaryComputer::Compute(
+      symbol_map_1, {std::begin(ProfileSummaryInformation::default_cutoffs),
+                     std::end(ProfileSummaryInformation::default_cutoffs)});
+  // Verify that this was calculated correctly.
+  VerifySummaryInformation(info_1);
+
+  // Get the summary that was read back in.
+  ProfileSummaryInformation *info_2 = reader.GetSummaryInformation();
+  ASSERT_NE(info_2, nullptr);
+
+  // Make sure the summary that was written out is the same as that which is
+  // read back in.
+  EXPECT_EQ(info_1.total_count_, info_2->total_count_);
+  EXPECT_EQ(info_1.max_count_, info_2->max_count_);
+  EXPECT_EQ(info_1.max_function_count_, info_2->max_function_count_);
+  EXPECT_EQ(info_1.num_counts_, info_2->num_counts_);
+  EXPECT_EQ(info_1.num_functions_, info_2->num_functions_);
+  EXPECT_EQ(info_1.detailed_summaries_.size(),
+            info_2->detailed_summaries_.size());
+  for (int i = 0; i < info_1.detailed_summaries_.size(); i++) {
+    EXPECT_EQ(info_1.detailed_summaries_[i].cutoff_,
+              info_2->detailed_summaries_[i].cutoff_);
+    EXPECT_EQ(info_1.detailed_summaries_[i].min_count_,
+              info_2->detailed_summaries_[i].min_count_);
+    EXPECT_EQ(info_1.detailed_summaries_[i].num_counts_,
+              info_2->detailed_summaries_[i].num_counts_);
+  }
+
+  remove(name);
+}
+
+} // namespace

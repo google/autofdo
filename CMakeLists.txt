@@ -170,6 +170,7 @@ function (build_gcov)
     add_executable(summary_calculation_test
       summary_calculation_test.cc
       gcov.cc
+      profile_reader.cc
       profile_writer.cc
       symbol_map.cc)
     target_link_libraries(summary_calculation_test

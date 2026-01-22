@@ -7,10 +7,16 @@
 #include "base/logging.h"
 #include "addr2line.h"
 #include "gcov.h"
+#include "profile_writer.h"
 #include "symbol_map.h"
 #include "third_party/abseil/absl/flags/flag.h"
 
 namespace devtools_crosstool_autofdo {
+AutoFDOProfileReader::~AutoFDOProfileReader() {
+  if (summary_info_) {
+    delete summary_info_;
+  }
+}
 
 void AutoFDOProfileReader::ReadModuleGroup() {
   CHECK_EQ(gcov_read_unsigned(), GCOV_TAG_MODULE_GROUPING);
@@ -97,18 +103,21 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
 
 void AutoFDOProfileReader::ReadSummary() {
   if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
+    ProfileSummaryInformation info;
     CHECK_EQ(gcov_read_unsigned(), GCOV_TAG_AFDO_SUMMARY);
-    gcov_read_counter(); // Total count
-    gcov_read_counter(); // Max count
-    gcov_read_counter(); // Max function count
-    gcov_read_counter(); // Num counts
-    gcov_read_counter(); // Num functions
+    info.total_count_ = gcov_read_counter(); // Total count
+    info.max_count_ = gcov_read_counter(); // Max count
+    info.max_function_count_ = gcov_read_counter(); // Max function count
+    info.num_counts_ = gcov_read_counter(); // Num counts
+    info.num_functions_ = gcov_read_counter(); // Num functions
     unsigned num = gcov_read_counter();
+    info.detailed_summaries_.resize(num);
     for (unsigned i = 0; i < num; i++) {
-      gcov_read_unsigned(); // Cutoff
-      gcov_read_counter();  // Min count
-      gcov_read_counter();  // Num counts >= min count
+      info.detailed_summaries_[i].cutoff_ = gcov_read_unsigned(); // Cutoff
+      info.detailed_summaries_[i].min_count_ = gcov_read_counter();  // Min count
+      info.detailed_summaries_[i].num_counts_ = gcov_read_counter();  // Num counts >= min count
     }
+    summary_info_ = new ProfileSummaryInformation(info);
   }
 }
 
@@ -159,4 +168,9 @@ bool AutoFDOProfileReader::ReadFromFile(const std::string &output_file) {
 
   return true;
 }
+
+ProfileSummaryInformation *AutoFDOProfileReader::GetSummaryInformation() const {
+  return summary_info_;
+}
+
 }  // namespace devtools_crosstool_autofdo

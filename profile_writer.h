@@ -301,6 +301,13 @@ private:
   std::map<uint64_t, uint32_t, std::greater<uint64_t>> count_frequencies_;
   std::vector<uint32_t> cutoffs_;
 
+  // Compute the percentile information. This is done using a histogram based on 
+  // (execution count, number of such counts) pairs, where a percentile
+  // represents the minimum execution count required to belong to that
+  // percentile.
+  //
+  // This is adapted from the LLVM implementation in
+  // ProfileSummaryBuilder::computeDetailedSummary (ProfileSummaryBuilder.cpp).
   void ComputeDetailedSummary();
 };
 
