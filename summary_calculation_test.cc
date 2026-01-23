@@ -4,11 +4,13 @@
 #include "profile_reader.h"
 #include "profile_writer.h"
 #include "symbol_map.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 using namespace devtools_crosstool_autofdo;
 
 namespace {
+using ::testing::Eq;
 
 void InitializeSymbolMap(SymbolMap &symbol_map) {
   // Taken from SymbolMapTest::TestEntryCount
@@ -150,22 +152,7 @@ TEST(ProfileSummaryCalculator, SummaryReadWriteTest) {
 
   // Make sure the summary that was written out is the same as that which is
   // read back in.
-  EXPECT_EQ(info_1.total_count_, info_2->total_count_);
-  EXPECT_EQ(info_1.max_count_, info_2->max_count_);
-  EXPECT_EQ(info_1.max_function_count_, info_2->max_function_count_);
-  EXPECT_EQ(info_1.num_counts_, info_2->num_counts_);
-  EXPECT_EQ(info_1.num_functions_, info_2->num_functions_);
-  EXPECT_EQ(info_1.detailed_summaries_.size(),
-            info_2->detailed_summaries_.size());
-  for (int i = 0; i < info_1.detailed_summaries_.size(); i++) {
-    EXPECT_EQ(info_1.detailed_summaries_[i].cutoff_,
-              info_2->detailed_summaries_[i].cutoff_);
-    EXPECT_EQ(info_1.detailed_summaries_[i].min_count_,
-              info_2->detailed_summaries_[i].min_count_);
-    EXPECT_EQ(info_1.detailed_summaries_[i].num_counts_,
-              info_2->detailed_summaries_[i].num_counts_);
-  }
-
+  EXPECT_THAT(info_1, Eq(*info_2));
   remove(name);
 }
 

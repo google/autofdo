@@ -242,8 +242,7 @@ class StringTableUpdater: public SymbolTraverser {
    FileIndexMap *file_map_;
 };
 
-class ProfileSummaryInformation {
-public:
+struct ProfileSummaryInformation {
   static constexpr std::array<uint32_t, 16> default_cutoffs = {
       10000,  100000, 200000, 300000, 400000, 500000, 600000, 700000,
       800000, 900000, 950000, 990000, 999000, 999900, 999990, 999999};
@@ -258,6 +257,8 @@ public:
     uint64_t min_count_{};
     // The number of samples which belong to this percentile.
     uint64_t num_counts_{};
+
+    bool operator==(const DetailedSummary &other) const;
   };
 
   // The sum of execution counts of all samples.
@@ -272,6 +273,8 @@ public:
   uint64_t num_functions_{};
   // The percentile threshold information.
   std::vector<DetailedSummary> detailed_summaries_{};
+
+  bool operator==(const ProfileSummaryInformation &other) const;
 };
 
 class ProfileSummaryComputer : public SymbolTraverser {

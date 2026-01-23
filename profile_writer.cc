@@ -263,6 +263,24 @@ bool AutoFDOProfileWriter::WriteToFile(const std::string &output_filename) {
   return true;
 }
 
+bool ProfileSummaryInformation::operator==(
+    const ProfileSummaryInformation &other) const {
+  return total_count_ == other.total_count_
+      && max_count_ == other.max_count_
+      && max_function_count_ == other.max_function_count_
+      && num_counts_ == other.num_counts_
+      && num_functions_ == other.num_functions_
+      && std::equal(detailed_summaries_.begin(), detailed_summaries_.end(),
+                    other.detailed_summaries_.begin());
+}
+
+bool ProfileSummaryInformation::DetailedSummary::operator==(
+    const ProfileSummaryInformation::DetailedSummary &other) const {
+  return cutoff_ == other.cutoff_
+      && min_count_ == other.min_count_
+      && num_counts_ == other.num_counts_;
+}
+
 ProfileSummaryComputer::ProfileSummaryComputer()
     : cutoffs_{std::begin(ProfileSummaryInformation::default_cutoffs),
                std::end(ProfileSummaryInformation::default_cutoffs)} {}

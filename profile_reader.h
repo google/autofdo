@@ -12,7 +12,7 @@
 
 namespace devtools_crosstool_autofdo {
 
-class ProfileSummaryInformation;
+struct ProfileSummaryInformation;
 class SymbolMap;
 
 class AutoFDOProfileReader : public ProfileReader {
