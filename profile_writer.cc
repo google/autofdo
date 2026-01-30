@@ -158,7 +158,6 @@ void AutoFDOProfileWriter::WriteFunctionProfile() {
 
   // Write out the GCOV_TAG_AFDO_SUMMARY section.
   if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
-    assert(summary != nullptr);
     ProfileSummaryInformation info = ProfileSummaryComputer::Compute(
         *symbol_map_, {std::begin(ProfileSummaryInformation::default_cutoffs),
                        std::end(ProfileSummaryInformation::default_cutoffs)});
