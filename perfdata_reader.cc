@@ -432,6 +432,7 @@ absl::Status PerfDataReader::AggregateSpe(BranchFrequencies &result) const {
         // records.
         if (is_kernel_mode) pid = kKernelPid;
 
+        if (binary_mmaps_.count(pid) == 0) return;
         if (!record.event.retired || !record.op.is_br_eret) return;
 
         uint64_t from_addr = RuntimeAddressToBinaryAddress(pid, record.ip.addr);
