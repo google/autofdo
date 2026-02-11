@@ -124,13 +124,17 @@ class SourceProfileWriter: public SymbolTraverser {
 
   virtual void VisitTopSymbol(const std::string &name, const Symbol *node) {
     gcov_write_counter(node->head_count);
-    gcov_write_unsigned(GetStringIndex(Symbol::Name(name.c_str())));
+    unsigned NameIdx = GetStringIndex(Symbol::Name(name.c_str()));
+    CHECK(NameIdx != 0 && "name index 0 should never be present as a top-level symbol!");
+    gcov_write_unsigned(NameIdx);
   }
 
   virtual void VisitCallsite(const Callsite &callsite) {
     uint64_t value = callsite.location;
     gcov_write_unsigned(SourceInfo::GenerateCompressedOffset(value));
-    gcov_write_unsigned(GetStringIndex(Symbol::Name(callsite.callee_name)));
+    unsigned NameIdx = GetStringIndex(Symbol::Name(callsite.callee_name));
+    CHECK(NameIdx != 0 && "name index 0 should never be present as a callee!");
+    gcov_write_unsigned(NameIdx);
   }
 
  private:
