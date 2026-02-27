@@ -132,7 +132,7 @@ void AutoFDOProfileReader::ReadNameTable() {
   }
   uint32_t name_vector_size = gcov_read_unsigned();
   for (uint32_t i = 0; i < name_vector_size; i++) {
-    const char *name = strdup(gcov_read_string());
+   std::string name = gcov_read_string();
     uint32_t file_index =
         absl::GetFlag(FLAGS_gcov_version) >= 3 ? gcov_read_unsigned() : -1;
     names_.emplace_back(name, file_index);
