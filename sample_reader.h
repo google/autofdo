@@ -31,6 +31,7 @@ typedef std::pair<uint64_t, uint64_t> Range;
 typedef std::map<Range, uint64_t> RangeCountMap;
 typedef std::pair<uint64_t, uint64_t> Branch;
 typedef std::map<Branch, uint64_t> BranchCountMap;
+typedef std::map<uint64_t, uint64_t> AddressTimestampMap;
 
 // Reads in the profile data, and represent it in address_count_map_.
 class SampleReader {
@@ -50,6 +51,10 @@ class SampleReader {
 
   const BranchCountMap &branch_count_map() const {
     return branch_count_map_;
+  }
+
+  const AddressTimestampMap &address_timestamp_map() const {
+    return address_timestamp_map_;
   }
 
   std::set<uint64_t> GetSampledAddresses() const;
@@ -77,6 +82,7 @@ class SampleReader {
   AddressCountMap address_count_map_;
   RangeCountMap range_count_map_;
   BranchCountMap branch_count_map_;
+  AddressTimestampMap address_timestamp_map_;
 
   bool is_kernel_ = false;
 };

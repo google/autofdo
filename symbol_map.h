@@ -153,7 +153,8 @@ class Symbol {
         total_count_incl(0),
         head_count(0),
         callsites(0),
-        pos_counts() {
+        pos_counts(),
+        timestamp(0) {
   }
 
   // This constructor is used to create aliased symbol.
@@ -243,6 +244,8 @@ class Symbol {
   CallsiteMap callsites;
   // Map from source location to count and instruction number.
   PositionCountMap pos_counts;
+  // timestamp of first executed instruction
+  uint64_t timestamp;
 };
 
 // Vector of unique pointers to symbols.
@@ -420,6 +423,8 @@ class SymbolMap {
   // Increments symbol's entry count.
   void AddSymbolEntryCount(absl::string_view symbol, uint64_t head_count,
                            uint64_t total_count = 0);
+
+  void AddSymbolTimestamp(absl::string_view symbol, uint64_t timestamp);
 
   // DataSource represents what kind of data is used to generate afdo profile.
   // PERFDATA: convert perf.data to afdo profile.

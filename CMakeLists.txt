@@ -181,6 +181,25 @@ function (build_gcov)
       glog)
     add_test(NAME summary_calculation_test COMMAND summary_calculation_test)
 
+    add_executable(timestamp_test
+      timestamp_test.cc
+      instruction_map.cc
+      profile.cc
+      profile_creator.cc
+      sample_reader.cc
+      simple_spe_sample_reader.cc
+      symbol_map.cc)
+    target_link_libraries(timestamp_test
+      quipper_perf
+      gtest
+      gtest_main
+      absl::flags
+      absl::flags_parse
+      addr2line_lib
+      glog)
+    add_test(NAME timestamp_test COMMAND timestamp_test)
+
+
     add_custom_command(PRE_BUILD
       OUTPUT prepare_cmds
       COMMAND ln -s -f ${CMAKE_HOME_DIRECTORY}/testdata)

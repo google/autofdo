@@ -296,6 +296,9 @@ bool PerfDataSampleReader::Append(const std::string &profile_file) {
     }
     if (MatchBinary(event.dso_and_offset)) {
       address_count_map_[event.dso_and_offset.offset()]++;
+      uint64_t address = event.dso_and_offset.offset();
+      uint64_t timestamp = event.event_ptr->timestamp();
+      address_timestamp_map_.insert({address, timestamp});
     }
     int start_index = 0;
     while (start_index < event.branch_stack.size() &&
