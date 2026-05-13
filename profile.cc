@@ -60,6 +60,15 @@ void Profile::AggregatePerFunctionProfile(bool check_lbr_entry) {
     }
   }
 
+  const AddressTimestampMap *address_timestamp_map = &sample_reader_->address_timestamp_map ();
+  for (const auto &[addr, timestamp] : *address_timestamp_map) {
+    uint64_t vaddr = symbol_map_->get_static_vaddr(addr);
+    ProfileMaps *maps = GetProfileMaps(vaddr);
+    if (maps != nullptr && maps->timestamp == 0) {
+      maps->timestamp = timestamp;
+    }
+  }
+
   #if defined(HAVE_LLVM)
   std::unique_ptr<MiniDisassembler> Disassembler;
   if (check_lbr_entry) {
@@ -148,6 +157,8 @@ void Profile::ProcessPerFunctionProfile(absl::string_view func_name,
   inst_map.BuildPerFunctionInstructionMap(func_name, maps.start_addr,
                                           maps.end_addr);
   // LOG(INFO) << "Built instruction map for func: " << func_name;
+
+  symbol_map_->AddSymbolTimestamp (func_name, maps.timestamp);
 
   AddressCountMap map;
   const AddressCountMap *map_ptr;

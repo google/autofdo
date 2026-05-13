@@ -39,8 +39,13 @@ void AutoFDOProfileReader::ReadFunctionProfile() {
 void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
                                              bool update) {
   uint64_t head_count;
+  uint64_t timestamp = 0;
+
   if (stack.size() == 0) {
     head_count = gcov_read_counter();
+    if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
+      timestamp = gcov_read_counter();
+    }
   } else {
     head_count = 0;
   }
@@ -53,6 +58,7 @@ void AutoFDOProfileReader::ReadSymbolProfile(const SourceStack &stack,
   uint32_t num_callsites = gcov_read_unsigned();
   if (stack.size() == 0) {
     symbol_map_->AddSymbol(name);
+    symbol_map_->AddSymbolTimestamp(name, timestamp);
     const_cast<Symbol *>(symbol_map_->GetSymbolByName(name))->info.file_name =
         file_name;
     if (!force_update_ && symbol_map_->GetSymbolByName(name)->total_count > 0) {

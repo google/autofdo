@@ -513,6 +513,11 @@ void SymbolMap::AddSymbolEntryCount(absl::string_view symbol_name,
   symbol->total_count += total_count;
 }
 
+void SymbolMap::AddSymbolTimestamp(absl::string_view symbol_name, uint64_t timestamp) {
+  Symbol *symbol = map_.find(symbol_name)->second;
+  symbol->timestamp = timestamp;
+}
+
 Symbol *SymbolMap::TraverseInlineStack(absl::string_view symbol_name,
                                        const SourceStack &src, uint64_t count,
                                        DataSource data_source) {
@@ -656,8 +661,8 @@ void Symbol::DumpBody(int indent, bool for_analysis) const {
 void Symbol::Dump(int indent) const {
   const std::string printed_name = getPrintName(info.func_name);
   if (indent == 0) {
-    absl::PrintF("%s:%s total:%u head:%u\n", printed_name, info.file_name,
-                 total_count, head_count);
+    absl::PrintF("%s:%s total:%u head:%u timestamp: %lu\n", printed_name, info.file_name,
+                 total_count, head_count, (unsigned long) timestamp);
   } else {
     absl::PrintF("%s:%s total:%u\n", printed_name, info.file_name, total_count);
   }

@@ -124,6 +124,9 @@ class SourceProfileWriter: public SymbolTraverser {
 
   virtual void VisitTopSymbol(const std::string &name, const Symbol *node) {
     gcov_write_counter(node->head_count);
+    if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
+      gcov_write_counter(node->timestamp);
+    }
     unsigned NameIdx = GetStringIndex(Symbol::Name(name.c_str()));
     CHECK(NameIdx != 0 && "name index 0 should never be present as a top-level symbol!");
     gcov_write_unsigned(NameIdx);
@@ -448,6 +451,7 @@ class ProfileDumper : public SymbolTraverser {
     node->Dump(0);
     absl::PrintF("node->head_count: %u\n", node->head_count);
     printf("GetStringIndex(%s): %u\n", name.c_str(), GetStringIndex(name));
+    absl::PrintF("node->timestamp: %lu\n", (unsigned long) node->timestamp);
     printf("\n");
   }
 
