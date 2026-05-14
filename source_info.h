@@ -8,9 +8,13 @@
 #include <vector>
 
 #include "base/integral_types.h"
+#include "base/logging.h"
 #include "base/macros.h"
 #if defined(HAVE_LLVM)
 #include "llvm/IR/DebugInfoMetadata.h"
+#else
+// Include discriminator encoding utilities only when LLVM is not available
+#include "gcov_discriminator_encoding.h"
 #endif
 
 namespace devtools_crosstool_autofdo {
@@ -49,7 +53,25 @@ struct SourceInfo {
                    discriminator)
              : discriminator));
 #else
-    return (static_cast<uint64_t>(line - start_line) << 32) | discriminator;
+    // Profile stores only base discriminator (bits 0-7).
+    uint32_t disc = use_discriminator_encoding
+                    ? GetBaseDiscriminator(discriminator)
+                    : discriminator;
+    return (static_cast<uint64_t>(line - start_line) << 32) | disc;
+#endif
+  }
+
+  // Offset that keeps copy_id but strips multiplicity
+  // Used for MAX aggregation where we want to aggregate per (line, base, copy_id)
+  uint64_t OffsetWithCopyID() const {
+#if defined(HAVE_LLVM)
+    // LLVM doesn't use two-pass aggregation, so just return regular offset.
+    // This should never be called in practice (use_two_pass_aggregation=false for LLVM).
+    return Offset(false);  // Use full discriminator
+#else
+    // Strip only multiplicity bits, keep base and copy_id
+    uint32_t disc = StripMultiplicity(discriminator);
+    return (static_cast<uint64_t>(line - start_line) << 32) | disc;
 #endif
   }
 
@@ -59,7 +81,9 @@ struct SourceInfo {
     return llvm::DILocation::getDuplicationFactorFromDiscriminator(
         discriminator);
 #else
-    return 1;
+    // Only extract multiplicity if discriminator is non-zero
+    if (discriminator == 0) return 1;
+    return GetMultiplicity(discriminator);
 #endif
   }
 
