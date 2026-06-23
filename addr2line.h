@@ -13,6 +13,7 @@
 
 #include "base/integral_types.h"
 #include "source_info.h"
+#include "third_party/abseil/absl/strings/match.h"
 #include "third_party/abseil/absl/strings/string_view.h"
 
 #if defined(HAVE_LLVM)
@@ -89,6 +90,11 @@ class Google3Addr2line : public Addr2line {
   DISALLOW_COPY_AND_ASSIGN(Google3Addr2line);
 };
 #endif
+
+inline bool IsKernelModule(absl::string_view path) {
+  return absl::EndsWith(path, ".ko");
+}
+
 }  // namespace devtools_crosstool_autofdo
 
 #endif  // AUTOFDO_ADDR2LINE_H_

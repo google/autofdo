@@ -26,6 +26,7 @@
 #include "llvm/DebugInfo/DWARF/DWARFFormValue.h"
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Error.h"
 
 ABSL_RETIRED_FLAG(bool, use_legacy_symbolizer, false,
                   "whether to use google3 symbolizer");
@@ -87,8 +88,29 @@ void LLVMAddr2line::GetInlineStack(uint64_t address, SourceStack *stack) const {
   llvm::SmallVector<llvm::DWARFDie, 4> InlinedChain;
   cu_iter->second->getInlinedChainForAddress(address, InlinedChain);
 
-  uint32_t row_index = line_table->lookupAddress(
-      {address, llvm::object::SectionedAddress::UndefSection});
+  uint64_t section_index = llvm::object::SectionedAddress::UndefSection;
+  if (IsKernelModule(getObject()->getFileName())) {
+    // For kernel modules (relocatable objects), line table sequences are often
+    // tied to their actual section. We must provide the actual section index
+    // (instead of the UndefSection wildcard) to lookupAddress, otherwise it
+    // will fail to match sequences that are not marked as UndefSection. We
+    // only focus on the .text section to be consistent with symbol_map.cc.
+    for (const auto& sec : getObject()->sections()) {
+      auto name = sec.getName();
+      if (!name) {
+        llvm::consumeError(name.takeError());
+        continue;
+      }
+      if (*name == ".text") {
+        if (address >= sec.getAddress() &&
+            address < sec.getAddress() + sec.getSize()) {
+          section_index = sec.getIndex();
+        }
+        break;
+      }
+    }
+  }
+  uint32_t row_index = line_table->lookupAddress({address, section_index});
   uint32_t file = (row_index == -1U ? -1U : line_table->Rows[row_index].File);
   uint32_t line = (row_index == -1U ? 0 : line_table->Rows[row_index].Line);
   uint32_t discriminator =

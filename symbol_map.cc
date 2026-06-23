@@ -478,6 +478,18 @@ void SymbolMap::ReadLoadableExecSegmentInfo(bool is_kernel) {
                 << " vaddr=" << info.vaddr;
     }
   }
+
+  if (si_vec.empty() && IsKernelModule(binary_)) {
+    // For kernel modules without program headers, we simulate a loadable
+    // executable segment by using the file offset and link-time address of the
+    // .text section. We focus on .text and ignore other executable sections
+    // like .init.text and .exit.text as they are not important for steady-state
+    // performance.
+    ElfReader::SectionInfo info;
+    if (elf_reader.GetSectionInfoByName(".text", &info) != nullptr) {
+      add_loadable_exec_segment(info.offset, info.addr);
+    }
+  }
 }
 
 void SymbolMap::BuildSymbolMap() {
