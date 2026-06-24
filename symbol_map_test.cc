@@ -16,6 +16,7 @@
 #include "base/logging.h"
 #include "llvm_profile_reader.h"
 #include "source_info.h"
+#include "util/symbolize/elf_reader.h"
 #include "gtest/gtest.h"
 #include "third_party/abseil/absl/container/node_hash_set.h"
 #include "third_party/abseil/absl/flags/flag.h"
@@ -522,6 +523,22 @@ TEST(AddressConversion, OffsetToVaddr) {
                                     "vaddr_offset_conversion_test.elf"));
   symbol_map.ReadLoadableExecSegmentInfo(/*is_kernel=*/false);
   EXPECT_EQ(symbol_map.GetFileOffsetFromStaticVaddr(0x001010), 0x002010);
+}
+
+TEST(AddressConversion, KernelModuleFakeSegment) {
+  SymbolMap symbol_map(absl::StrCat(testing::SrcDir(), kTestDataDir,
+                                    "test_kernel_module.ko"));
+  symbol_map.ReadLoadableExecSegmentInfo(/*is_kernel=*/false);
+
+  // Use ElfReader to get the actual .text section info from the test file.
+  devtools_crosstool_autofdo::ElfReader elf_reader(
+      absl::StrCat(testing::SrcDir(), kTestDataDir, "test_kernel_module.ko"));
+  devtools_crosstool_autofdo::ElfReader::SectionInfo info;
+  ASSERT_TRUE(elf_reader.GetSectionInfoByName(".text", &info) != nullptr);
+
+  // Verify that the fake segment maps the file offset to the address correctly.
+  EXPECT_EQ(symbol_map.GetFileOffsetFromStaticVaddr(info.addr), info.offset);
+  EXPECT_EQ(symbol_map.get_static_vaddr(info.offset), info.addr);
 }
 
 }  // namespace
