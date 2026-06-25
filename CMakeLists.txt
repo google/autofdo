@@ -117,6 +117,30 @@ function (build_gcov)
     quipper_perf
   )
 
+  # Same sources as create_gcov_lib except create_gcov.cc (which defines main),
+  # so we can link gtest_main without duplicate main().
+  add_executable(gcc_hierarchical_discriminator_multiplicity_test
+    gcc_hierarchical_discriminator_multiplicity_test.cc
+    gcov.cc
+    instruction_map.cc
+    profile.cc
+    profile_creator.cc
+    profile_writer.cc
+    sample_reader.cc
+    simple_spe_sample_reader.cc
+    symbol_map.cc)
+  target_link_libraries(gcc_hierarchical_discriminator_multiplicity_test
+    absl::flags
+    absl::flags_parse
+    gtest
+    gtest_main
+    perf_proto
+    addr2line_lib
+    glog
+    quipper_perf)
+  add_test(NAME gcc_hierarchical_discriminator_multiplicity_test
+    COMMAND gcc_hierarchical_discriminator_multiplicity_test)
+
   add_library(profile_merger_lib OBJECT
     gcov.cc
     instruction_map.cc

@@ -36,6 +36,12 @@
 // Whether to use discriminator encoding.
 ABSL_DECLARE_FLAG(bool, use_discriminator_encoding);
 
+// GCOV-only (gcov_version >= 3, non-LLVM build): two-pass copy_id aggregation.
+// Pass 1 (AddSourceCount): MAX per (line, base, copy_id).
+// Pass 2 (CollapseCopyIDs before write): SUM after stripping copy_id.
+// LLVM profiles use a different discriminator path and do not enable this.
+ABSL_DECLARE_FLAG(bool, use_two_pass_aggregation);
+
 #if defined(HAVE_LLVM)
 // Whether to use FS discriminator.
 ABSL_DECLARE_FLAG(bool, use_fs_discriminator);
@@ -190,6 +196,10 @@ class Symbol {
 
   // Merges profile stored in src symbol with this symbol.
   void Merge(const Symbol *src);
+
+  // Pass 2: Strip copy_id and SUM across different copies.
+  // Called before writing profile to collapse discriminators.
+  void CollapseCopyIDs();
 
   // Get an estimation of head count from the starting source or callsite
   // locations.
@@ -419,6 +429,10 @@ class SymbolMap {
   // compilations, and the compiler is also expected to elide them when matching
   // profile data.
   void ElideSuffixesAndMerge();
+
+  // Pass 2: Strip copy_id and SUM across all copies.
+  // Called before writing profile to get final aggregated counts.
+  void CollapseCopyIDs();
 
   // Increments symbol's entry count.
   void AddSymbolEntryCount(absl::string_view symbol, uint64_t head_count,

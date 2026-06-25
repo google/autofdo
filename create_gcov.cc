@@ -41,6 +41,13 @@ int main(int argc, char **argv) {
       absl::GetFlag(FLAGS_gcov_version));
   devtools_crosstool_autofdo::ProfileCreator creator(
       absl::GetFlag(FLAGS_binary));
+
+  // Enable discriminator encoding and two-pass aggregation only for gcov version 3
+  if (absl::GetFlag(FLAGS_gcov_version) >= 3) {
+    absl::SetFlag(&FLAGS_use_discriminator_encoding, true);
+    absl::SetFlag(&FLAGS_use_two_pass_aggregation, true);
+  }
+ 
   if (creator.CreateProfile(absl::GetFlag(FLAGS_profile),
                             absl::GetFlag(FLAGS_profiler), &writer,
                             absl::GetFlag(FLAGS_gcov))) {

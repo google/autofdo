@@ -133,6 +133,14 @@ bool ProfileCreator::CreateProfile(const std::string &input_profile_name,
     if (!ComputeProfile(&symbol_map, check_lbr_entry)) return false;
   }
 
+#if !defined(HAVE_LLVM)
+  // GCC GCOV only (gcov_version >= 3): pass 2 SUM after stripping copy_id.
+  // Done here (not in ProfileWriter) so writers keep a const SymbolMap*.
+  if (absl::GetFlag(FLAGS_use_two_pass_aggregation)) {
+    symbol_map.CollapseCopyIDs();
+  }
+#endif
+
 #if defined(HAVE_LLVM)
   // Create prof_sym_list after symbol_map is populated because prof_sym_list
   // is expected not to contain any symbol showing up in the profile in
