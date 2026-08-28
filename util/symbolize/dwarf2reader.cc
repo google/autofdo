@@ -807,7 +807,7 @@ const char* CompilationUnit::ProcessAttribute(
     case DW_FORM_GNU_addr_index: {
       CHECK(addr_buffer_ != NULL);
       uint64 addr_index = 0;
-      size_t len;
+      size_t len = 0;
       switch (form) {
         case DW_FORM_addrx1: {
           addr_index = reader_->ReadOneByte(start);
@@ -815,7 +815,7 @@ const char* CompilationUnit::ProcessAttribute(
             break;
         }
         case DW_FORM_addrx2: {
-          uint64 addr_index = reader_->ReadTwoBytes(start);
+          addr_index = reader_->ReadTwoBytes(start);
           len += 2;
             break;
         }
@@ -842,7 +842,7 @@ const char* CompilationUnit::ProcessAttribute(
                                                                 reader_->AddressSize())
                           );
       ProcessAttributeUnsigned(dieoffset, attr, form, v);
-      return start + 1;
+      return start + len;
       break;  
     }
     case DW_FORM_implicit_const: {
