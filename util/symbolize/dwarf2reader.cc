@@ -1451,6 +1451,16 @@ bool LineInfo::ReadUnsignedForm(uint32 form, uint64* value,
     if (!AdvanceLinePtr(2, lineptr)) {
       return false;
     }
+  } else if (form == DW_FORM_data4) {
+    if (!AdvanceLinePtr(4, lineptr)) {
+      return false;
+    }
+    *value = reader_->ReadFourBytes(*lineptr - 4);
+  } else if (form == DW_FORM_data8) {
+    if (!AdvanceLinePtr(8, lineptr)) {
+      return false;
+    }
+    *value = reader_->ReadEightBytes(*lineptr - 8);
   } else {
     return false;
   }
@@ -1652,7 +1662,7 @@ void LineInfo::ReadHeader() {
 
     // Read the DWARF-5 filename table.
     {
-      static const uint32 kMaxTypes = 4;
+      static const uint32 kMaxTypes = 5;
       uint32 content_types[kMaxTypes];
       uint32 content_forms[kMaxTypes];
       uint32 format_count;
@@ -1680,6 +1690,22 @@ void LineInfo::ReadHeader() {
             }
           } else if (content_types[col] == DW_LNCT_directory_index) {
             if (!ReadUnsignedForm(content_forms[col], &dirindex, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else if (content_types[col] == DW_LNCT_timestamp) {
+            if (!ReadUnsignedForm(content_forms[col], &mod_time, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else if (content_types[col] == DW_LNCT_size) {
+            if (!ReadUnsignedForm(content_forms[col], &filelength, &lineptr)) {
+              malformed_ = true;
+              return;
+            }
+          } else if (content_types[col] == DW_LNCT_MD5 &&
+                     content_forms[col] == DW_FORM_data16) {
+            if (!AdvanceLinePtr(16, &lineptr)) {
               malformed_ = true;
               return;
             }
