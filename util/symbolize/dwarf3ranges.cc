@@ -122,8 +122,10 @@ void AddressRangeList::ReadDwarfRngLists(uint64 base,
             const char* stop_ptr = addr_buffer_ + addr_base + stop_index * reader_->AddressSize();
             CHECK(stop_ptr <= (addr_buffer_ + addr_buffer_length_));
             uint64 stop = reader_->ReadAddress(stop_ptr);
+            // Indexed addresses are absolute; only DW_RLE_offset_pair is
+            // relative to the current base address.
             if (start != stop)
-              ranges->push_back (make_pair (start + base, stop + base));
+              ranges->push_back (make_pair (start, stop));
             break;
           }
           case DW_RLE_startx_length: {
@@ -138,7 +140,7 @@ void AddressRangeList::ReadDwarfRngLists(uint64 base,
             uint64 range_length = reader_->ReadUnsignedLEB128(pos, &len); pos += len;
             CHECK(pos <= rnglist_buffer_ + rnglist_buffer_length_);
             if (range_length != 0)
-              ranges->push_back (make_pair (start + base, start + base + range_length));
+              ranges->push_back (make_pair (start, start + range_length));
             break;
           }
           case DW_RLE_offset_pair: {
@@ -173,7 +175,7 @@ void AddressRangeList::ReadDwarfRngLists(uint64 base,
             uint64 range_length = reader_->ReadUnsignedLEB128(pos, &len); pos += len;
             CHECK(pos <= rnglist_buffer_ + rnglist_buffer_length_);
             if (range_length != 0)
-              ranges->push_back (make_pair (base + start, base + start + range_length));
+              ranges->push_back (make_pair (start, start + range_length));
             break;
           }
           default: { 
