@@ -257,15 +257,16 @@ void CUFunctionInfoHandler::ProcessAttributeUnsigned(uint64 offset,
     const char* str_buffer = NULL;
     uint64 str_buffer_size = 0;
     if (str_section != sections_.end()) {
-      str_buffer = line_str->second.first;
-      str_buffer_size = line_str->second.second;
+      str_buffer = str_section->second.first;
+      str_buffer_size = str_section->second.second;
     }
-    SectionMap::const_iterator str_offset = sections_.find(".debug_line_str");
+    SectionMap::const_iterator str_offset =
+        sections_.find(".debug_str_offsets");
     const char* str_offset_buffer = NULL;
     uint64 str_offset_size = 0;
     if (str_offset != sections_.end()) {
-      str_offset_buffer = line_str->second.first;
-      str_offset_size = line_str->second.second;
+      str_offset_buffer = str_offset->second.first;
+      str_offset_size = str_offset->second.second;
     }                    
     LineInfo lireader(line_sect->second.first + data, line_sect->second.second - data,
                       line_str_buffer, line_str_size,

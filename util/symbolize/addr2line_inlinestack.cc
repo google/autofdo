@@ -415,15 +415,15 @@ void InlineStackHandler::ProcessAttributeUnsigned(
           const char* str_buffer = NULL;
           uint64 str_buffer_size = 0;
           if (str_section != sections_.end()) {
-            str_buffer = line_str->second.first;
-            str_buffer_size = line_str->second.second;
+            str_buffer = str_section->second.first;
+            str_buffer_size = str_section->second.second;
           }
           SectionMap::const_iterator str_offsets = sections_.find(".debug_str_offsets");
           const char* str_offsets_buffer = NULL;
           uint64 str_offsets_size = 0;
           if (str_offsets != sections_.end()) {
-            str_offsets_buffer = line_str->second.first;
-            str_offsets_size = line_str->second.second;
+            str_offsets_buffer = str_offsets->second.first;
+            str_offsets_size = str_offsets->second.second;
           }                    
           LineInfo lireader(line_sect->second.first + data, line_sect->second.second - data,
                             line_str_buffer, line_str_size,
