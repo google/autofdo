@@ -5,6 +5,7 @@
 
 #include "gtest/gtest.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
+#include "util/symbolize/addr2line_inlinestack.h"
 #include "util/symbolize/bytereader.h"
 #include "util/symbolize/dwarf2reader.h"
 
@@ -103,5 +104,63 @@ TEST(Addr2lineTest, Dwarf5Addrx2ReadsIndexAndConsumesOperand) {
 
 TEST(Addr2lineTest, Dwarf5AddrxConsumesMultibyteOperand) {
   ExpectIndexedAddress(autofdo::DW_FORM_addrx, {0x80, 0x01});
+}
+
+TEST(Addr2lineTest, Dwarf5ImplicitConstDiscriminator) {
+  // Three sibling inline instances encode discriminator 7 as implicit_const,
+  // data1 and sdata. The last form remains ignored, leaving discriminator 0.
+  // Their parent covers [0x1000, 0x1030).
+  const unsigned char debug_info[] = {
+      0x25, 0x00, 0x00, 0x00,  // unit_length
+      0x05, 0x00, 0x01, 0x04,  // version, unit_type, address_size
+      0x00, 0x00, 0x00, 0x00,  // abbrev_offset
+      0x01,                                      // compilation unit
+      0x02, 0x00, 0x10, 0x00, 0x00, 0x30,       // parent
+      0x03, 0x10, 0x10, 0x00, 0x00, 0x08,       // implicit_const
+      0x04, 0x18, 0x10, 0x00, 0x00, 0x08, 0x07, // data1
+      0x05, 0x20, 0x10, 0x00, 0x00, 0x08, 0x07, // sdata
+      0x00, 0x00,                               // end children
+  };
+  const unsigned char debug_abbrev[] = {
+      0x01, 0x11, 0x01, 0x00, 0x00,  // compilation unit with children
+      0x02, 0x2e, 0x01,              // subprogram with children
+      0x11, 0x01, 0x12, 0x0b,        // low_pc / addr, high_pc / data1
+      0x00, 0x00,
+      0x03, 0x1d, 0x00,              // inlined_subroutine without children
+      0x11, 0x01, 0x12, 0x0b,
+      0xb6, 0x42, 0x21, 0x07,        // GNU_discriminator / implicit_const 7
+      0x00, 0x00,
+      0x04, 0x1d, 0x00,              // inlined_subroutine without children
+      0x11, 0x01, 0x12, 0x0b,
+      0xb6, 0x42, 0x0b,              // GNU_discriminator / data1
+      0x00, 0x00,
+      0x05, 0x1d, 0x00,              // inlined_subroutine without children
+      0x11, 0x01, 0x12, 0x0b,
+      0xb6, 0x42, 0x0d,              // GNU_discriminator / sdata
+      0x00, 0x00, 0x00,
+  };
+  autofdo::SectionMap sections;
+  sections[".debug_info"] = {
+      reinterpret_cast<const char*>(debug_info), sizeof(debug_info)};
+  sections[".debug_abbrev"] = {
+      reinterpret_cast<const char*>(debug_abbrev), sizeof(debug_abbrev)};
+  autofdo::ByteReader reader(autofdo::ENDIANNESS_LITTLE);
+  autofdo::InlineStackHandler handler(nullptr, sections, &reader, 0);
+  autofdo::CompilationUnit unit("discriminator-fixture", sections, 0,
+                                &reader, &handler);
+  unit.Start();
+  ASSERT_FALSE(unit.malformed());
+  handler.PopulateSubprogramsByAddress();
+  for (uint64 pc : {0x1010, 0x1018}) {
+    SCOPED_TRACE(pc);
+    const auto* info = handler.GetSubprogramForAddress(pc);
+    ASSERT_NE(info, nullptr);
+    EXPECT_TRUE(info->inlined());
+    EXPECT_EQ(info->callsite_discr(), 7);
+  }
+  const auto* info = handler.GetSubprogramForAddress(0x1020);
+  ASSERT_NE(info, nullptr);
+  EXPECT_TRUE(info->inlined());
+  EXPECT_EQ(info->callsite_discr(), 0);
 }
 }  // namespace
