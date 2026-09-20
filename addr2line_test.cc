@@ -5,8 +5,10 @@
 
 #include "gtest/gtest.h"
 #include "third_party/abseil/absl/strings/str_cat.h"
+#include "util/symbolize/addr2line_inlinestack.h"
 #include "util/symbolize/bytereader.h"
 #include "util/symbolize/dwarf2reader.h"
+#include "util/symbolize/functioninfo.h"
 
 namespace {
 
@@ -103,5 +105,65 @@ TEST(Addr2lineTest, Dwarf5Addrx2ReadsIndexAndConsumesOperand) {
 
 TEST(Addr2lineTest, Dwarf5AddrxConsumesMultibyteOperand) {
   ExpectIndexedAddress(autofdo::DW_FORM_addrx, {0x80, 0x01});
+}
+
+TEST(Addr2lineTest, Dwarf5LineTableStringSections) {
+  const unsigned char debug_line[] = {
+      0x1e, 0x00, 0x00, 0x00,  // unit_length
+      0x05, 0x00, 0x04, 0x00,  // version, address_size, segment_selector_size
+      0x13, 0x00, 0x00, 0x00,  // header_length
+      0x01, 0x01, 0x01, 0x00, 0x01, 0x01,  // line program parameters
+      0x01, 0x01, 0x0e, 0x01,  // one directory: path / strp
+      0x00, 0x00, 0x00, 0x00,  // "dir" in .debug_str
+      0x01, 0x01, 0x25, 0x01,  // one file: path / strx1
+      0x00,                    // index 0 in .debug_str_offsets
+      0x00, 0x01, 0x01,        // DW_LNE_end_sequence
+  };
+  // Distinct contents catch using one section's buffer in place of another.
+  // The zero padding also makes the old, incorrect lookup safe.
+  const char line_str[16] = {};
+  const char str[] = "dir\0file.cc";
+  const unsigned char str_offsets[] = {
+      0x08, 0x00, 0x00, 0x00,  // unit_length
+      0x05, 0x00, 0x00, 0x00,  // version, padding
+      0x04, 0x00, 0x00, 0x00,  // index 0 -> "file.cc" in .debug_str
+  };
+  autofdo::SectionMap sections;
+  sections[".debug_line"] = {
+      reinterpret_cast<const char*>(debug_line), sizeof(debug_line)};
+  sections[".debug_line_str"] = {line_str, sizeof(line_str)};
+  sections[".debug_str"] = {str, sizeof(str)};
+  sections[".debug_str_offsets"] = {
+      reinterpret_cast<const char*>(str_offsets), sizeof(str_offsets)};
+
+  for (bool use_inline_stack : {false, true}) {
+    SCOPED_TRACE(use_inline_stack);
+    autofdo::ByteReader reader(autofdo::ENDIANNESS_LITTLE);
+    reader.SetAddressSize(4);
+    autofdo::FileVector files;
+    autofdo::DirectoryVector dirs;
+    autofdo::AddressToLineMap lines;
+    autofdo::FunctionMap functions_by_offset, functions_by_address;
+    autofdo::CULineInfoHandler line_handler(&files, &dirs, &lines);
+    autofdo::CUFunctionInfoHandler function_handler(
+        &files, &dirs, &lines, &functions_by_offset, &functions_by_address,
+        &line_handler, sections, &reader);
+    autofdo::InlineStackHandler inline_handler(nullptr, sections, &reader, 0);
+    inline_handler.set_line_handler(&line_handler);
+    autofdo::Dwarf2Handler* handler = &function_handler;
+    if (use_inline_stack) {
+      handler = &inline_handler;
+    }
+    handler->StartCompilationUnit(0, 4, 4, 0, 5);
+    handler->StartDIE(0, autofdo::DW_TAG_compile_unit, {});
+    handler->set_str_offset_base(8);
+    handler->ProcessAttributeUnsigned(
+        0, autofdo::DW_AT_stmt_list, autofdo::DW_FORM_sec_offset, 0);
+    handler->EndDIE(0);
+    ASSERT_EQ(dirs.size(), 2);
+    EXPECT_STREQ(dirs[1], "dir");
+    ASSERT_EQ(files.size(), 2);
+    EXPECT_STREQ(files[1].second, "file.cc");
+  }
 }
 }  // namespace
