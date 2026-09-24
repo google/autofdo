@@ -7,6 +7,7 @@
 #include "third_party/abseil/absl/strings/str_cat.h"
 #include "util/symbolize/bytereader.h"
 #include "util/symbolize/dwarf2reader.h"
+#include "util/symbolize/dwarf3ranges.h"
 
 namespace {
 
@@ -103,5 +104,47 @@ TEST(Addr2lineTest, Dwarf5Addrx2ReadsIndexAndConsumesOperand) {
 
 TEST(Addr2lineTest, Dwarf5AddrxConsumesMultibyteOperand) {
   ExpectIndexedAddress(autofdo::DW_FORM_addrx, {0x80, 0x01});
+}
+
+TEST(Addr2lineTest, Dwarf5RnglistsAbsoluteEntriesIgnoreBase) {
+  const unsigned char debug_rnglists[] = {
+      0x1c, 0x00, 0x00, 0x00,  // unit_length
+      0x05, 0x00, 0x08, 0x00,  // version, address_size, segment_selector_size
+      0x00, 0x00, 0x00, 0x00,  // offset_entry_count
+      autofdo::DW_RLE_startx_endx, 0x00, 0x01,     // [0x2000, 0x2020)
+      autofdo::DW_RLE_startx_length, 0x01, 0x20,   // [0x2020, 0x2040)
+      autofdo::DW_RLE_start_length,               // [0x2040, 0x2060)
+      0x40, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20,
+      autofdo::DW_RLE_offset_pair, 0x40, 0x60,    // [base + 0x40, base + 0x60)
+      autofdo::DW_RLE_end_of_list,
+  };
+  const unsigned char debug_addr[] = {
+      0x14, 0x00, 0x00, 0x00,  // unit_length
+      0x05, 0x00, 0x08, 0x00,  // version, address_size, segment_selector_size
+      0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // 0x2000
+      0x20, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // 0x2020
+  };
+  autofdo::ByteReader reader(autofdo::ENDIANNESS_LITTLE);
+  reader.SetAddressSize(8);
+  reader.SetOffsetSize(4);
+  autofdo::AddressRangeList ranges(
+      nullptr, 0, reinterpret_cast<const char*>(debug_rnglists),
+      sizeof(debug_rnglists), &reader, reinterpret_cast<const char*>(debug_addr),
+      sizeof(debug_addr));
+
+  // A zero CU base masks the bug. Absolute entries must also work with a
+  // nonzero base, while the offset-pair control must continue to use it.
+  for (uint64 base : {0, 0x1000}) {
+    SCOPED_TRACE(base);
+    autofdo::AddressRangeList::RangeList actual;
+    ranges.ReadDwarfRngListsDirectly(12, base, &actual, 8);
+    const autofdo::AddressRangeList::RangeList expected = {
+        {0x2000, 0x2020}, {0x2020, 0x2040}, {0x2040, 0x2060},
+        {base + 0x40, base + 0x60}};
+    ASSERT_EQ(actual.size(), expected.size());
+    for (size_t i = 0; i < expected.size(); ++i) {
+      EXPECT_EQ(actual[i], expected[i]) << "range " << i;
+    }
+  }
 }
 }  // namespace
