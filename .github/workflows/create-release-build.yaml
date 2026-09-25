@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-22.04-8core
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         submodules: 'recursive'
         ref: '${{github.ref}}'
