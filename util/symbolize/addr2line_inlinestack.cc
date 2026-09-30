@@ -493,6 +493,12 @@ void InlineStackHandler::ProcessAttributeSigned(
         subprogram_stack_.back()->set_callsite_line(data);
         break;
 
+      case DW_AT_GNU_discriminator:
+        if (form == DW_FORM_implicit_const) {
+          subprogram_stack_.back()->set_callsite_discr(data);
+        }
+        break;
+
       default:
         break;
     }      
