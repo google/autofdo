@@ -91,7 +91,8 @@ bool Google3Addr2line::Prepare() {
   SectionMap sections;
   const char *debug_section_names[] = {
     ".debug_line", ".debug_abbrev", ".debug_info", ".debug_str",
-    ".debug_ranges", ".debug_addr", ".debug_rnglists", ".debug_line_str"
+    ".debug_ranges", ".debug_addr", ".debug_rnglists", ".debug_line_str",
+    ".debug_str_offsets"
   };
   for (const char *section_name : debug_section_names) {
     size_t section_size;
