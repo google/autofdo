@@ -265,7 +265,9 @@ void InlineStackHandler::ProcessAttributeUnsigned(
   if (!subprogram_stack_.empty()) {
     switch (attr) {
       case DW_AT_call_file: {
-        if (data == 0 || data >= file_names_->size()) {
+        // File index 0 is valid (the primary source file) only in DWARF 5.
+        if ((data == 0 && dwarf_version_ < 5) ||
+            data >= file_names_->size()) {
           LOG(WARNING) << "unexpected reference to file_num " << data;
           break;
         }
@@ -415,15 +417,15 @@ void InlineStackHandler::ProcessAttributeUnsigned(
           const char* str_buffer = NULL;
           uint64 str_buffer_size = 0;
           if (str_section != sections_.end()) {
-            str_buffer = line_str->second.first;
-            str_buffer_size = line_str->second.second;
+            str_buffer = str_section->second.first;
+            str_buffer_size = str_section->second.second;
           }
           SectionMap::const_iterator str_offsets = sections_.find(".debug_str_offsets");
           const char* str_offsets_buffer = NULL;
           uint64 str_offsets_size = 0;
           if (str_offsets != sections_.end()) {
-            str_offsets_buffer = line_str->second.first;
-            str_offsets_size = line_str->second.second;
+            str_offsets_buffer = str_offsets->second.first;
+            str_offsets_size = str_offsets->second.second;
           }                    
           LineInfo lireader(line_sect->second.first + data, line_sect->second.second - data,
                             line_str_buffer, line_str_size,
@@ -442,6 +444,10 @@ void InlineStackHandler::ProcessAttributeUnsigned(
         str_offset_base_ = data;
         break;
       case DW_AT_ranges: 
+        // A DWARF 5 DW_FORM_rnglistx value is an index into this unit's range
+        // list table, not a base, and the unit's own ranges are not needed.
+        if (form == DW_FORM_rnglistx)
+          break;
         CHECK(form == DW_FORM_sec_offset || form == DW_FORM_data4 || form == DW_FORM_data8);
         FALLTHROUGH_INTENDED;
       case DW_AT_GNU_ranges_base:
@@ -468,7 +474,9 @@ void InlineStackHandler::ProcessAttributeSigned(
       case DW_AT_call_file: {
         CHECK(form == DW_FORM_implicit_const);
 
-        if (data == 0 || data >= file_names_->size()) {
+        // File index 0 is valid (the primary source file) only in DWARF 5.
+        if ((data == 0 && dwarf_version_ < 5) ||
+            data >= file_names_->size()) {
           LOG(WARNING) << "unexpected reference to file_num " << data;
           break;
         }
