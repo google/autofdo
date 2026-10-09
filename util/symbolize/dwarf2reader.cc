@@ -268,6 +268,7 @@ const char* CompilationUnit::SkipAttribute(const char* start, enum DwarfForm for
     }
       break;
     case DW_FORM_strp:
+    case DW_FORM_line_strp:
     case DW_FORM_strp_sup:
     case DW_FORM_sec_offset:
         return start + reader_->OffsetSize();
@@ -310,6 +311,35 @@ void CompilationUnit::ReadDebugOffsetTableHeader(const char* str_offset_ptr,
     malformed_ = true;
     return;
   }                                                 
+}
+
+void CompilationUnit::ReadUnitBases() {
+  const char* dieptr = after_header_;
+  const char* const unit_end = buffer_ + (reader_->OffsetSize() == 8 ? 12 : 4)
+                               + header_.length;
+  if (dieptr == NULL || dieptr >= unit_end) {
+    return;
+  }
+  size_t len;
+  const uint64 abbrev_num = reader_->ReadUnsignedLEB128(dieptr, &len);
+  dieptr += len;
+  if (abbrev_num == 0 || abbrev_num >= abbrevs_->size()) {
+    return;
+  }
+  const Abbrev& abbrev = (*abbrevs_)[abbrev_num];
+  for (const AttributeSpec& spec : abbrev.attributes) {
+    if (dieptr == NULL || dieptr >= unit_end) {
+      return;
+    }
+    if (spec.form == DW_FORM_sec_offset) {
+      if (spec.name == DW_AT_str_offsets_base) {
+        handler_->set_str_offset_base(reader_->ReadOffset(dieptr));
+      } else if (spec.name == DW_AT_addr_base) {
+        handler_->set_addr_base(reader_->ReadOffset(dieptr));
+      }
+    }
+    dieptr = SkipAttribute(dieptr, spec.form);
+  }
 }
 
 void CompilationUnit::ReadDebugAddressTableHeader(const char* addr_ptr,
@@ -585,6 +615,14 @@ uint64 CompilationUnit::Start() {
     return iter->second.second;;
   }
 
+  // DWARF 5 producers such as clang emit DW_AT_str_offsets_base and
+  // DW_AT_addr_base after unit DIE attributes that depend on them (e.g.
+  // DW_AT_name as strx and DW_AT_low_pc as addrx). Read the bases first so
+  // that those attributes use this unit's contributions, not the first unit's.
+  if (header_.version == 5) {
+    ReadUnitBases();
+  }
+
   // Now that we have our abbreviations, start processing DIE's.
   ProcessDIEs();
 
@@ -750,8 +788,6 @@ const char* CompilationUnit::ProcessAttribute(
     case DW_FORM_strx4:
     case DW_FORM_strx:
     case DW_FORM_GNU_str_index: {
-      CHECK(string_buffer_ != NULL);
-      CHECK(str_offsets_buffer_ != NULL);
       uint64 str_index = 0;
       size_t len = 0;
         switch (form) {
@@ -781,6 +817,26 @@ const char* CompilationUnit::ProcessAttribute(
             break;
           }
         }
+      // .debug_str and .debug_str_offsets are optional sections. If either
+      // is missing, or the index points outside .debug_str_offsets, skip this
+      // attribute rather than aborting or reading out of bounds.
+      if (string_buffer_ == NULL || str_offsets_buffer_ == NULL) {
+        LOG_EVERY_N(WARNING, 1000)
+            << "Ignoring string index attribute: .debug_str or "
+               ".debug_str_offsets is missing";
+        return start + len;
+      }
+      const uint64 str_offsets_entry =
+          (header_.version < 5 ? 0 : handler_->get_str_offset_base()) +
+          str_index * reader_->OffsetSize();
+      if (str_offsets_entry >= str_offsets_buffer_length_ ||
+          str_offsets_buffer_length_ - str_offsets_entry <
+              reader_->OffsetSize()) {
+        LOG_EVERY_N(WARNING, 1000)
+            << "Ignoring string index " << str_index
+            << " outside .debug_str_offsets";
+        return start + len;
+      }
       const char* offset_ptr =
             get_offset_pointer_in_str_offsets_table(str_index,
                                                     str_offsets_buffer_,
@@ -1364,8 +1420,11 @@ bool LineInfo::ReadStringForm(uint32 form, const char** dirname,
     case DW_FORM_strx3:
     case DW_FORM_strx4:
     case DW_FORM_strx: {
-      CHECK(str_buffer_ != NULL);
-      CHECK(str_offsets_buffer_ != NULL);
+      // Like DW_FORM_line_strp above, treat a missing .debug_str or
+      // .debug_str_offsets section as a malformed header instead of aborting.
+      if (str_buffer_ == NULL || str_offsets_buffer_ == NULL) {
+        return false;
+      }
       size_t len = 0;
       uint64 str_index = 0;
       switch (form) {
@@ -1395,6 +1454,14 @@ bool LineInfo::ReadStringForm(uint32 form, const char** dirname,
         }
       }
       if (!AdvanceLinePtr(len, lineptr)) {
+        return false;
+      }
+      const uint64 str_offsets_entry =
+          (header_.version < 5 ? 0 : str_offset_base_) +
+          str_index * reader_->OffsetSize();
+      if (str_offsets_entry >= str_offsets_buffer_length_ ||
+          str_offsets_buffer_length_ - str_offsets_entry <
+              reader_->OffsetSize()) {
         return false;
       }
       const char* offset_ptr =
@@ -1455,6 +1522,70 @@ bool LineInfo::ReadUnsignedForm(uint32 form, uint64* value,
     return false;
   }
   return true;
+}
+
+bool LineInfo::SkipForm(uint32 form, const char** lineptr) {
+  size_t len;
+  uint64 size;
+
+  switch (form) {
+    case DW_FORM_data1:
+    case DW_FORM_strx1:
+      size = 1;
+      break;
+    case DW_FORM_data2:
+    case DW_FORM_strx2:
+      size = 2;
+      break;
+    case DW_FORM_strx3:
+      size = 3;
+      break;
+    case DW_FORM_data4:
+    case DW_FORM_strx4:
+      size = 4;
+      break;
+    case DW_FORM_data8:
+      size = 8;
+      break;
+    case DW_FORM_data16:
+      size = 16;
+      break;
+    case DW_FORM_line_strp:
+    case DW_FORM_strp:
+    case DW_FORM_strp_sup:
+    case DW_FORM_sec_offset:
+      size = reader_->OffsetSize();
+      break;
+    case DW_FORM_udata:
+    case DW_FORM_strx:
+      reader_->ReadUnsignedLEB128(*lineptr, &len);
+      size = len;
+      break;
+    case DW_FORM_block:
+      size = reader_->ReadUnsignedLEB128(*lineptr, &len);
+      if (!AdvanceLinePtr(len, lineptr)) {
+        return false;
+      }
+      break;
+    case DW_FORM_string: {
+      const char* buffer_end = buffer_ + buffer_length_;
+      const char* nul = static_cast<const char*>(
+          memchr(*lineptr, '\0', buffer_end - *lineptr));
+      if (nul == NULL) {
+        malformed_ = true;
+        return false;
+      }
+      size = nul - *lineptr + 1;
+      break;
+    }
+    default:
+      return false;
+  }
+  if (size >= static_cast<uint64>(buffer_ + buffer_length_ - *lineptr)) {
+    malformed_ = true;
+    return false;
+  }
+  return AdvanceLinePtr(size, lineptr);
 }
 
 // The header for a debug_line section is mildly complicated, because
@@ -1637,7 +1768,7 @@ void LineInfo::ReadHeader() {
               malformed_ = true;
               return;
             }
-          } else {
+          } else if (!SkipForm(content_forms[col], &lineptr)) {
             malformed_ = true;
             return;
           }
@@ -1646,7 +1777,9 @@ void LineInfo::ReadHeader() {
           malformed_ = true;
           return;
         }
-        handler_->DefineDir(dirname, row);
+        // Unlike earlier versions, DWARF 5 directory and file indices are
+        // 0-based.
+        handler_->DefineDir(dirname, row - 1);
       }
     }
 
@@ -1683,7 +1816,9 @@ void LineInfo::ReadHeader() {
               malformed_ = true;
               return;
             }
-          } else {
+          } else if (!SkipForm(content_forms[col], &lineptr)) {
+            // Other content types, e.g. DW_LNCT_MD5 (emitted by clang by
+            // default) or vendor extensions, are not needed; skip them.
             malformed_ = true;
             return;
           }
@@ -1692,7 +1827,8 @@ void LineInfo::ReadHeader() {
           malformed_ = true;
           return;
         }
-        handler_->DefineFile(filename, row, dirindex, mod_time, filelength);
+        handler_->DefineFile(filename, row - 1, dirindex, mod_time,
+                             filelength);
       }
     }
   }

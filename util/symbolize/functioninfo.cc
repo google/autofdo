@@ -85,6 +85,11 @@ bool CULineInfoHandler::ShouldAddAddress(uint64 address) const {
 }
 
 void CULineInfoHandler::DefineDir(const char *name, uint32 dir_num) {
+  // DWARF 5 tables are 0-based: entry 0 replaces the placeholder from Init().
+  if (dir_num == 0 && dirs_->size() == 1) {
+    (*dirs_)[0] = name;
+    return;
+  }
   // These should never come out of order, actually
   CHECK_EQ(dir_num, dirs_->size());
   dirs_->push_back(name);
@@ -96,7 +101,10 @@ void CULineInfoHandler::DefineFile(const char *name,
   // These should never come out of order, actually.
   CHECK_GE(dir_num, 0);
   CHECK_LT(dir_num, dirs_->size());
-  if (file_num == files_->size() || file_num == -1) {
+  if (file_num == 0 && files_->size() == 1) {
+    // DWARF 5 tables are 0-based: entry 0 replaces the placeholder.
+    (*files_)[0] = std::make_pair(dir_num, name);
+  } else if (file_num == files_->size() || file_num == -1) {
     files_->push_back(std::make_pair(dir_num, name));
   } else {
     LOG(INFO) << "error in DefineFile";
@@ -257,15 +265,16 @@ void CUFunctionInfoHandler::ProcessAttributeUnsigned(uint64 offset,
     const char* str_buffer = NULL;
     uint64 str_buffer_size = 0;
     if (str_section != sections_.end()) {
-      str_buffer = line_str->second.first;
-      str_buffer_size = line_str->second.second;
+      str_buffer = str_section->second.first;
+      str_buffer_size = str_section->second.second;
     }
-    SectionMap::const_iterator str_offset = sections_.find(".debug_line_str");
+    SectionMap::const_iterator str_offset =
+        sections_.find(".debug_str_offsets");
     const char* str_offset_buffer = NULL;
     uint64 str_offset_size = 0;
     if (str_offset != sections_.end()) {
-      str_offset_buffer = line_str->second.first;
-      str_offset_size = line_str->second.second;
+      str_offset_buffer = str_offset->second.first;
+      str_offset_size = str_offset->second.second;
     }                    
     LineInfo lireader(line_sect->second.first + data, line_sect->second.second - data,
                       line_str_buffer, line_str_size,

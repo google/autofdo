@@ -91,7 +91,8 @@ bool Google3Addr2line::Prepare() {
   SectionMap sections;
   const char *debug_section_names[] = {
     ".debug_line", ".debug_abbrev", ".debug_info", ".debug_str",
-    ".debug_ranges", ".debug_addr", ".debug_rnglists", ".debug_line_str"
+    ".debug_ranges", ".debug_addr", ".debug_rnglists", ".debug_line_str",
+    ".debug_str_offsets"
   };
   for (const char *section_name : debug_section_names) {
     size_t section_size;
@@ -244,7 +245,10 @@ void Google3Addr2line::GetInlineStack(uint64_t address,
     if (start_line == 0)
       start_line = subprog->callsite_line();
 
-    dir_name = subprog->callsite_directory();
+    // The callsite file is unknown if DW_AT_call_file was missing or invalid.
+    const char *callsite_directory = subprog->callsite_directory();
+    const char *callsite_filename = subprog->callsite_filename();
+    dir_name = callsite_directory ? callsite_directory : "";
     if (!dir_name.is_absolute()) {
       if (subprog->comp_directory()) {
         dir_name = subprog->comp_directory() / dir_name;
@@ -256,7 +260,7 @@ void Google3Addr2line::GetInlineStack(uint64_t address,
     stack->push_back(SourceInfo(
         canonical_parent->name().c_str(),
         dir_name,
-        subprog->callsite_filename(),
+        callsite_filename ? callsite_filename : "",
         start_line,
         subprog->callsite_line(),
         subprog->callsite_discr()));

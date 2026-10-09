@@ -1,6 +1,8 @@
 #include "addr2line.h"
 
 #include <array>
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -205,5 +207,155 @@ TEST(Addr2lineTest, Dwarf5ImplicitConstDiscriminator) {
   ASSERT_NE(info, nullptr);
   EXPECT_TRUE(info->inlined());
   EXPECT_EQ(info->callsite_discr(), 0);
+}
+
+class StringHandler : public autofdo::Dwarf2Handler {
+ public:
+  bool StartCompilationUnit(uint64, uint8, uint8, uint64, uint8) override {
+    return true;
+  }
+
+  bool StartDIE(uint64, autofdo::DwarfTag,
+                const autofdo::AttributeList&) override {
+    return true;
+  }
+
+  void ProcessAttributeString(uint64, autofdo::DwarfAttribute attr,
+                              autofdo::DwarfForm, const char* data) override {
+    if (attr == autofdo::DW_AT_name) name = data ? data : "<null>";
+  }
+
+  void ProcessAttributeUnsigned(uint64, autofdo::DwarfAttribute attr,
+                                autofdo::DwarfForm, uint64 value) override {
+    if (attr == autofdo::DW_AT_high_pc) high_pc = value;
+  }
+
+  std::string name;
+  uint64 high_pc = 0;
+};
+
+// A DWARF 5 unit DIE whose DW_AT_name (DW_FORM_strx1, index |str_index|)
+// precedes its DW_AT_str_offsets_base, as clang emits it. The base selects
+// the second of two .debug_str_offsets contributions. DW_AT_high_pc is a
+// marker that shows the strx1 operand was consumed.
+void ParseStrxUnit(bool with_str_offsets, unsigned char str_index,
+                   StringHandler* handler) {
+  const unsigned char debug_info[] = {
+      0x0f, 0x00, 0x00, 0x00,  // unit_length
+      0x05, 0x00,              // version
+      0x01,                    // DW_UT_compile
+      0x08,                    // address_size
+      0x00, 0x00, 0x00, 0x00,  // abbrev_offset
+      0x01,                    // compilation unit
+      str_index,               // DW_AT_name / strx1
+      0x14, 0x00, 0x00, 0x00,  // DW_AT_str_offsets_base: second contribution
+      0x7f,                    // DW_AT_high_pc marker
+  };
+  const unsigned char debug_abbrev[] = {
+      0x01, 0x11, 0x00,  // compilation unit without children
+      0x03, 0x25,        // DW_AT_name / DW_FORM_strx1
+      0x72, 0x17,        // DW_AT_str_offsets_base / DW_FORM_sec_offset
+      0x12, 0x0b,        // DW_AT_high_pc / DW_FORM_data1
+      0x00, 0x00, 0x00,
+  };
+  const unsigned char debug_str_offsets[] = {
+      0x08, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00,  // first unit header
+      0x00, 0x00, 0x00, 0x00,                          // "wrong"
+      0x08, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00,  // second unit header
+      0x06, 0x00, 0x00, 0x00,                          // "right"
+  };
+  const char debug_str[] = "wrong\0right";
+  autofdo::SectionMap sections;
+  sections[".debug_info"] = {
+      reinterpret_cast<const char*>(debug_info), sizeof(debug_info)};
+  sections[".debug_abbrev"] = {
+      reinterpret_cast<const char*>(debug_abbrev), sizeof(debug_abbrev)};
+  sections[".debug_str"] = {debug_str, sizeof(debug_str)};
+  if (with_str_offsets) {
+    sections[".debug_str_offsets"] = {
+        reinterpret_cast<const char*>(debug_str_offsets),
+        sizeof(debug_str_offsets)};
+  }
+  autofdo::ByteReader reader(autofdo::ENDIANNESS_LITTLE);
+  autofdo::CompilationUnit unit("strx-fixture", sections, 0, &reader, handler);
+  unit.Start();
+  EXPECT_FALSE(unit.malformed());
+  EXPECT_EQ(handler->high_pc, 0x7f);
+}
+
+TEST(Addr2lineTest, Dwarf5StrxUsesLaterStrOffsetsBase) {
+  StringHandler handler;
+  ParseStrxUnit(/*with_str_offsets=*/true, /*str_index=*/0, &handler);
+  EXPECT_EQ(handler.name, "right");
+}
+
+TEST(Addr2lineTest, Dwarf5StrxWithoutStrOffsetsSectionIsSkipped) {
+  StringHandler handler;
+  ParseStrxUnit(/*with_str_offsets=*/false, /*str_index=*/0, &handler);
+  EXPECT_EQ(handler.name, "");
+}
+
+TEST(Addr2lineTest, Dwarf5StrxOutOfRangeIndexIsSkipped) {
+  StringHandler handler;
+  ParseStrxUnit(/*with_str_offsets=*/true, /*str_index=*/1, &handler);
+  EXPECT_EQ(handler.name, "");
+}
+
+// testdata/dwarf5_line_tables_only.bin is built by clang 19 from
+// testdata/dwarf5_line_tables_only_{main,work,split}.c with
+//   clang -O2 -gdwarf-5 -gline-tables-only -fdebug-info-for-profiling
+//     -fdebug-prefix-map=$PWD=/autofdo/testdata
+// It uses .debug_str_offsets, .debug_addr, .debug_rnglists, .debug_line_str
+// and DW_LNCT_MD5 file entries with 0-based file indices.
+TEST(Addr2lineTest, Dwarf5ClangLineTablesOnlyBinary) {
+  const std::string binary = absl::StrCat(
+      ::testing::SrcDir(), "/testdata/dwarf5_line_tables_only.bin");
+  std::unique_ptr<Addr2line> addr2line(Addr2line::Create(binary));
+  ASSERT_NE(addr2line, nullptr);
+
+  struct Frame {
+    std::string func_name;
+    std::string file_name;
+    uint32_t line;
+    uint32_t start_line;
+    uint32_t discriminator;
+  };
+  const struct {
+    uint64_t address;
+    std::vector<Frame> frames;
+  } kCases[] = {
+      // square_add inlined into main (first unit).
+      {0x118a,
+       {{"square_add", "dwarf5_line_tables_only_main.c", 9, 8, 0},
+        {"main", "dwarf5_line_tables_only_main.c", 16, 12, 2}}},
+      // mix inlined into work (second unit). The inline ranges are offsets
+      // from this unit's DW_AT_low_pc, a DW_FORM_addrx emitted before
+      // DW_AT_addr_base.
+      {0x1221,
+       {{"mix", "dwarf5_line_tables_only_work.c", 3, 2, 97},
+        {"work", "dwarf5_line_tables_only_work.c", 9, 6, 0}}},
+      {0x11c0, {{"work", "dwarf5_line_tables_only_work.c", 6, 6, 0}}},
+      // Third unit, described with DW_AT_ranges / DW_FORM_rnglistx.
+      {0x1320, {{"split", "dwarf5_line_tables_only_split.c", 9, 8, 0}}},
+      {0x1330,
+       {{"split_cold", "dwarf5_line_tables_only_split.c", 5, 4, 0}}},
+  };
+  for (const auto& test_case : kCases) {
+    SCOPED_TRACE(absl::StrCat("address 0x", absl::Hex(test_case.address)));
+    devtools_crosstool_autofdo::SourceStack stack;
+    addr2line->GetInlineStack(test_case.address, &stack);
+    ASSERT_EQ(stack.size(), test_case.frames.size());
+    for (size_t i = 0; i < stack.size(); ++i) {
+      SCOPED_TRACE(i);
+      const Frame& expected = test_case.frames[i];
+      ASSERT_NE(stack[i].func_name, nullptr);
+      EXPECT_EQ(stack[i].func_name, expected.func_name);
+      EXPECT_EQ(stack[i].dir_name, "/autofdo/testdata");
+      EXPECT_EQ(stack[i].file_name, expected.file_name);
+      EXPECT_EQ(stack[i].line, expected.line);
+      EXPECT_EQ(stack[i].start_line, expected.start_line);
+      EXPECT_EQ(stack[i].discriminator, expected.discriminator);
+    }
+  }
 }
 }  // namespace

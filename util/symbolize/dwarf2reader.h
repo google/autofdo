@@ -165,6 +165,10 @@ class LineInfo {
   // Reads an unsigned integer of form DW_FORM_udata.
   bool ReadUnsignedForm(uint32 form, uint64* value, const char** lineptr);
 
+  // Skips over a value of the given form, for content types that are not
+  // needed (e.g. DW_LNCT_MD5). Returns false for unsupported forms.
+  bool SkipForm(uint32 form, const char** lineptr);
+
   // Reads the DWARF2/3 header for this line info.
   void ReadHeader();
 
@@ -560,6 +564,10 @@ class CompilationUnit {
   // Reads .debug_addr section DWARF header for this compilation unit
   void ReadDebugAddressTableHeader(const char* addr_ptr,
                                   uint64 addr_length);     
+
+  // Reads DW_AT_str_offsets_base and DW_AT_addr_base from the DWARF 5 unit
+  // DIE before its other attributes are processed.
+  void ReadUnitBases();
 
   // Processes a single DIE for this compilation unit.
   //
