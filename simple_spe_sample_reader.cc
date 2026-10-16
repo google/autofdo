@@ -151,6 +151,12 @@ bool SimpleSpeDataSampleReader::Append(const std::string &profile_file) {
 bool SimpleSpeDataSampleReader::Read() {
   // Read the perf data file
   quipper::PerfReader reader;
+  // Skip SAMPLE events to avoid unsupported PERF_SAMPLE_REGS_USER
+  // We only need AUXTRACE events for SPE data
+  reader.SetEventTypesToSkipWhenSerializing(
+      {quipper::PERF_RECORD_SAMPLE, quipper::PERF_RECORD_FORK,
+       quipper::PERF_RECORD_COMM});
+
   if (!reader.ReadFile(profile_file_)) {
     LOG(ERROR) << "Failed to read perf data file: " << profile_file_;
     return false;
